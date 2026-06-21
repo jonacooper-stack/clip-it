@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Clip-It",
+    "slug": "clip-it",
+    "scheme": "clipit",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7F8F5",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.clipit.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.clipit.app"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Clip-It uses the camera so you can photograph the wildlife you spot."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Clip-It tags each sighting with where you saw the animal. Your precise location stays private to you."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
