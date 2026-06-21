@@ -152,7 +152,8 @@ These shape the UX from day one; they're product features, not afterthoughts.
   dispute re-score path.
 - `app/(capture)/camera.tsx` — the in-app camera (GPS + timestamp + offline queue): the
   heart of the loop.
-- `src/scoring/engine.ts` — rarity → base points × scene multipliers + bonuses, with caps,
-  rule versioning, and a region-aware rarity hook.
-- `src/lib/vision/provider.ts` — the swappable vision interface (Claude-vision
-  implementation for the MVP).
+- `supabase/functions/_shared/scoring.ts` — rarity → base points × scene multipliers +
+  bonuses, with caps, rule versioning, and a region-aware rarity hook. Lives server-side
+  (Deno) so points are computed in the trusted boundary, not on the client.
+- `supabase/functions/_shared/vision.ts` — the swappable vision interface (Claude-vision
+  implementation for the MVP), also server-side.

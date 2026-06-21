@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Expo / React Native
+.expo/
+dist/
+web-build/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+ios/
+android/
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs & misc
+npm-debug.*
+yarn-error.*
+*.log
+.DS_Store
+coverage/
