@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -17,6 +17,14 @@ export default function CameraScreen() {
   const camRef = useRef<CameraView>(null);
   const [busy, setBusy] = useState(false);
   const addSighting = useJournalStore((s) => s.addSighting);
+
+  // Web fallback: if the browser can't give us a camera, still let the loop run.
+  const proceedWithoutCamera = () => {
+    const id = newId();
+    const now = Date.now();
+    addSighting({ id, createdAt: now, observedAt: now, sceneTags: [], idStatus: 'identifying' });
+    router.replace(`/capture/identifying?id=${id}`);
+  };
 
   if (!permission) {
     return (
@@ -36,6 +44,14 @@ export default function CameraScreen() {
             Clip-It captures the animals you spot in-app, so every sighting is genuinely yours.
           </Text>
           <Button label="Enable camera" onPress={requestPermission} />
+          {Platform.OS === 'web' && (
+            <Button
+              label="Continue without camera"
+              variant="secondary"
+              onPress={proceedWithoutCamera}
+              style={styles.permBack}
+            />
+          )}
           <Button label="Go back" variant="ghost" onPress={() => router.back()} style={styles.permBack} />
         </View>
       </SafeAreaView>
@@ -46,7 +62,13 @@ export default function CameraScreen() {
     if (busy || !camRef.current) return;
     setBusy(true);
     try {
-      const photo = await camRef.current.takePictureAsync({ base64: true, quality: 0.5 });
+      let photo: { uri?: string; base64?: string } | undefined;
+      try {
+        photo = await camRef.current.takePictureAsync({ base64: true, quality: 0.5 });
+      } catch {
+        // Some browsers can't capture; continue without a photo so the demo loop still completes.
+        photo = undefined;
+      }
 
       let lat: number | undefined;
       let lng: number | undefined;

@@ -8,6 +8,10 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#F7F8F5",
     "newArchEnabled": true,
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.clipit.app",
