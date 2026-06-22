@@ -1,12 +1,15 @@
-// Identify orchestration. In the default (offline) mode this returns a mock
-// result so the loop is fully playable. When Supabase is configured it uploads
-// the photo, creates the sighting row, and invokes the identify-and-score
-// Edge Function — falling back to the mock if anything goes wrong, so the app
-// never gets stuck.
+// Identify orchestration. The default (offline) mode returns a mock so the loop is
+// fully playable with no backend. On the deployed web app it calls the Vercel
+// function (api/identify.ts) for real Claude identification. A Supabase path is
+// kept for the future shared-data backend. Any failure falls back to the mock so
+// the app never gets stuck.
 
+import { Platform } from 'react-native';
 import type { IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
+
+const IDENTIFY_URL = process.env.EXPO_PUBLIC_IDENTIFY_URL ?? '/api/identify';
 
 export interface IdentifyInput {
   photoBase64?: string | null;
@@ -19,13 +22,13 @@ export interface IdentifyInput {
 export interface IdentifyOutcome {
   animalPresent: boolean;
   species?: SpeciesGuess;
-  /** Present from the mock so the client can score; null from the server (already scored). */
+  /** Present from the mock/endpoint so the client can score; absent when the server already scored. */
   rarityScore?: number;
   sceneTags: string[];
   caption: string;
   dangerous: boolean;
   idStatus: IdStatus;
-  /** Present when the server scored it. */
+  /** Present when a server scored it. */
   points?: number;
   score?: ScoreBreakdown;
 }
@@ -33,15 +36,25 @@ export interface IdentifyOutcome {
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function identifySighting(input: IdentifyInput): Promise<IdentifyOutcome> {
+  // Future shared-data backend (unused until we stand up Supabase).
   if (isSupabaseConfigured && supabase) {
     try {
       return await identifyViaBackend(input);
     } catch (err) {
-      console.warn('Backend identify failed, using mock:', err);
+      console.warn('Supabase identify failed, falling back:', err);
     }
   }
 
-  // Offline / dev path.
+  // Real AI via the Vercel function — when we're on the web build and have a photo to send.
+  if (Platform.OS === 'web' && input.photoBase64) {
+    try {
+      return await identifyViaEndpoint(input);
+    } catch (err) {
+      console.warn('AI endpoint failed, using mock:', err);
+    }
+  }
+
+  // Offline / dev fallback.
   await delay(1500 + Math.random() * 900);
   const m = mockIdentify();
   return {
@@ -52,6 +65,25 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     caption: m.caption,
     dangerous: m.dangerous,
     idStatus: m.idStatus,
+  };
+}
+
+async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcome> {
+  const resp = await fetch(IDENTIFY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
+  });
+  if (!resp.ok) throw new Error(`identify endpoint ${resp.status}`);
+  const data = await resp.json();
+  return {
+    animalPresent: Boolean(data.animalPresent),
+    species: data.species as SpeciesGuess | undefined,
+    rarityScore: typeof data.rarityScore === 'number' ? data.rarityScore : undefined,
+    sceneTags: Array.isArray(data.sceneTags) ? data.sceneTags : [],
+    caption: typeof data.caption === 'string' ? data.caption : '',
+    dangerous: Boolean(data.dangerous),
+    idStatus: (data.idStatus as IdStatus) ?? 'ai_confident',
   };
 }
 

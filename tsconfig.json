@@ -16,6 +16,7 @@
     "node_modules",
     ".expo",
     "dist",
-    "supabase"
+    "supabase",
+    "api"
   ]
 }
