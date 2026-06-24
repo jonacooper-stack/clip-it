@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
-import { colors, spacing, font, radius } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import type { AgeBracket } from '@/types';
@@ -62,7 +62,7 @@ export default function Profile() {
         </View>
 
         <Card style={styles.ethos}>
-          <Text style={styles.ethosTitle}>🌿 Observe, don't disturb</Text>
+          <Text style={styles.ethosTitle}>🌲 Observe, don't disturb</Text>
           <Text style={styles.ethosText}>
             Clip-It rewards the photo, never the proximity. Keep your distance, leave no trace, and
             let wildlife stay wild.
@@ -131,20 +131,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 34, fontWeight: '800', color: colors.white },
-  name: { fontSize: font.title, fontWeight: '800', color: colors.text, marginTop: spacing.sm },
+  avatarText: { fontSize: 34, fontFamily: fonts.display, color: colors.white },
+  name: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.sm },
   bracket: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
   statCard: { width: '47.5%', alignItems: 'center', paddingVertical: spacing.md, flexGrow: 1 },
-  statValue: { fontSize: font.title, fontWeight: '800', color: colors.primary },
+  statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
   statLabel: { fontSize: font.tiny, color: colors.muted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   ethos: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft, marginBottom: spacing.lg },
-  ethosTitle: { fontSize: font.body, fontWeight: '800', color: colors.primaryDark, marginBottom: spacing.xs },
+  ethosTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.primaryDark, marginBottom: spacing.xs },
   ethosText: { fontSize: font.small, color: colors.primaryDark, lineHeight: 20 },
-  sectionTitle: { fontSize: font.heading, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
+  sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   settings: { padding: 0, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
-  rowLabel: { flex: 1, fontSize: font.body, fontWeight: '600', color: colors.text },
+  rowLabel: { flex: 1, fontSize: font.body, fontFamily: fonts.bodyMedium, color: colors.text },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.md + 20 + spacing.md },
   devReset: { alignItems: 'center', marginTop: spacing.xl },
   devResetText: { fontSize: font.small, color: colors.faint, textDecorationLine: 'underline' },

@@ -5,7 +5,7 @@ import { useCameraPermissions } from 'expo-camera';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { colors, spacing, font } from '@/theme';
+import { colors, spacing, font, fonts } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 
 const ETHOS = [
@@ -73,15 +73,15 @@ export default function Ethos() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.title, fontWeight: '800', color: colors.text, marginTop: spacing.lg },
+  title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.lg },
   subtitle: { fontSize: font.body, color: colors.muted, marginTop: spacing.xs, marginBottom: spacing.lg },
   card: { flexDirection: 'row', marginBottom: spacing.md },
   cardEmoji: { fontSize: 28, width: 44 },
   cardBody: { flex: 1 },
-  cardTitle: { fontSize: font.body, fontWeight: '800', color: colors.text, marginBottom: 2 },
+  cardTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: 2 },
   cardText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },
   perms: { marginVertical: spacing.lg },
   permsText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },
-  bold: { fontWeight: '800', color: colors.text },
+  bold: { fontFamily: fonts.bodyBold, color: colors.text },
   later: { marginTop: spacing.sm },
 });

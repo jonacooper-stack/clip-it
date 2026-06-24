@@ -7,16 +7,16 @@ import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
-import { colors, spacing, font, radius } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import type { IdStatus } from '@/types';
 
 const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   identifying: { label: 'Identifying', color: colors.muted, bg: colors.surfaceAlt },
   ai_confident: { label: 'Identified', color: colors.primaryDark, bg: colors.primarySoft },
-  needs_review: { label: 'Pending review', color: '#9A6A00', bg: colors.accentSoft },
+  needs_review: { label: 'Pending review', color: colors.accentInk, bg: colors.accentSoft },
   human_confirmed: { label: 'Confirmed', color: colors.primaryDark, bg: colors.primarySoft },
-  disputed: { label: 'In review', color: '#9A6A00', bg: colors.accentSoft },
+  disputed: { label: 'In review', color: colors.accentInk, bg: colors.accentSoft },
   rejected: { label: 'No animal', color: colors.danger, bg: colors.dangerSoft },
 };
 
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: font.heading, fontWeight: '800', color: colors.text },
+  headerTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   missing: { textAlign: 'center', marginTop: spacing.xxl, color: colors.muted },
   photo: { width: '100%', height: 240, borderRadius: radius.lg, marginBottom: spacing.lg },
@@ -151,17 +151,17 @@ const styles = StyleSheet.create({
   },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   titleText: { flex: 1, paddingRight: spacing.md },
-  common: { fontSize: font.title, fontWeight: '800', color: colors.text },
+  common: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   sci: { fontSize: font.body, fontStyle: 'italic', color: colors.faint, marginTop: 2 },
   statusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm + 2, paddingVertical: 4 },
-  statusText: { fontSize: font.tiny, fontWeight: '800' },
+  statusText: { fontSize: font.tiny, fontFamily: fonts.bodyBold },
   caption: { fontSize: font.body, color: colors.muted, marginTop: spacing.sm, lineHeight: 22 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.xs, marginBottom: spacing.sm },
   block: { marginTop: spacing.lg },
-  blockTitle: { fontSize: font.body, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
+  blockTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
   rowLabel: { fontSize: font.small, color: colors.muted },
-  rowValue: { fontSize: font.small, fontWeight: '700', color: colors.text, flexShrink: 1, textAlign: 'right' },
+  rowValue: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.text, flexShrink: 1, textAlign: 'right' },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  totalLabel: { fontSize: font.body, fontWeight: '800', color: colors.text },
-  totalValue: { fontSize: font.body, fontWeight: '800', color: colors.accent },
+  totalLabel: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
+  totalValue: { fontSize: font.body, fontFamily: fonts.display, color: colors.accent },
   privacyNote: { fontSize: font.tiny, color: colors.faint, marginTop: spacing.sm, fontStyle: 'italic' },
 });

@@ -4,16 +4,33 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import {
+  useFonts,
+  Oswald_500Medium,
+  Oswald_600SemiBold,
+  Oswald_700Bold,
+} from '@expo-google-fonts/oswald';
+import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { colors } from '@/theme';
+import { applyGlobalFont } from '@/lib/fonts';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 
+applyGlobalFont();
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Oswald_500Medium,
+    Oswald_600SemiBold,
+    Oswald_700Bold,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_700Bold,
+  });
   const appHydrated = useAppStore((s) => s.hasHydrated);
   const journalHydrated = useJournalStore((s) => s.hasHydrated);
-  const ready = appHydrated && journalHydrated;
+  const ready = fontsLoaded && appHydrated && journalHydrated;
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});

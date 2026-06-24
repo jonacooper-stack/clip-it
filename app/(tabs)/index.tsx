@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { PointsBadge } from '@/components/PointsBadge';
-import { colors, spacing, font, radius } from '@/theme';
+import { TopoBackground } from '@/components/TopoBackground';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
@@ -37,6 +37,7 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <TopoBackground color={colors.primary} opacity={0.05} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <View>
@@ -117,28 +118,28 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   greeting: { fontSize: font.body, color: colors.muted },
-  name: { fontSize: font.title, fontWeight: '800', color: colors.text },
+  name: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   streak: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  streakText: { fontSize: font.body, fontWeight: '800', color: '#9A6A00' },
+  streakText: { fontSize: font.body, fontFamily: fonts.display, color: colors.accentInk },
   stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   statCard: { flex: 1, alignItems: 'center', paddingVertical: spacing.md },
-  statValue: { fontSize: font.title, fontWeight: '800', color: colors.primary },
+  statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
   statLabel: { fontSize: font.tiny, color: colors.muted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   questCard: { marginBottom: spacing.lg },
   questHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  questLabel: { fontSize: font.tiny, fontWeight: '800', color: colors.accent, letterSpacing: 1 },
-  questTitle: { fontSize: font.heading, fontWeight: '800', color: colors.text },
+  questLabel: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: colors.accent, letterSpacing: 1 },
+  questTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text },
   questDesc: { fontSize: font.small, color: colors.muted, marginTop: 2, marginBottom: spacing.md },
   questProgress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  questCount: { fontSize: font.small, fontWeight: '700', color: colors.muted, width: 44, textAlign: 'right' },
+  questCount: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted, width: 44, textAlign: 'right' },
   cta: { marginBottom: spacing.xl },
-  sectionTitle: { fontSize: font.heading, fontWeight: '800', color: colors.text, marginBottom: spacing.md },
+  sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyEmoji: { fontSize: 40, marginBottom: spacing.sm },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   recentRow: { gap: spacing.md, paddingRight: spacing.lg },
   recentItem: { width: 76, alignItems: 'center' },
-  recentName: { fontSize: font.tiny, color: colors.text, fontWeight: '600', marginTop: spacing.xs, textAlign: 'center' },
-  recentPts: { fontSize: font.tiny, color: colors.accent, fontWeight: '800' },
+  recentName: { fontSize: font.tiny, color: colors.text, fontFamily: fonts.bodyMedium, marginTop: spacing.xs, textAlign: 'center' },
+  recentPts: { fontSize: font.tiny, color: colors.accentInk, fontFamily: fonts.display },
   pending: { fontSize: font.tiny, color: colors.muted, fontStyle: 'italic' },
 });

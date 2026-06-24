@@ -4,12 +4,12 @@ import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { colors, spacing, font, radius } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import type { AgeBracket } from '@/types';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 86 }, (_, i) => CURRENT_YEAR - 4 - i); // 4..89 yrs old
+const YEARS = Array.from({ length: 86 }, (_, i) => CURRENT_YEAR - 4 - i);
 
 function bracketFor(age: number): AgeBracket {
   if (age < 13) return 'under_13';
@@ -80,9 +80,9 @@ export default function AgeGate() {
 
 const styles = StyleSheet.create({
   header: { marginTop: spacing.xl, marginBottom: spacing.lg },
-  title: { fontSize: font.title, fontWeight: '800', color: colors.text },
+  title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, lineHeight: 20 },
-  label: { fontSize: font.small, fontWeight: '700', color: colors.muted, marginBottom: spacing.sm },
+  label: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted, marginBottom: spacing.sm },
   yearRow: { paddingVertical: spacing.xs, gap: spacing.sm },
   yearChip: {
     paddingHorizontal: spacing.md,
@@ -93,10 +93,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   yearChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  yearText: { fontSize: font.body, fontWeight: '700', color: colors.text },
+  yearText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.text },
   yearTextSelected: { color: colors.white },
   childNote: { marginTop: spacing.lg, backgroundColor: colors.accentSoft, borderColor: colors.accentSoft },
-  childTitle: { fontSize: font.body, fontWeight: '800', color: '#7A5300', marginBottom: spacing.xs },
-  childText: { fontSize: font.small, color: '#7A5300', lineHeight: 20 },
+  childTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk, marginBottom: spacing.xs },
+  childText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
   spacer: { flex: 1 },
 });

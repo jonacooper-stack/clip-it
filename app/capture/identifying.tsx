@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { colors, spacing, font } from '@/theme';
+import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 import { identifySighting } from '@/lib/identify';
@@ -39,8 +39,6 @@ export default function Identifying() {
         return;
       }
 
-      // The server returns points directly; the offline mock returns rarity so we
-      // score it here (applying the first-of-species bonus from the journal).
       let points = outcome.points;
       let score = outcome.score;
       if (points == null && outcome.species && outcome.rarityScore != null) {
@@ -87,8 +85,8 @@ export default function Identifying() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,18,12,0.6)' },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(13,22,16,0.62)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  title: { color: colors.white, fontSize: font.title, fontWeight: '800', marginTop: spacing.lg },
+  title: { color: colors.white, fontSize: font.title, fontFamily: fonts.heading, marginTop: spacing.lg, letterSpacing: 0.5 },
   sub: { color: 'rgba(255,255,255,0.85)', fontSize: font.body, marginTop: spacing.sm, textAlign: 'center' },
 });

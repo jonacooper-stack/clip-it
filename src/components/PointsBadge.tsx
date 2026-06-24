@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, radius, spacing, font } from '@/theme';
+import { colors, radius, spacing, font, fonts } from '@/theme';
 
 interface Props {
   points: number;
@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeLg: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  text: { color: '#9A6A00', fontWeight: '800', fontSize: font.small },
-  textLg: { fontSize: font.heading },
-  unit: { fontWeight: '700', fontSize: font.tiny },
+  text: { color: colors.accentInk, fontFamily: fonts.display, fontSize: font.body },
+  textLg: { fontSize: font.title },
+  unit: { fontFamily: fonts.bodyBold, fontSize: font.tiny },
 });

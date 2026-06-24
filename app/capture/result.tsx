@@ -7,7 +7,8 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
-import { colors, spacing, font, radius } from '@/theme';
+import { TopoBackground } from '@/components/TopoBackground';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 
 export default function Result() {
@@ -51,6 +52,7 @@ export default function Result() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <TopoBackground color={colors.primary} opacity={0.05} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {sighting.photoUri && (
           <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
@@ -65,7 +67,7 @@ export default function Result() {
           ) : (
             <>
               <Text style={styles.points}>+{sighting.points ?? 0}</Text>
-              <Text style={styles.pointsLabel}>points</Text>
+              <Text style={styles.pointsLabel}>POINTS</Text>
             </>
           )}
         </Animated.View>
@@ -134,22 +136,22 @@ const styles = StyleSheet.create({
   missing: { textAlign: 'center', marginTop: spacing.xxl, color: colors.muted },
   photo: { width: '100%', height: 260, borderRadius: radius.lg, marginBottom: spacing.lg },
   pointsWrap: { alignItems: 'center', marginBottom: spacing.md },
-  points: { fontSize: 64, fontWeight: '900', color: colors.accent, lineHeight: 68 },
-  pointsLabel: { fontSize: font.body, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 1 },
-  pendingPts: { fontSize: 52, fontWeight: '900', color: colors.muted, lineHeight: 56 },
-  pendingLabel: { fontSize: font.small, fontWeight: '700', color: colors.muted },
-  common: { fontSize: font.title, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  points: { fontSize: 80, fontFamily: fonts.display, color: colors.accent, lineHeight: 84 },
+  pointsLabel: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk, letterSpacing: 3 },
+  pendingPts: { fontSize: 56, fontFamily: fonts.display, color: colors.muted, lineHeight: 60 },
+  pendingLabel: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
+  common: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, textAlign: 'center' },
   sci: { fontSize: font.body, fontStyle: 'italic', color: colors.faint, textAlign: 'center', marginTop: 2 },
   confidence: { fontSize: font.small, color: colors.muted, marginTop: spacing.xs, textAlign: 'center' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: spacing.sm },
   danger: { backgroundColor: colors.dangerSoft, borderColor: colors.dangerSoft, marginTop: spacing.lg, width: '100%' },
-  dangerTitle: { fontSize: font.body, fontWeight: '800', color: colors.danger, marginBottom: spacing.xs },
+  dangerTitle: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.danger, marginBottom: spacing.xs },
   dangerText: { fontSize: font.small, color: colors.danger, lineHeight: 20 },
   breakdown: { width: '100%', marginTop: spacing.lg, marginBottom: spacing.md },
-  breakdownTitle: { fontSize: font.body, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
+  breakdownTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
   rowLabel: { fontSize: font.small, color: colors.muted },
-  rowValue: { fontSize: font.small, fontWeight: '700', color: colors.text },
+  rowValue: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.text },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -158,12 +160,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  totalLabel: { fontSize: font.body, fontWeight: '800', color: colors.text },
-  totalValue: { fontSize: font.body, fontWeight: '800', color: colors.accent },
+  totalLabel: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
+  totalValue: { fontSize: font.heading, fontFamily: fonts.display, color: colors.accent },
   doneBtn: { width: '100%', marginTop: spacing.lg },
   rejected: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   rejEmoji: { fontSize: 56, marginBottom: spacing.md },
-  rejTitle: { fontSize: font.title, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
+  rejTitle: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   rejText: { fontSize: font.body, color: colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: spacing.lg },
   rejBack: { marginTop: spacing.sm },
 });

@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, radius, spacing, font } from '@/theme';
+import { colors, radius, spacing, font, fonts } from '@/theme';
 import { sceneTagMeta } from '@/lib/sceneTags';
 
 export function Tag({ code }: { code: string }) {
@@ -16,12 +16,12 @@ export function Tag({ code }: { code: string }) {
 
 const styles = StyleSheet.create({
   tag: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.duskSoft,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 4,
     marginRight: spacing.sm,
     marginTop: spacing.sm,
   },
-  text: { color: colors.text, fontSize: font.small, fontWeight: '600' },
+  text: { color: colors.dusk, fontSize: font.small, fontFamily: fonts.bodyMedium },
 });

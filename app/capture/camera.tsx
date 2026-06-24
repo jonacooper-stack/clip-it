@@ -6,7 +6,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
-import { colors, spacing, font, radius } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { newId } from '@/lib/id';
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   reminder: { backgroundColor: colors.overlay, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
-  reminderText: { color: colors.white, fontSize: font.small, fontWeight: '700' },
+  reminderText: { color: colors.white, fontSize: font.small, fontFamily: fonts.bodyMedium },
   bottomBar: { alignItems: 'center', paddingBottom: spacing.lg },
   shutterOuter: {
     width: 78,
@@ -152,11 +152,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.25)',
   },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.white },
-  hint: { color: colors.white, fontSize: font.small, marginTop: spacing.md, fontWeight: '600' },
+  hint: { color: colors.white, fontSize: font.small, marginTop: spacing.md, fontFamily: fonts.bodyMedium },
   permSafe: { flex: 1, backgroundColor: colors.bg },
   permBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   permEmoji: { fontSize: 56, marginBottom: spacing.md },
-  permTitle: { fontSize: font.title, fontWeight: '800', color: colors.text, marginBottom: spacing.sm },
+  permTitle: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   permText: { fontSize: font.body, color: colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: spacing.lg },
   permBack: { marginTop: spacing.sm },
 });

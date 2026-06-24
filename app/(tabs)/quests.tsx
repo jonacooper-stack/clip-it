@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { PointsBadge } from '@/components/PointsBadge';
-import { colors, spacing, font } from '@/theme';
+import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
 
@@ -47,14 +47,14 @@ export default function Quests() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  title: { fontSize: font.title, fontWeight: '800', color: colors.text },
+  title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.body, color: colors.muted, marginTop: 2, marginBottom: spacing.lg },
   card: { marginBottom: spacing.md },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flex: 1 },
-  questTitle: { fontSize: font.heading, fontWeight: '800', color: colors.text },
+  questTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text },
   questDone: { color: colors.primary },
   desc: { fontSize: font.small, color: colors.muted, marginBottom: spacing.md },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  count: { fontSize: font.small, fontWeight: '700', color: colors.muted, width: 44, textAlign: 'right' },
+  count: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted, width: 44, textAlign: 'right' },
 });

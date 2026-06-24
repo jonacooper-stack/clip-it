@@ -2,7 +2,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
-import { colors, spacing, font } from '@/theme';
+import { TopoBackground } from '@/components/TopoBackground';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 
 const POINTS = [
   { emoji: '📸', text: 'Photograph real wild animals to earn points' },
@@ -16,8 +17,9 @@ export default function Welcome() {
   return (
     <ScreenContainer scroll>
       <View style={styles.hero}>
+        <TopoBackground color={colors.primary} opacity={0.1} />
         <Text style={styles.logo}>🌲</Text>
-        <Text style={styles.title}>Clip-It</Text>
+        <Text style={styles.title}>CLIP-IT</Text>
         <Text style={styles.tagline}>Catch-and-release hunting — a game for real wildlife.</Text>
       </View>
 
@@ -36,9 +38,18 @@ export default function Welcome() {
 }
 
 const styles = StyleSheet.create({
-  hero: { alignItems: 'center', marginTop: spacing.xxl, marginBottom: spacing.xl },
+  hero: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
   logo: { fontSize: 64 },
-  title: { fontSize: font.display, fontWeight: '800', color: colors.text, marginTop: spacing.sm },
+  title: { fontSize: font.display + 4, fontFamily: fonts.display, color: colors.text, marginTop: spacing.sm, letterSpacing: 1 },
   tagline: {
     fontSize: font.body,
     color: colors.muted,

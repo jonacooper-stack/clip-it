@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { Card } from '@/components/Card';
-import { colors, spacing, font } from '@/theme';
+import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
 import type { Sighting } from '@/types';
 
@@ -73,16 +73,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
-  title: { fontSize: font.title, fontWeight: '800', color: colors.text },
+  title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.body, color: colors.muted, marginTop: 2 },
   row: { gap: spacing.md, marginBottom: spacing.md },
   cell: { flex: 1 },
   card: { alignItems: 'center', paddingVertical: spacing.md },
-  common: { fontSize: font.small, fontWeight: '800', color: colors.text, marginTop: spacing.sm, textAlign: 'center' },
+  common: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.sm, textAlign: 'center' },
   sci: { fontSize: font.tiny, fontStyle: 'italic', color: colors.faint, textAlign: 'center' },
   metaRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
-  count: { fontSize: font.tiny, color: colors.muted, fontWeight: '700' },
-  best: { fontSize: font.tiny, color: colors.accent, fontWeight: '800' },
+  count: { fontSize: font.tiny, color: colors.muted, fontFamily: fonts.bodyBold },
+  best: { fontSize: font.tiny, color: colors.accentInk, fontFamily: fonts.display },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyEmoji: { fontSize: 40, marginBottom: spacing.sm },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },

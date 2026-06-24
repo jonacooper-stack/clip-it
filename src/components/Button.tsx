@@ -1,6 +1,6 @@
 import { Pressable, Text, StyleSheet, ViewStyle, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing, font } from '@/theme';
+import { colors, radius, spacing, font, fonts } from '@/theme';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
@@ -60,5 +60,5 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.5 },
   icon: { marginRight: spacing.sm },
-  label: { fontSize: font.body, fontWeight: '700' },
+  label: { fontSize: font.body, fontFamily: fonts.heading, letterSpacing: 0.4 },
 });
