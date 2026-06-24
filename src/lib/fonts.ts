@@ -4,9 +4,9 @@ import { fonts } from '@/theme';
 
 let patched = false;
 
-// Make DM Sans the default font for every Text / TextInput, applied *behind* any
-// explicit style so Oswald headings still win. Guarded so it safely no-ops if RN's
-// internals change shape (e.g. on web).
+// Set DM Sans as the default font for all Text/TextInput, *behind* any explicit
+// styles (so Oswald headings and other overrides still win). Guarded so it
+// safely no-ops if React Native's internals ever change shape.
 export function applyGlobalFont(): void {
   if (patched) return;
   patched = true;
