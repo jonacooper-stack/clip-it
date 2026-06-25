@@ -33,6 +33,8 @@ export interface IdentifyOutcome {
   score?: ScoreBreakdown;
   /** How the identification was produced, so the UI can flag offline demo guesses. */
   source: IdSource;
+  /** When we fell back to the mock, why the real AI didn't run (for diagnostics). */
+  note?: string;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -48,12 +50,18 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
   }
 
   // Real AI via the Vercel function — when we're on the web build and have a photo to send.
+  let note: string | undefined;
   if (Platform.OS === 'web' && input.photoBase64) {
     try {
       return await identifyViaEndpoint(input);
-    } catch (err) {
+    } catch (err: any) {
+      note = String(err?.message ?? err);
       console.warn('AI endpoint failed, using mock:', err);
     }
+  } else if (Platform.OS !== 'web') {
+    note = 'Real AI runs only on the deployed web app, not in the native build.';
+  } else if (!input.photoBase64) {
+    note = 'No photo was captured to send to the AI.';
   }
 
   // Offline / dev fallback.
@@ -68,6 +76,7 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     dangerous: m.dangerous,
     idStatus: m.idStatus,
     source: 'mock',
+    note,
   };
 }
 
@@ -77,7 +86,18 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
   });
-  if (!resp.ok) throw new Error(`identify endpoint ${resp.status}`);
+  if (!resp.ok) {
+    // Surface the server's reason (e.g. "ANTHROPIC_API_KEY is not set") so the
+    // app can tell the user why it fell back to the demo identifier.
+    let detail = '';
+    try {
+      const e = await resp.json();
+      detail = e?.error || e?.detail || '';
+    } catch {
+      // body wasn't JSON; the status code alone is the signal
+    }
+    throw new Error(`identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`);
+  }
   const data = await resp.json();
   return {
     animalPresent: Boolean(data.animalPresent),

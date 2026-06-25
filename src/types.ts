@@ -46,6 +46,8 @@ export interface Sighting {
   dangerous?: boolean;
   proposedSpecies?: string;
   source?: IdSource;
+  /** Why a demo/mock result was used (e.g. the AI endpoint error), for diagnostics. */
+  note?: string;
 }
 
 export interface Quest {

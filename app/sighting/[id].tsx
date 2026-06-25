@@ -31,15 +31,23 @@ export default function SightingDetail() {
   const removeSighting = useJournalStore((s) => s.removeSighting);
   const [confirming, setConfirming] = useState(false);
 
+  // Go back to wherever we came from, but fall back to the home tab when there's
+  // no history to pop (e.g. opened via a deep link or after a web reload) so the
+  // back arrow always does something.
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
   const onRemove = () => {
     if (id) removeSighting(id);
-    router.back();
+    goBack();
   };
 
   if (!sighting) {
     return (
       <SafeAreaView style={styles.safe}>
-        <Header onBack={() => router.back()} />
+        <Header onBack={goBack} />
         <Text style={styles.missing}>Sighting not found.</Text>
       </SafeAreaView>
     );
@@ -51,7 +59,7 @@ export default function SightingDetail() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <Header onBack={() => router.back()} onDelete={() => setConfirming(true)} />
+      <Header onBack={goBack} onDelete={() => setConfirming(true)} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {confirming && (
           <Card style={styles.confirmCard}>
@@ -142,7 +150,7 @@ export default function SightingDetail() {
           {hasLoc && <Text style={styles.privacyNote}>Approximate — your precise location stays private to you.</Text>}
         </Card>
 
-        {sighting.source === 'mock' && <DemoNotice compact />}
+        {sighting.source === 'mock' && <DemoNotice compact reason={sighting.note} />}
 
         <DisputeBox sighting={sighting} />
       </ScrollView>

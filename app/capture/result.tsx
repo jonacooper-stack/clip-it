@@ -118,7 +118,7 @@ export default function Result() {
           </Card>
         )}
 
-        {sighting.source === 'mock' && <DemoNotice />}
+        {sighting.source === 'mock' && <DemoNotice reason={sighting.note} />}
 
         <DisputeBox sighting={sighting} />
 

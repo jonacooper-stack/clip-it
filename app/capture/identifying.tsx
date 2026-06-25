@@ -63,6 +63,7 @@ export default function Identifying() {
         points,
         score,
         source: outcome.source,
+        note: outcome.note,
       });
       registerActivity();
       router.replace(`/capture/result?id=${id}`);
