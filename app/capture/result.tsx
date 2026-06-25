@@ -11,14 +11,18 @@ import { DisputeBox } from '@/components/DisputeBox';
 import { TopoBackground } from '@/components/TopoBackground';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
+import { ScienceQuestions } from '@/components/ScienceQuestions';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
+import { applyFieldNotesBonus } from '@/lib/scoring';
+import { questionsForSighting } from '@/lib/scienceQuestions';
 
 export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const removeSighting = useJournalStore((s) => s.removeSighting);
+  const updateSighting = useJournalStore((s) => s.updateSighting);
   const [confirming, setConfirming] = useState(false);
 
   const scale = useRef(new Animated.Value(0.7)).current;
@@ -36,6 +40,21 @@ export default function Result() {
   const retry = () => {
     if (id) removeSighting(id);
     router.replace('/capture/camera');
+  };
+
+  // Record (or toggle off) a science answer and re-apply the bonus to the score.
+  const onAnswer = (qid: string, value: string) => {
+    if (!sighting) return;
+    const next = { ...(sighting.science ?? {}) };
+    if (next[qid] === value) delete next[qid];
+    else next[qid] = value;
+    const answered = Object.keys(next).length;
+    if (sighting.score) {
+      const { score, points } = applyFieldNotesBonus(sighting.score, answered);
+      updateSighting(sighting.id, { science: next, score, points });
+    } else {
+      updateSighting(sighting.id, { science: next });
+    }
   };
 
   if (!sighting) {
@@ -194,11 +213,22 @@ export default function Result() {
             {sighting.score.bonuses.firstOfSpecies > 0 && (
               <Row label="First of species" value={`+${sighting.score.bonuses.firstOfSpecies}`} />
             )}
+            {(sighting.score.bonuses.fieldNotes ?? 0) > 0 && (
+              <Row label="Field notes" value={`+${sighting.score.bonuses.fieldNotes}`} />
+            )}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>{sighting.points}</Text>
             </View>
           </Card>
+        )}
+
+        {sighting.species && (
+          <ScienceQuestions
+            questions={questionsForSighting(sighting.id)}
+            answers={sighting.science ?? {}}
+            onAnswer={onAnswer}
+          />
         )}
 
         {sighting.source === 'mock' && <DemoNotice reason={sighting.note} />}

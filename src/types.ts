@@ -16,6 +16,8 @@ export interface ScoreBreakdown {
     firstOfSpecies: number;
     quest: number;
     streak: number;
+    /** Bonus for answering optional science questions about the sighting. */
+    fieldNotes: number;
   };
   totalPoints: number;
   ruleVersion: string;
@@ -51,6 +53,8 @@ export interface Sighting {
   note?: string;
   /** When idStatus is 'ineligible', why it doesn't score (e.g. pets/people don't count). */
   ineligibleReason?: string;
+  /** Optional citizen-science answers (questionId -> selected value). */
+  science?: Record<string, string>;
 }
 
 export interface Quest {

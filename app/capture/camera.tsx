@@ -25,6 +25,10 @@ import { newId } from '@/lib/id';
 const MAX_ZOOM_X = 8;
 const ZOOM_STEP = 0.1;
 
+// On web, stop the browser from claiming the two-finger pinch as a page zoom so
+// the gesture reaches our handler (where the browser exposes camera zoom at all).
+const webTouchReset: any = Platform.OS === 'web' ? { touchAction: 'none' } : null;
+
 function fingerDistance(touches: ReadonlyArray<{ pageX: number; pageY: number }>): number {
   const dx = touches[0].pageX - touches[1].pageX;
   const dy = touches[0].pageY - touches[1].pageY;
@@ -169,7 +173,7 @@ export default function CameraScreen() {
   const zoomLabel = `${(1 + zoom * (MAX_ZOOM_X - 1)).toFixed(1)}×`;
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <View style={[styles.container, webTouchReset]} {...panResponder.panHandlers}>
       <CameraView
         ref={camRef}
         style={StyleSheet.absoluteFill}

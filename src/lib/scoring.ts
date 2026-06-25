@@ -14,6 +14,8 @@ const MAX_BASE_POINTS = 30;
 const MAX_BEHAVIOR_MULTIPLIER = 8;
 const MAX_TOTAL_POINTS = 500;
 const FIRST_OF_SPECIES_BONUS = 5;
+/** Bonus points per answered science question (client-side incentive). */
+export const FIELD_NOTE_BONUS = 1;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi);
@@ -47,10 +49,11 @@ export function scoreSighting(input: ScoreInput): ScoreBreakdown {
     firstOfSpecies: input.firstOfSpecies ? FIRST_OF_SPECIES_BONUS : 0,
     quest: Math.max(0, input.questBonus ?? 0),
     streak: Math.max(0, input.streakBonus ?? 0),
+    fieldNotes: 0,
   };
 
   const totalPoints = clamp(
-    subtotal + bonuses.firstOfSpecies + bonuses.quest + bonuses.streak,
+    subtotal + bonuses.firstOfSpecies + bonuses.quest + bonuses.streak + bonuses.fieldNotes,
     1,
     MAX_TOTAL_POINTS,
   );
@@ -61,5 +64,29 @@ export function scoreSighting(input: ScoreInput): ScoreBreakdown {
     bonuses,
     totalPoints,
     ruleVersion: RULE_VERSION,
+  };
+}
+
+// Re-derive a score with the field-notes bonus for `answeredCount` answered
+// science questions. Recomputes the total from scratch so it's idempotent when a
+// user toggles answers on and off.
+export function applyFieldNotesBonus(
+  score: ScoreBreakdown,
+  answeredCount: number,
+): { score: ScoreBreakdown; points: number } {
+  const fieldNotes = Math.max(0, answeredCount) * FIELD_NOTE_BONUS;
+  const subtotal = Math.round(score.basePoints * score.behaviorMultiplier);
+  const totalPoints = clamp(
+    subtotal +
+      score.bonuses.firstOfSpecies +
+      score.bonuses.quest +
+      score.bonuses.streak +
+      fieldNotes,
+    1,
+    MAX_TOTAL_POINTS,
+  );
+  return {
+    score: { ...score, bonuses: { ...score.bonuses, fieldNotes }, totalPoints },
+    points: totalPoints,
   };
 }

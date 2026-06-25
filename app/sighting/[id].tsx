@@ -11,6 +11,7 @@ import { DisputeBox } from '@/components/DisputeBox';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
+import { SCIENCE_QUESTIONS, answerLabel } from '@/lib/scienceQuestions';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import type { IdStatus } from '@/types';
@@ -132,6 +133,9 @@ export default function SightingDetail() {
             {sighting.score.bonuses.firstOfSpecies > 0 && (
               <Row label="First of species" value={`+${sighting.score.bonuses.firstOfSpecies}`} />
             )}
+            {(sighting.score.bonuses.fieldNotes ?? 0) > 0 && (
+              <Row label="Field notes" value={`+${sighting.score.bonuses.fieldNotes}`} />
+            )}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>{sighting.points} pts</Text>
@@ -150,6 +154,15 @@ export default function SightingDetail() {
           />
           {hasLoc && <Text style={styles.privacyNote}>Approximate — your precise location stays private to you.</Text>}
         </Card>
+
+        {sighting.science && Object.keys(sighting.science).length > 0 && (
+          <Card style={styles.block}>
+            <Text style={styles.blockTitle}>Field notes</Text>
+            {SCIENCE_QUESTIONS.filter((q) => sighting.science![q.id]).map((q) => (
+              <Row key={q.id} label={q.prompt} value={answerLabel(q.id, sighting.science![q.id])} />
+            ))}
+          </Card>
+        )}
 
         {sighting.source === 'mock' && <DemoNotice compact reason={sighting.note} />}
 
