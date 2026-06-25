@@ -87,12 +87,13 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
   });
   if (!resp.ok) {
-    // Surface the server's reason (e.g. "ANTHROPIC_API_KEY is not set") so the
-    // app can tell the user why it fell back to the demo identifier.
+    // Surface the server's reason (e.g. the real Anthropic API error) so the app
+    // can tell the user why it fell back to the demo identifier. Prefer `detail`
+    // (the specific cause) over `error` (a generic label).
     let detail = '';
     try {
       const e = await resp.json();
-      detail = e?.error || e?.detail || '';
+      detail = e?.detail || e?.error || '';
     } catch {
       // body wasn't JSON; the status code alone is the signal
     }
