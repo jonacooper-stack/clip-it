@@ -116,6 +116,59 @@ area — **without revealing where animals are.**
   columns; precise geo stays in the private `sightings` table behind RLS.
 - Ship the share-card + feed UI here; precise-map features remain Phase 3.
 
+## Backlog — feature ideas (to prioritize)
+
+Captured for later prioritization. Each notes roughly which phase it fits and any
+dependency. Nothing here is committed yet.
+
+### A. "Between spots" quiz / learning game — *engagement; standalone Learn surface or Phase 2*
+A lightweight trivia game about animals, habitats, and behavior to play during
+downtime — e.g. driving between sites in Yellowstone. Reinforces the educational
+mission and keeps people engaged when they can't capture.
+- Personalize from the species the player has already collected, plus regional
+  species for where they are. Offline-friendly (no capture needed).
+- Could award small XP / streak credit (kept separate from capture points so it
+  can't be farmed). Content pipeline: curated facts per species (AI-drafted,
+  human-reviewed).
+
+### B. Social feed wall — *Phase 2 social; gated by Phase 3 location privacy*
+Expands the **Community sightings feed** item above: a scrollable wall of other
+people's clips showing the **photo, species, a short note, and the points they
+earned**. Same de-identification rules apply (never expose precise location;
+sensitive species suppressed; opt-in per clip). Reactions / follows come later.
+
+### C. Leaderboard — *Phase 2 social*
+Compare your points / collection against others — global, friends, regional, and
+time-boxed (weekly / seasonal).
+- **Anti-cheat dependency:** leaderboards create a reason to cheat, so the
+  cheat-detection / "verified catch" work (item 2 above) should land alongside,
+  and leaderboard standing should ideally count **verified** catches only.
+- Privacy: display names/handles only, never location.
+
+### D. Timed events / challenges + badges — *Phase 2 engagement*
+Time-boxed goals: photograph a set of animals within a window. Example —
+"Yellowstone Day: capture the park's headline species (bison, elk, wolf, bear,
+bald eagle…) in 24h" → earn a badge.
+- Needs: an **event definition** (location-scoped species checklist + time window
+  + reward), progress tracking against the player's eligible sightings, and a
+  **badge / achievement system** (new). Regional species lists lean on the
+  rarity/region schema work already planned.
+- Strong fit for trips and park partnerships; pairs naturally with the feed and
+  leaderboard.
+
+### E. Freemium specifics — ads vs unlimited — *Phase 4 monetization*
+Concrete shape for the free vs paid split:
+- **Free:** rate-limited capture — e.g. an interstitial ad after every 3 photos,
+  or a daily cap, with an upgrade prompt when the limit is hit.
+- **Premium:** unlimited captures, no ads (bundled with the verified-catch badge,
+  the map, and other paid features).
+- **Implementation:** a capture counter + paywall gate; an ad SDK (e.g. AdMob)
+  for free; store billing / IAP (App Store + Play, e.g. via RevenueCat) for
+  premium entitlement.
+- ⚠️ **Kids + ads:** under-13 / COPPA accounts must not get behavioral ads —
+  plan non-personalized ads or an ad-free child experience. Decide this before
+  wiring any ad SDK.
+
 ## How we'll verify the MVP works
 
 **Technical acceptance (end-to-end):** on a real phone — sign in → set up a child profile
