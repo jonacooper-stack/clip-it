@@ -47,8 +47,29 @@ export default function Identifying() {
 
       if (cancelled.current) return;
 
-      if (!outcome.animalPresent) {
-        updateSighting(id, { idStatus: 'rejected', caption: outcome.caption, source: outcome.source });
+      // Nothing identifiable at all → rejected.
+      if (!outcome.present) {
+        updateSighting(id, {
+          idStatus: 'rejected',
+          caption: outcome.caption,
+          source: outcome.source,
+          note: outcome.note,
+        });
+        router.replace(`/capture/result?id=${id}`);
+        return;
+      }
+
+      // Identified, but a pet / person / object → show the ID, but it doesn't score.
+      if (!outcome.eligible) {
+        updateSighting(id, {
+          idStatus: 'ineligible',
+          species: outcome.species,
+          caption: outcome.caption,
+          dangerous: outcome.dangerous,
+          ineligibleReason: outcome.ineligibleReason,
+          source: outcome.source,
+          note: outcome.note,
+        });
         router.replace(`/capture/result?id=${id}`);
         return;
       }

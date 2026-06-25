@@ -17,27 +17,28 @@ const MODEL = 'claude-opus-4-8';
 const SCENE_TAG_CODES = ['with_young', 'predation', 'in_flight', 'courtship', 'group_herd'] as const;
 
 const SYSTEM_PROMPT =
-  'You are a wildlife identification assistant for a citizen-science photography game. ' +
-  'Given a photo, identify the single most prominent wild animal: its scientific name and ' +
-  'common name, with a calibrated confidence in [0,1]. Also estimate how rare the animal is on ' +
-  'a 0..1 scale (0 = very common like a pigeon or gray squirrel, 1 = very rare). Report notable ' +
-  'behavior/scene tags from the allowed set, a one-line caption, whether the animal could be ' +
-  'dangerous to a person who approached it, and whether a human should review your answer ' +
-  '(needsReview true when confidence is low, the species is a hard-to-distinguish look-alike, or ' +
-  'the scene is ambiguous). If there is no wild animal (for example a person, pet, vehicle, food, ' +
-  'or empty scene), set animalPresent false and leave the names empty. A human selfie is NOT a ' +
-  'wild animal. Never guess a precise species when unsure — lower the confidence instead.\n\n' +
+  'You are the identifier for a wildlife photography game. Look at the photo and identify the ' +
+  'single most prominent subject — whether it is a wild animal, a domestic pet, or a person. ' +
+  'ALWAYS identify what you see, so the player knows the camera works, then judge whether it is ' +
+  'eligible to score. Only WILD animals earn points. Domestic pets (dogs, cats, rabbits, etc.), ' +
+  'humans, and anything that is not a living animal do NOT earn points. Never guess a precise ' +
+  'species when unsure — lower the confidence instead.\n\n' +
   'Respond with ONLY a single minified JSON object — no markdown, no code fences, no prose before ' +
   'or after. It must have exactly these keys:\n' +
-  '  animalPresent (boolean)\n' +
-  '  scientificName (string, "" if no animal)\n' +
-  '  commonName (string, "" if no animal)\n' +
-  '  confidence (number 0..1)\n' +
-  '  rarityScore (number 0..1)\n' +
+  '  present (boolean): true if there is any identifiable animal or person; false only if there is ' +
+  'no animal or person at all (a wall, scenery, food, an object, an empty frame)\n' +
+  '  category (string): one of "wild_animal", "pet", "human", "other"\n' +
+  '  commonName (string): what it is, e.g. "White-tailed deer", "Domestic dog", "Person" ("" only if present is false)\n' +
+  '  scientificName (string): scientific name for any animal including pets (e.g. "Canis lupus familiaris"); "" for a human or when not applicable\n' +
+  '  confidence (number 0..1): how sure you are of the identification\n' +
+  '  rarityScore (number 0..1): for wild animals only (0 = very common like a pigeon, 1 = very rare); 0 otherwise\n' +
   `  sceneTags (array of strings, each one of: ${SCENE_TAG_CODES.join(', ')})\n` +
-  '  caption (string)\n' +
-  '  dangerous (boolean)\n' +
-  '  needsReview (boolean)';
+  '  caption (string): one friendly sentence about the subject\n' +
+  '  dangerous (boolean): could this animal hurt someone who approached it\n' +
+  '  needsReview (boolean): true when confidence is low or it is a hard-to-distinguish look-alike\n' +
+  '  ineligibleReason (string): when category is not "wild_animal", a short friendly reason such as ' +
+  '"Domestic pets don\'t count — point the camera at a wild animal to score." or "People don\'t ' +
+  'count — go find some wildlife!"; "" for a wild animal';
 
 const clamp01 = (n: number) => (Number.isNaN(n) ? 0 : Math.min(Math.max(n, 0), 1));
 
@@ -103,29 +104,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const textBlock = (response.content as any[]).find((b) => b.type === 'text' && 'text' in b);
     const parsed = parseModelJson(textBlock?.text ?? '');
 
+    const category = (['wild_animal', 'pet', 'human', 'other'] as const).includes(parsed.category)
+      ? (parsed.category as 'wild_animal' | 'pet' | 'human' | 'other')
+      : 'other';
+    const present = Boolean(parsed.present) && Boolean(parsed.commonName);
+    const eligible = present && category === 'wild_animal' && Boolean(parsed.scientificName);
+
     const sceneTags: string[] = Array.isArray(parsed.sceneTags)
       ? parsed.sceneTags.filter((t: string) => (SCENE_TAG_CODES as readonly string[]).includes(t))
       : [];
     const confidence = clamp01(Number(parsed.confidence));
-    const animalPresent = Boolean(parsed.animalPresent) && Boolean(parsed.scientificName);
     const needsReview =
       Boolean(parsed.needsReview) ||
       confidence < 0.75 ||
       sceneTags.includes('predation') ||
       Boolean(parsed.dangerous);
 
+    // Three outcomes: a scoreable wild animal, something identified-but-ineligible
+    // (a pet or person), or nothing identifiable at all.
+    const idStatus = !present
+      ? 'rejected'
+      : !eligible
+        ? 'ineligible'
+        : needsReview
+          ? 'needs_review'
+          : 'ai_confident';
+
     return res.status(200).json({
-      animalPresent,
+      present,
+      eligible,
+      category,
       species: {
         scientificName: parsed.scientificName ?? '',
         commonName: parsed.commonName ?? '',
         confidence,
       },
-      rarityScore: clamp01(Number(parsed.rarityScore)),
-      sceneTags,
+      rarityScore: eligible ? clamp01(Number(parsed.rarityScore)) : 0,
+      sceneTags: eligible ? sceneTags : [],
       caption: typeof parsed.caption === 'string' ? parsed.caption : '',
       dangerous: Boolean(parsed.dangerous),
-      idStatus: needsReview ? 'needs_review' : 'ai_confident',
+      idStatus,
+      ineligibleReason: typeof parsed.ineligibleReason === 'string' ? parsed.ineligibleReason : '',
       modelVersion: (response as any).model ?? MODEL,
     });
   } catch (err: any) {

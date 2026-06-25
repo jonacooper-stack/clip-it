@@ -37,17 +37,21 @@ export const useJournalStore = create<JournalState>()(
   ),
 );
 
+// Sightings that don't count toward the journal or score: no animal, or an
+// identified-but-ineligible subject (a pet or a person).
+const UNCOUNTED: ReadonlySet<string> = new Set(['rejected', 'ineligible']);
+
 // Derived selectors (compute in components from `sightings` for reactivity).
 export function totalPoints(sightings: Sighting[]): number {
   return sightings
-    .filter((s) => s.idStatus !== 'rejected' && typeof s.points === 'number')
+    .filter((s) => !UNCOUNTED.has(s.idStatus) && typeof s.points === 'number')
     .reduce((sum, s) => sum + (s.points ?? 0), 0);
 }
 
 export function distinctSpecies(sightings: Sighting[]): Sighting[] {
   const byName = new Map<string, Sighting>();
   for (const s of sightings) {
-    if (!s.species || s.idStatus === 'rejected') continue;
+    if (!s.species || UNCOUNTED.has(s.idStatus)) continue;
     if (!byName.has(s.species.scientificName)) byName.set(s.species.scientificName, s);
   }
   return [...byName.values()];

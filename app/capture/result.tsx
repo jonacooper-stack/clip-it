@@ -31,6 +31,12 @@ export default function Result() {
     if (id) removeSighting(id);
     router.replace('/');
   };
+  // Rejected / ineligible sightings aren't kept in the journal, so drop the record
+  // on the way out instead of letting photos pile up in storage.
+  const retry = () => {
+    if (id) removeSighting(id);
+    router.replace('/capture/camera');
+  };
 
   if (!sighting) {
     return (
@@ -45,13 +51,54 @@ export default function Result() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.rejected}>
           <Text style={styles.rejEmoji}>🤔</Text>
-          <Text style={styles.rejTitle}>No animal spotted</Text>
+          <Text style={styles.rejTitle}>Nothing to identify</Text>
           <Text style={styles.rejText}>
-            We couldn't find a wild animal in that photo. Try getting it clearly in frame.
+            We couldn't find an animal or person in that photo. Try getting your subject clearly in
+            frame.
           </Text>
-          <Button label="Try again" icon="camera" onPress={() => router.replace('/capture/camera')} />
-          <Button label="Back home" variant="ghost" onPress={done} style={styles.rejBack} />
+          <Button label="Try again" icon="camera" onPress={retry} />
+          <Button label="Back home" variant="ghost" onPress={discard} style={styles.rejBack} />
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Identified, but not a wild animal (a pet or a person). Show the ID so the player
+  // sees the identifier works, and explain why it doesn't score.
+  if (sighting.idStatus === 'ineligible') {
+    const confidence = sighting.species?.confidence ?? 0;
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <TopoBackground color={colors.primary} opacity={0.05} />
+        <View style={styles.topBar}>
+          <Pressable onPress={discard} style={styles.closeBtn} hitSlop={8}>
+            <Ionicons name="close" size={26} color={colors.text} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {sighting.photoUri && (
+            <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+          )}
+          <Text style={styles.bestGuess}>NOT ELIGIBLE</Text>
+          <Text style={styles.common}>{sighting.species?.commonName ?? 'Unknown'}</Text>
+          {sighting.species?.scientificName ? (
+            <Text style={styles.sci}>{sighting.species.scientificName}</Text>
+          ) : null}
+          <View style={styles.confidenceWrap}>
+            <ConfidenceBadge confidence={confidence} />
+          </View>
+          <Card style={styles.ineligibleCard}>
+            <Text style={styles.ineligibleText}>
+              {sighting.ineligibleReason || "Only wild animals earn points — this one doesn't count."}
+            </Text>
+            <Text style={styles.ineligibleSub}>
+              The identifier is working — it just doesn't score toward your collection.
+            </Text>
+          </Card>
+          {sighting.source === 'mock' && <DemoNotice reason={sighting.note} />}
+          <Button label="Try again" icon="camera" onPress={retry} style={styles.doneBtn} />
+          <Button label="Back home" variant="ghost" onPress={discard} style={styles.rejBack} />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -220,4 +267,13 @@ const styles = StyleSheet.create({
   rejTitle: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   rejText: { fontSize: font.body, color: colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: spacing.lg },
   rejBack: { marginTop: spacing.sm },
+  ineligibleCard: {
+    width: '100%',
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.claySoft,
+    borderColor: colors.claySoft,
+  },
+  ineligibleText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.clay, lineHeight: 22 },
+  ineligibleSub: { fontSize: font.small, color: colors.text, opacity: 0.7, marginTop: spacing.xs, lineHeight: 20 },
 });

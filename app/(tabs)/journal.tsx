@@ -14,7 +14,12 @@ export default function Journal() {
   const species = useMemo(() => distinctSpecies(sightings), [sightings]);
 
   const countFor = (name?: string) =>
-    sightings.filter((s) => s.species?.scientificName === name && s.idStatus !== 'rejected').length;
+    sightings.filter(
+      (s) =>
+        s.species?.scientificName === name &&
+        s.idStatus !== 'rejected' &&
+        s.idStatus !== 'ineligible',
+    ).length;
   const bestFor = (name?: string) =>
     sightings
       .filter((s) => s.species?.scientificName === name)

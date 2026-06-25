@@ -21,6 +21,7 @@ const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   needs_review: { label: 'Pending review', color: colors.accentInk, bg: colors.accentSoft },
   human_confirmed: { label: 'Confirmed', color: colors.primaryDark, bg: colors.primarySoft },
   disputed: { label: 'In review', color: colors.accentInk, bg: colors.accentSoft },
+  ineligible: { label: 'Not eligible', color: colors.clay, bg: colors.claySoft },
   rejected: { label: 'No animal', color: colors.danger, bg: colors.dangerSoft },
 };
 

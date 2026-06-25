@@ -6,6 +6,7 @@ export type IdStatus =
   | 'needs_review'
   | 'human_confirmed'
   | 'disputed'
+  | 'ineligible'
   | 'rejected';
 
 export interface ScoreBreakdown {
@@ -48,6 +49,8 @@ export interface Sighting {
   source?: IdSource;
   /** Why a demo/mock result was used (e.g. the AI endpoint error), for diagnostics. */
   note?: string;
+  /** When idStatus is 'ineligible', why it doesn't score (e.g. pets/people don't count). */
+  ineligibleReason?: string;
 }
 
 export interface Quest {

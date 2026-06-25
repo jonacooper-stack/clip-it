@@ -20,7 +20,14 @@ export interface IdentifyInput {
 }
 
 export interface IdentifyOutcome {
-  animalPresent: boolean;
+  /** Any identifiable subject (wild animal, pet, or person). False => nothing to show. */
+  present: boolean;
+  /** A wild animal that actually scores. False for pets/people/objects. */
+  eligible: boolean;
+  /** 'wild_animal' | 'pet' | 'human' | 'other'. */
+  category?: string;
+  /** When not eligible, a friendly reason it doesn't count. */
+  ineligibleReason?: string;
   species?: SpeciesGuess;
   /** Present from the mock/endpoint so the client can score; absent when the server already scored. */
   rarityScore?: number;
@@ -64,11 +71,14 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     note = 'No photo was captured to send to the AI.';
   }
 
-  // Offline / dev fallback.
+  // Offline / dev fallback. The mock can't see the photo, so it always returns an
+  // eligible wild animal.
   await delay(1500 + Math.random() * 900);
   const m = mockIdentify();
   return {
-    animalPresent: m.animalPresent,
+    present: true,
+    eligible: m.animalPresent,
+    category: 'wild_animal',
     species: m.species,
     rarityScore: m.rarityScore,
     sceneTags: m.sceneTags,
@@ -101,7 +111,10 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
   }
   const data = await resp.json();
   return {
-    animalPresent: Boolean(data.animalPresent),
+    present: Boolean(data.present),
+    eligible: Boolean(data.eligible),
+    category: typeof data.category === 'string' ? data.category : undefined,
+    ineligibleReason: typeof data.ineligibleReason === 'string' ? data.ineligibleReason : undefined,
     species: data.species as SpeciesGuess | undefined,
     rarityScore: typeof data.rarityScore === 'number' ? data.rarityScore : undefined,
     sceneTags: Array.isArray(data.sceneTags) ? data.sceneTags : [],
@@ -151,7 +164,9 @@ async function identifyViaBackend(input: IdentifyInput): Promise<IdentifyOutcome
   if (fnErr) throw fnErr;
 
   return {
-    animalPresent: data.status !== 'rejected',
+    present: data.status !== 'rejected',
+    eligible: data.status !== 'rejected',
+    category: 'wild_animal',
     species: data.species,
     sceneTags: data.sceneTags ?? [],
     caption: data.caption ?? '',
