@@ -2,7 +2,7 @@ import { Pressable, Text, StyleSheet, ViewStyle, ActivityIndicator } from 'react
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, font, fonts } from '@/theme';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 
 interface Props {
   label: string;
@@ -11,10 +11,23 @@ interface Props {
   icon?: keyof typeof Ionicons.glyphMap;
   disabled?: boolean;
   loading?: boolean;
+  size?: 'md' | 'lg';
   style?: ViewStyle;
 }
 
-export function Button({ label, onPress, variant = 'primary', icon, disabled, loading, style }: Props) {
+// Tactile "press-down" button: a solid face sitting on a darker bottom lip, so it
+// reads as a physical, satisfying control (Duolingo/Strava energy). Pressing sinks
+// the face onto the lip.
+export function Button({
+  label,
+  onPress,
+  variant = 'primary',
+  icon,
+  disabled,
+  loading,
+  size = 'lg',
+  style,
+}: Props) {
   const v = VARIANTS[variant];
   return (
     <Pressable
@@ -22,7 +35,9 @@ export function Button({ label, onPress, variant = 'primary', icon, disabled, lo
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
-        { backgroundColor: v.bg, borderColor: v.border },
+        size === 'md' && styles.md,
+        { backgroundColor: v.bg, borderBottomColor: v.lip },
+        v.outline && styles.outline,
         pressed && styles.pressed,
         (disabled || loading) && styles.disabled,
         style,
@@ -32,19 +47,25 @@ export function Button({ label, onPress, variant = 'primary', icon, disabled, lo
         <ActivityIndicator color={v.fg} />
       ) : (
         <>
-          {icon && <Ionicons name={icon} size={18} color={v.fg} style={styles.icon} />}
-          <Text style={[styles.label, { color: v.fg }]}>{label}</Text>
+          {icon && <Ionicons name={icon} size={20} color={v.fg} style={styles.icon} />}
+          <Text style={[styles.label, size === 'md' && styles.labelMd, { color: v.fg }]}>
+            {label}
+          </Text>
         </>
       )}
     </Pressable>
   );
 }
 
-const VARIANTS: Record<Variant, { bg: string; fg: string; border: string }> = {
-  primary: { bg: colors.primary, fg: colors.white, border: colors.primary },
-  secondary: { bg: colors.primarySoft, fg: colors.primaryDark, border: colors.primarySoft },
-  ghost: { bg: 'transparent', fg: colors.primaryDark, border: colors.border },
-  danger: { bg: colors.dangerSoft, fg: colors.danger, border: colors.dangerSoft },
+const VARIANTS: Record<
+  Variant,
+  { bg: string; fg: string; lip: string; outline?: boolean }
+> = {
+  primary: { bg: colors.primary, fg: colors.white, lip: colors.primaryDarker },
+  accent: { bg: colors.accent, fg: colors.white, lip: colors.accentDark },
+  secondary: { bg: colors.primarySoft, fg: colors.primaryDark, lip: colors.primaryEdge },
+  ghost: { bg: colors.surface, fg: colors.primaryDark, lip: colors.border, outline: true },
+  danger: { bg: colors.danger, fg: colors.white, lip: '#8C2C20' },
 };
 
 const styles = StyleSheet.create({
@@ -52,13 +73,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
+    paddingVertical: 16,
     paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    borderRadius: radius.lg,
+    borderBottomWidth: 4,
+    minHeight: 56,
   },
-  pressed: { opacity: 0.85 },
-  disabled: { opacity: 0.5 },
+  md: { paddingVertical: 12, minHeight: 48, borderRadius: radius.md },
+  outline: { borderWidth: 1.5, borderColor: colors.border },
+  pressed: { transform: [{ translateY: 2 }], borderBottomWidth: 2, opacity: 0.96 },
+  disabled: { opacity: 0.45 },
   icon: { marginRight: spacing.sm },
-  label: { fontSize: font.body, fontFamily: fonts.heading, letterSpacing: 0.4 },
+  label: {
+    fontSize: font.body + 1,
+    fontFamily: fonts.heading,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  labelMd: { fontSize: font.body },
 });

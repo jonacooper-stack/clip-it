@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { View, Pressable, StyleSheet, ViewStyle } from 'react-native';
-import { colors, radius, spacing } from '@/theme';
+import { colors, radius, spacing, shadow } from '@/theme';
 
 interface Props {
   children: ReactNode;
@@ -28,12 +28,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    shadowColor: colors.pine,
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    padding: spacing.lg,
+    ...shadow.soft,
   },
-  pressed: { opacity: 0.9 },
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.96 },
 });
