@@ -8,6 +8,8 @@ import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
 import { TopoBackground } from '@/components/TopoBackground';
+import { ConfidenceBadge } from '@/components/ConfidenceBadge';
+import { DemoNotice } from '@/components/DemoNotice';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 
@@ -48,7 +50,8 @@ export default function Result() {
   }
 
   const pending = sighting.idStatus === 'needs_review';
-  const confidencePct = Math.round((sighting.species?.confidence ?? 0) * 100);
+  const confidence = sighting.species?.confidence ?? 0;
+  const lowConf = confidence < 0.6;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -72,11 +75,13 @@ export default function Result() {
           )}
         </Animated.View>
 
+        {(lowConf || pending) && <Text style={styles.bestGuess}>BEST GUESS</Text>}
         <Text style={styles.common}>{sighting.species?.commonName}</Text>
         <Text style={styles.sci}>{sighting.species?.scientificName}</Text>
-        <Text style={styles.confidence}>
-          {confidencePct}% confidence{pending ? ' · a human will confirm' : ''}
-        </Text>
+        <View style={styles.confidenceWrap}>
+          <ConfidenceBadge confidence={confidence} />
+        </View>
+        {pending && <Text style={styles.reviewNote}>A human will double-check this one.</Text>}
 
         {sighting.sceneTags.length > 0 && (
           <View style={styles.tags}>
@@ -113,6 +118,8 @@ export default function Result() {
           </Card>
         )}
 
+        {sighting.source === 'mock' && <DemoNotice />}
+
         <DisputeBox sighting={sighting} />
 
         <Button label="Add to my journal" icon="checkmark" onPress={done} style={styles.doneBtn} />
@@ -142,7 +149,9 @@ const styles = StyleSheet.create({
   pendingLabel: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
   common: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, textAlign: 'center' },
   sci: { fontSize: font.body, fontStyle: 'italic', color: colors.faint, textAlign: 'center', marginTop: 2 },
-  confidence: { fontSize: font.small, color: colors.muted, marginTop: spacing.xs, textAlign: 'center' },
+  bestGuess: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: colors.clay, letterSpacing: 1.5, marginBottom: 2, textAlign: 'center' },
+  confidenceWrap: { marginTop: spacing.sm },
+  reviewNote: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: spacing.sm },
   danger: { backgroundColor: colors.dangerSoft, borderColor: colors.dangerSoft, marginTop: spacing.lg, width: '100%' },
   dangerTitle: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.danger, marginBottom: spacing.xs },

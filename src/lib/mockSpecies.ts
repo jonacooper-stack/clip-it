@@ -68,7 +68,9 @@ export function mockIdentify(): MockOutcome {
   else if (species.commonName === 'Red fox' && roll < 0.25) tags.push('predation');
   else if (species.commonName === 'White-tailed deer' && roll < 0.3) tags.push('group_herd');
 
-  const confidence = Number((0.62 + Math.random() * 0.36).toFixed(2));
+  // The offline demo can't actually see the photo, so it must not pretend to be
+  // certain. Keep confidence modest (low–medium) and always route through review.
+  const confidence = Number((0.42 + Math.random() * 0.31).toFixed(2));
   const requiresReview = tags.some((t) => SCENE_TAGS[t]?.requiresReview);
   const needsReview = confidence < 0.75 || requiresReview || Boolean(species.dangerous);
 

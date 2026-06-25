@@ -34,7 +34,7 @@ export default function Identifying() {
       });
 
       if (!outcome.animalPresent) {
-        updateSighting(id, { idStatus: 'rejected' });
+        updateSighting(id, { idStatus: 'rejected', caption: outcome.caption, source: outcome.source });
         router.replace(`/capture/result?id=${id}`);
         return;
       }
@@ -62,6 +62,7 @@ export default function Identifying() {
         dangerous: outcome.dangerous,
         points,
         score,
+        source: outcome.source,
       });
       registerActivity();
       router.replace(`/capture/result?id=${id}`);

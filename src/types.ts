@@ -26,6 +26,9 @@ export interface SpeciesGuess {
   confidence: number; // 0..1
 }
 
+/** Where an identification came from, so the UI can be honest about demo guesses. */
+export type IdSource = 'ai' | 'mock' | 'backend';
+
 export interface Sighting {
   id: string;
   createdAt: number;
@@ -42,6 +45,7 @@ export interface Sighting {
   score?: ScoreBreakdown;
   dangerous?: boolean;
   proposedSpecies?: string;
+  source?: IdSource;
 }
 
 export interface Quest {

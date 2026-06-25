@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
+import { ConfidenceBadge } from '@/components/ConfidenceBadge';
+import { DemoNotice } from '@/components/DemoNotice';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import type { IdStatus } from '@/types';
@@ -24,6 +28,13 @@ export default function SightingDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
+  const removeSighting = useJournalStore((s) => s.removeSighting);
+  const [confirming, setConfirming] = useState(false);
+
+  const onRemove = () => {
+    if (id) removeSighting(id);
+    router.back();
+  };
 
   if (!sighting) {
     return (
@@ -40,8 +51,34 @@ export default function SightingDetail() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <Header onBack={() => router.back()} />
+      <Header onBack={() => router.back()} onDelete={() => setConfirming(true)} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {confirming && (
+          <Card style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>Remove this sighting?</Text>
+            <Text style={styles.confirmText}>
+              This permanently deletes the photo and its points from your journal.
+            </Text>
+            <View style={styles.confirmRow}>
+              <Button
+                label="Cancel"
+                variant="ghost"
+                size="md"
+                onPress={() => setConfirming(false)}
+                style={styles.confirmBtn}
+              />
+              <Button
+                label="Remove"
+                variant="danger"
+                size="md"
+                icon="trash"
+                onPress={onRemove}
+                style={styles.confirmBtn}
+              />
+            </View>
+          </Card>
+        )}
+
         {sighting.photoUri ? (
           <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
         ) : (
@@ -59,6 +96,12 @@ export default function SightingDetail() {
             <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
           </View>
         </View>
+
+        {sighting.species && (
+          <View style={styles.confidenceRow}>
+            <ConfidenceBadge confidence={sighting.species.confidence} size="sm" />
+          </View>
+        )}
 
         {sighting.caption ? <Text style={styles.caption}>{sighting.caption}</Text> : null}
 
@@ -99,20 +142,28 @@ export default function SightingDetail() {
           {hasLoc && <Text style={styles.privacyNote}>Approximate — your precise location stays private to you.</Text>}
         </Card>
 
+        {sighting.source === 'mock' && <DemoNotice compact />}
+
         <DisputeBox sighting={sighting} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Header({ onBack }: { onBack: () => void }) {
+function Header({ onBack, onDelete }: { onBack: () => void; onDelete?: () => void }) {
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} style={styles.backBtn} hitSlop={8}>
         <Ionicons name="chevron-back" size={26} color={colors.text} />
       </Pressable>
       <Text style={styles.headerTitle}>Sighting</Text>
-      <View style={styles.backBtn} />
+      {onDelete ? (
+        <Pressable onPress={onDelete} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="trash-outline" size={22} color={colors.danger} />
+        </Pressable>
+      ) : (
+        <View style={styles.backBtn} />
+      )}
     </View>
   );
 }
@@ -153,6 +204,12 @@ const styles = StyleSheet.create({
   titleText: { flex: 1, paddingRight: spacing.md },
   common: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   sci: { fontSize: font.body, fontStyle: 'italic', color: colors.faint, marginTop: 2 },
+  confidenceRow: { flexDirection: 'row', marginTop: spacing.md },
+  confirmCard: { marginBottom: spacing.lg, backgroundColor: colors.dangerSoft, borderColor: colors.dangerSoft },
+  confirmTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.danger, marginBottom: spacing.xs },
+  confirmText: { fontSize: font.small, color: colors.danger, lineHeight: 20, marginBottom: spacing.md },
+  confirmRow: { flexDirection: 'row', gap: spacing.sm },
+  confirmBtn: { flex: 1 },
   statusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm + 2, paddingVertical: 4 },
   statusText: { fontSize: font.tiny, fontFamily: fonts.bodyBold },
   caption: { fontSize: font.body, color: colors.muted, marginTop: spacing.sm, lineHeight: 22 },

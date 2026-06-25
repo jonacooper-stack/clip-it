@@ -9,6 +9,7 @@ interface JournalState {
   setHasHydrated: (v: boolean) => void;
   addSighting: (s: Sighting) => void;
   updateSighting: (id: string, patch: Partial<Sighting>) => void;
+  removeSighting: (id: string) => void;
   reset: () => void;
 }
 
@@ -23,6 +24,8 @@ export const useJournalStore = create<JournalState>()(
         set((st) => ({
           sightings: st.sightings.map((s) => (s.id === id ? { ...s, ...patch } : s)),
         })),
+      removeSighting: (id) =>
+        set((st) => ({ sightings: st.sightings.filter((s) => s.id !== id) })),
       reset: () => set({ sightings: [] }),
     }),
     {

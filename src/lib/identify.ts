@@ -5,7 +5,7 @@
 // the app never gets stuck.
 
 import { Platform } from 'react-native';
-import type { IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
+import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
 
@@ -31,6 +31,8 @@ export interface IdentifyOutcome {
   /** Present when a server scored it. */
   points?: number;
   score?: ScoreBreakdown;
+  /** How the identification was produced, so the UI can flag offline demo guesses. */
+  source: IdSource;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +67,7 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     caption: m.caption,
     dangerous: m.dangerous,
     idStatus: m.idStatus,
+    source: 'mock',
   };
 }
 
@@ -84,6 +87,7 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     caption: typeof data.caption === 'string' ? data.caption : '',
     dangerous: Boolean(data.dangerous),
     idStatus: (data.idStatus as IdStatus) ?? 'ai_confident',
+    source: 'ai',
   };
 }
 
@@ -133,6 +137,7 @@ async function identifyViaBackend(input: IdentifyInput): Promise<IdentifyOutcome
     dangerous: Boolean(data.dangerous),
     idStatus: data.status as IdStatus,
     points: data.points ?? undefined,
+    source: 'backend',
   };
 }
 
