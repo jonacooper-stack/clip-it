@@ -67,6 +67,55 @@ broadcasts a location.
    and rock-solid endangered-species handling first — and the day-one schema discipline is
    what makes it cheap when we arrive.
 
+## Field feedback — requested enhancements
+
+Concrete items raised by early testers, with implementation notes, mapped to the
+phases above.
+
+### 1. Birth-year entry — ✅ shipped
+The decade → year picker tested as confusing. Replaced with a single numeric
+four-digit field: numbers only, capped at four digits, validated to a viable
+range (`MIN_YEAR`–`MAX_YEAR`, currently `currentYear − 100` … `currentYear − 4`,
+i.e. ~1926–2022). Live age/bracket readout and an inline out-of-range message.
+See `app/onboarding/age-gate.tsx`.
+
+### 2. Cheat / spoof detection — *premium feature (Phase 4); model signal can ship in Phase 2*
+Testers beat the identifier by photographing **another photo** (a phone screen
+or a print). We want to flag likely fakes. Layered signals, cheapest first:
+
+- **Ask the vision model (do this first — near-zero added cost).** The identify
+  call already sends the photo to Claude. Add a `looksLikeScreenOrPrint`
+  boolean + reason to the JSON schema — the model can often spot a visible
+  bezel/border, screen glare, moiré, or the flatness of a photo-of-a-photo.
+- **Capture provenance.** We already require in-app camera capture. Harden it:
+  block gallery/file-picker uploads on web, sample device motion (gyro /
+  accelerometer) during the shot as a weak liveness signal, and issue a
+  server-trusted capture token so an image can't be replayed to the endpoint.
+- **Image forensics.** Moiré/screen-door detection (FFT), rectangular
+  frame/bezel detection, uniform focus + missing parallax, and EXIF checks
+  (screenshots and re-saves drop camera metadata; sanity-check GPS/time).
+- **Trust score + review.** Combine the signals into a 0–1 authenticity score;
+  low scores route to the existing human-review queue and/or withhold points
+  until verified (verified-vs-unverified is already a planned paid tier).
+- **Gating.** The cheap model signal can run for everyone; the "verified catch"
+  badge and strict enforcement are the paid surface.
+
+### 3. Community sightings feed (de-identified) — *Phase 2 social, gated by the Phase 3 location-privacy model*
+A shared feed of what the community has spotted — species, photo, time, coarse
+area — **without revealing where animals are.**
+
+- **Never expose precise location.** The feed reads from a de-identified
+  projection: no raw lat/lng, EXIF GPS stripped, location shown at most as a
+  coarse region (state / park / heavily-jittered bucket) or hidden entirely.
+- **Sensitive species.** Endangered or poachable species suppress location and
+  fine timing completely (reuse the existing dangerous/sensitive flagging).
+- **Opt-in + controls.** Sharing is opt-in per sighting and reversible; include
+  a report/mute path for moderation.
+- **Backend.** Build on the existing Supabase scaffold (`supabase/`): a
+  public-readable `feed_items` projection with RLS exposing only de-identified
+  columns; precise geo stays in the private `sightings` table behind RLS.
+- Ship the share-card + feed UI here; precise-map features remain Phase 3.
+
 ## How we'll verify the MVP works
 
 **Technical acceptance (end-to-end):** on a real phone — sign in → set up a child profile

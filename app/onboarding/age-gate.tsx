@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
@@ -12,19 +12,6 @@ const CURRENT_YEAR = new Date().getFullYear();
 const MAX_YEAR = CURRENT_YEAR - 4; // youngest we let through the gate
 const MIN_YEAR = CURRENT_YEAR - 100;
 
-const DECADES: number[] = [];
-for (let d = Math.floor(MAX_YEAR / 10) * 10; d >= Math.floor(MIN_YEAR / 10) * 10; d -= 10) {
-  DECADES.push(d);
-}
-
-function yearsInDecade(decade: number): number[] {
-  const out: number[] = [];
-  for (let y = decade; y <= decade + 9; y++) {
-    if (y >= MIN_YEAR && y <= MAX_YEAR) out.push(y);
-  }
-  return out;
-}
-
 function bracketFor(age: number): AgeBracket {
   if (age < 13) return 'under_13';
   if (age < 18) return '13_17';
@@ -34,19 +21,17 @@ function bracketFor(age: number): AgeBracket {
 export default function AgeGate() {
   const router = useRouter();
   const setAge = useAppStore((s) => s.setAge);
-  const [decade, setDecade] = useState<number | null>(null);
-  const [year, setYear] = useState<number | null>(null);
+  const [text, setText] = useState('');
 
-  const age = year ? CURRENT_YEAR - year : null;
+  const year = /^\d{4}$/.test(text) ? Number(text) : null;
+  const valid = year != null && year >= MIN_YEAR && year <= MAX_YEAR;
+  const outOfRange = year != null && !valid; // four digits entered, but not a viable year
+  const age = valid ? CURRENT_YEAR - year! : null;
   const bracket = age != null ? bracketFor(age) : null;
   const isChild = bracket === 'under_13';
 
-  const decadeYears = useMemo(() => (decade != null ? yearsInDecade(decade) : []), [decade]);
-
-  const onPickDecade = (d: number) => {
-    setDecade(d);
-    if (year != null && (year < d || year > d + 9)) setYear(null);
-  };
+  // Numbers only, capped at four digits.
+  const onChangeText = (t: string) => setText(t.replace(/[^0-9]/g, '').slice(0, 4));
 
   const onContinue = () => {
     if (!bracket) return;
@@ -58,59 +43,36 @@ export default function AgeGate() {
     <ScreenContainer scroll>
       <View style={styles.header}>
         <Text style={styles.emoji}>🦉</Text>
-        <Text style={styles.title}>When's your birthday?</Text>
+        <Text style={styles.title}>What year were you born?</Text>
         <Text style={styles.subtitle}>
-          We ask so we can keep the experience age-appropriate. We store your age range, never your
-          full birth date.
+          Type the four digits of your birth year. We store your age range, never your full birth
+          date.
         </Text>
       </View>
 
-      <View style={[styles.readout, year != null && styles.readoutActive]}>
-        <Text style={styles.readoutLabel}>BIRTH YEAR</Text>
-        <Text style={[styles.readoutYear, !year && styles.readoutYearEmpty]}>
-          {year ?? '— — — —'}
-        </Text>
+      <View style={[styles.readout, valid && styles.readoutActive]}>
+        <Text style={[styles.readoutLabel, valid && styles.readoutLabelActive]}>BIRTH YEAR</Text>
+        <TextInput
+          value={text}
+          onChangeText={onChangeText}
+          keyboardType="number-pad"
+          inputMode="numeric"
+          maxLength={4}
+          placeholder="YYYY"
+          placeholderTextColor={colors.faint}
+          style={[styles.input, valid && styles.inputActive, webInputReset]}
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={onContinue}
+          accessibilityLabel="Birth year, four digits"
+        />
         {age != null && (
-          <Text style={styles.readoutAge}>
-            {`You're ${age} · ${bracketLabel(bracket!)}`}
-          </Text>
+          <Text style={styles.readoutAge}>{`You're ${age} · ${bracketLabel(bracket!)}`}</Text>
         )}
       </View>
 
-      <Text style={styles.step}>1 · Decade</Text>
-      <View style={styles.chipWrap}>
-        {DECADES.map((d) => {
-          const selected = d === decade;
-          return (
-            <Pressable
-              key={d}
-              onPress={() => onPickDecade(d)}
-              style={[styles.chip, selected && styles.chipSelected]}
-            >
-              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{`${d}s`}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {decade != null && (
-        <>
-          <Text style={styles.step}>2 · Year</Text>
-          <View style={styles.chipWrap}>
-            {decadeYears.map((y) => {
-              const selected = y === year;
-              return (
-                <Pressable
-                  key={y}
-                  onPress={() => setYear(y)}
-                  style={[styles.yearChip, selected && styles.yearChipSelected]}
-                >
-                  <Text style={[styles.yearText, selected && styles.yearTextSelected]}>{y}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </>
+      {outOfRange && (
+        <Text style={styles.error}>{`Enter a year between ${MIN_YEAR} and ${MAX_YEAR}.`}</Text>
       )}
 
       {isChild && (
@@ -127,7 +89,7 @@ export default function AgeGate() {
         label="Continue"
         icon="arrow-forward"
         onPress={onContinue}
-        disabled={!bracket}
+        disabled={!valid}
         style={styles.cta}
       />
     </ScreenContainer>
@@ -139,6 +101,13 @@ function bracketLabel(b: AgeBracket): string {
   if (b === '13_17') return 'Teen explorer';
   return 'Explorer';
 }
+
+// react-native-web renders TextInput as an <input> that carries a default border
+// and focus outline. Strip both on web only (these keys are no-ops on native).
+const webInputReset: any =
+  Platform.OS === 'web'
+    ? { outlineStyle: 'none', borderWidth: 0, backgroundColor: 'transparent' }
+    : null;
 
 const styles = StyleSheet.create({
   header: { marginTop: spacing.lg, marginBottom: spacing.lg },
@@ -153,7 +122,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   readoutActive: {
     backgroundColor: colors.primaryDark,
@@ -166,61 +135,29 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     color: colors.faint,
   },
-  readoutYear: {
+  readoutLabelActive: { color: colors.primarySoft },
+  input: {
     fontSize: 56,
     fontFamily: fonts.display,
-    color: colors.white,
-    lineHeight: 62,
-    letterSpacing: 2,
+    color: colors.text,
+    lineHeight: 64,
+    letterSpacing: 10,
+    textAlign: 'center',
+    minWidth: 220,
+    paddingVertical: spacing.xs,
   },
-  readoutYearEmpty: { color: colors.faint, letterSpacing: 6 },
-  readoutAge: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.primarySoft },
+  inputActive: { color: colors.white },
+  readoutAge: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.primarySoft, marginTop: spacing.xs },
 
-  step: {
-    fontSize: font.tiny,
+  error: {
+    fontSize: font.small,
     fontFamily: fonts.bodyBold,
-    letterSpacing: 1.5,
-    color: colors.muted,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
+    color: colors.danger,
+    marginBottom: spacing.md,
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  chip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
-  chipTextSelected: { color: colors.white },
-
-  yearChip: {
-    minWidth: 72,
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  yearChipSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-    ...shadow.soft,
-  },
-  yearText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.text },
-  yearTextSelected: { color: colors.white },
 
   childNote: {
+    marginTop: spacing.sm,
     marginBottom: spacing.lg,
     backgroundColor: colors.accentSoft,
     borderColor: colors.accentSoft,
