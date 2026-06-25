@@ -1,8 +1,16 @@
 import { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  Platform,
+  PanResponder,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
@@ -11,12 +19,60 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { newId } from '@/lib/id';
 
+// expo-camera's `zoom` is a normalized 0..1 value, not a true magnification. We
+// show it as 1.0×..MAX× purely as a readout; pinch and the +/- buttons move the
+// normalized value.
+const MAX_ZOOM_X = 8;
+const ZOOM_STEP = 0.1;
+
+function fingerDistance(touches: ReadonlyArray<{ pageX: number; pageY: number }>): number {
+  const dx = touches[0].pageX - touches[1].pageX;
+  const dy = touches[0].pageY - touches[1].pageY;
+  return Math.sqrt(dx * dx + dy * dy) || 1;
+}
+
 export default function CameraScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const camRef = useRef<CameraView>(null);
   const [busy, setBusy] = useState(false);
+  const [facing, setFacing] = useState<CameraType>('back');
+  const [flash, setFlash] = useState<FlashMode>('off');
+  const [zoom, setZoom] = useState(0);
+  const zoomRef = useRef(0);
+  const pinch = useRef<{ dist: number; zoom: number } | null>(null);
   const addSighting = useJournalStore((s) => s.addSighting);
+
+  const applyZoom = (z: number) => {
+    const clamped = Math.min(Math.max(z, 0), 1);
+    zoomRef.current = clamped;
+    setZoom(clamped);
+  };
+
+  // Two-finger pinch to zoom. Claims the gesture only when exactly two fingers are
+  // down, so single-finger taps still reach the shutter and the other buttons.
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
+      onPanResponderGrant: (e) => {
+        const t = e.nativeEvent.touches;
+        if (t.length === 2) pinch.current = { dist: fingerDistance(t), zoom: zoomRef.current };
+      },
+      onPanResponderMove: (e) => {
+        const t = e.nativeEvent.touches;
+        if (t.length === 2 && pinch.current) {
+          const ratio = fingerDistance(t) / pinch.current.dist;
+          applyZoom(pinch.current.zoom + (ratio - 1) * 0.5);
+        }
+      },
+      onPanResponderRelease: () => {
+        pinch.current = null;
+      },
+      onPanResponderTerminate: () => {
+        pinch.current = null;
+      },
+    }),
+  ).current;
 
   // Web fallback: if the browser can't give us a camera, still let the loop run.
   const proceedWithoutCamera = () => {
@@ -64,7 +120,7 @@ export default function CameraScreen() {
     try {
       let photo: { uri?: string; base64?: string } | undefined;
       try {
-        photo = await camRef.current.takePictureAsync({ base64: true, quality: 0.5 });
+        photo = await camRef.current.takePictureAsync({ base64: true, quality: 0.6 });
       } catch {
         // Some browsers can't capture; continue without a photo so the demo loop still completes.
         photo = undefined;
@@ -107,25 +163,61 @@ export default function CameraScreen() {
     }
   };
 
+  const toggleFacing = () => setFacing((f) => (f === 'back' ? 'front' : 'back'));
+  const cycleFlash = () => setFlash((f) => (f === 'off' ? 'auto' : f === 'auto' ? 'on' : 'off'));
+  const flashIcon = flash === 'on' ? 'flash' : flash === 'auto' ? 'flash-outline' : 'flash-off';
+  const zoomLabel = `${(1 + zoom * (MAX_ZOOM_X - 1)).toFixed(1)}×`;
+
   return (
-    <View style={styles.container}>
-      <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="back" />
-      <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
-        <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+    <View style={styles.container} {...panResponder.panHandlers}>
+      <CameraView
+        ref={camRef}
+        style={StyleSheet.absoluteFill}
+        facing={facing}
+        zoom={zoom}
+        flash={flash}
+        autofocus="on"
+      />
+      <SafeAreaView style={styles.overlay} edges={['top', 'bottom']} pointerEvents="box-none">
+        <View style={styles.topBar} pointerEvents="box-none">
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
             <Ionicons name="close" size={26} color={colors.white} />
           </Pressable>
           <View style={styles.reminder}>
-            <Text style={styles.reminderText}>🛡️ Keep your distance — use zoom</Text>
+            <Text style={styles.reminderText}>🛡️ Keep your distance</Text>
           </View>
-          <View style={styles.iconBtn} />
+          <Pressable onPress={cycleFlash} style={styles.iconBtn} hitSlop={8}>
+            <Ionicons
+              name={flashIcon}
+              size={24}
+              color={flash === 'off' ? colors.white : colors.accent}
+            />
+          </Pressable>
         </View>
 
-        <View style={styles.bottomBar}>
-          <Pressable onPress={capture} disabled={busy} style={styles.shutterOuter}>
-            {busy ? <ActivityIndicator color={colors.primary} /> : <View style={styles.shutterInner} />}
-          </Pressable>
-          <Text style={styles.hint}>Frame the animal and tap to capture</Text>
+        <View style={styles.bottomBar} pointerEvents="box-none">
+          <View style={styles.zoomRow} pointerEvents="box-none">
+            <Pressable onPress={() => applyZoom(zoomRef.current - ZOOM_STEP)} style={styles.zoomBtn} hitSlop={6}>
+              <Ionicons name="remove" size={20} color={colors.white} />
+            </Pressable>
+            <Pressable onPress={() => applyZoom(0)} style={styles.zoomPill} hitSlop={6}>
+              <Text style={styles.zoomText}>{zoomLabel}</Text>
+            </Pressable>
+            <Pressable onPress={() => applyZoom(zoomRef.current + ZOOM_STEP)} style={styles.zoomBtn} hitSlop={6}>
+              <Ionicons name="add" size={20} color={colors.white} />
+            </Pressable>
+          </View>
+
+          <View style={styles.shutterRow} pointerEvents="box-none">
+            <View style={styles.sideSlot} />
+            <Pressable onPress={capture} disabled={busy} style={styles.shutterOuter}>
+              {busy ? <ActivityIndicator color={colors.primary} /> : <View style={styles.shutterInner} />}
+            </Pressable>
+            <Pressable onPress={toggleFacing} style={[styles.sideSlot, styles.flipBtn]} hitSlop={8}>
+              <Ionicons name="camera-reverse" size={28} color={colors.white} />
+            </Pressable>
+          </View>
+          <Text style={styles.hint}>Pinch to zoom · tap to capture</Text>
         </View>
       </SafeAreaView>
     </View>
@@ -136,11 +228,63 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   overlay: { flex: 1, justifyContent: 'space-between' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md },
-  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  reminder: { backgroundColor: colors.overlay, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlay,
+  },
+  reminder: {
+    backgroundColor: colors.overlay,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
   reminderText: { color: colors.white, fontSize: font.small, fontFamily: fonts.bodyMedium },
+
   bottomBar: { alignItems: 'center', paddingBottom: spacing.lg },
+  zoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  zoomBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlay,
+  },
+  zoomPill: {
+    minWidth: 64,
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.overlay,
+  },
+  zoomText: { color: colors.white, fontSize: font.body, fontFamily: fonts.bodyBold },
+
+  shutterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: spacing.xxl,
+  },
+  sideSlot: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
+  flipBtn: { borderRadius: 28, backgroundColor: colors.overlay },
   shutterOuter: {
     width: 78,
     height: 78,
@@ -153,6 +297,7 @@ const styles = StyleSheet.create({
   },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.white },
   hint: { color: colors.white, fontSize: font.small, marginTop: spacing.md, fontFamily: fonts.bodyMedium },
+
   permSafe: { flex: 1, backgroundColor: colors.bg },
   permBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   permEmoji: { fontSize: 56, marginBottom: spacing.md },
