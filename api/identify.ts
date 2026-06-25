@@ -41,6 +41,19 @@ const SYSTEM_PROMPT =
 
 const clamp01 = (n: number) => (Number.isNaN(n) ? 0 : Math.min(Math.max(n, 0), 1));
 
+type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+// Detect the real image type from the base64 magic bytes. The client's claimed
+// mediaType is often wrong (the web camera captures PNG but we labelled it JPEG),
+// and Anthropic rejects a media_type that doesn't match the actual bytes.
+function detectMediaType(b64: string): ImageMediaType | null {
+  if (b64.startsWith('/9j/')) return 'image/jpeg';
+  if (b64.startsWith('iVBORw0KGgo')) return 'image/png';
+  if (b64.startsWith('R0lGOD')) return 'image/gif';
+  if (b64.startsWith('UklGR')) return 'image/webp';
+  return null;
+}
+
 // Pull the first balanced-looking JSON object out of the model's text, tolerating
 // stray prose or ```json fences if the model adds them despite instructions.
 function parseModelJson(text: string): any {
@@ -65,8 +78,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Accept either a data: URL or raw base64.
   const marker = imageBase64.indexOf('base64,');
   if (marker !== -1) imageBase64 = imageBase64.slice(marker + 'base64,'.length);
-  const mediaType =
-    (body.mediaType as 'image/jpeg' | 'image/png' | 'image/webp') || 'image/jpeg';
+  // Trust the actual image bytes over the client's claimed type — Anthropic rejects
+  // a media_type that doesn't match the bytes (web camera captures are PNG).
+  const mediaType: ImageMediaType =
+    detectMediaType(imageBase64) ?? ((body.mediaType as ImageMediaType) || 'image/jpeg');
 
   try {
     const client = new Anthropic({ apiKey });

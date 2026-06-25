@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
@@ -13,9 +15,19 @@ export default function Identifying() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const updateSighting = useJournalStore((s) => s.updateSighting);
+  const removeSighting = useJournalStore((s) => s.removeSighting);
   const registerActivity = useAppStore((s) => s.registerActivityToday);
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const ran = useRef(false);
+  const cancelled = useRef(false);
+
+  // Bail out of an in-flight identification: drop the draft and go home. The
+  // async guards on `cancelled` so a late result can't navigate us back.
+  const cancel = () => {
+    cancelled.current = true;
+    if (id) removeSighting(id);
+    router.replace('/');
+  };
 
   useEffect(() => {
     if (ran.current || !id) return;
@@ -32,6 +44,8 @@ export default function Identifying() {
         accuracyM: current?.accuracyM,
         observedAt: current?.observedAt ?? Date.now(),
       });
+
+      if (cancelled.current) return;
 
       if (!outcome.animalPresent) {
         updateSighting(id, { idStatus: 'rejected', caption: outcome.caption, source: outcome.source });
@@ -76,6 +90,11 @@ export default function Identifying() {
         <Image source={{ uri: sighting.photoUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
       ) : null}
       <View style={styles.scrim} />
+      <SafeAreaView style={styles.topSafe} edges={['top']} pointerEvents="box-none">
+        <Pressable onPress={cancel} style={styles.closeBtn} hitSlop={8}>
+          <Ionicons name="close" size={28} color={colors.white} />
+        </Pressable>
+      </SafeAreaView>
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.white} />
         <Text style={styles.title}>Identifying…</Text>
@@ -88,6 +107,8 @@ export default function Identifying() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(13,22,16,0.62)' },
+  topSafe: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: spacing.sm },
+  closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   title: { color: colors.white, fontSize: font.title, fontFamily: fonts.heading, marginTop: spacing.lg, letterSpacing: 0.5 },
   sub: { color: 'rgba(255,255,255,0.85)', fontSize: font.body, marginTop: spacing.sm, textAlign: 'center' },

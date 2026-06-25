@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
@@ -17,6 +18,8 @@ export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
+  const removeSighting = useJournalStore((s) => s.removeSighting);
+  const [confirming, setConfirming] = useState(false);
 
   const scale = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
@@ -24,6 +27,10 @@ export default function Result() {
   }, [scale]);
 
   const done = () => router.replace('/');
+  const discard = () => {
+    if (id) removeSighting(id);
+    router.replace('/');
+  };
 
   if (!sighting) {
     return (
@@ -56,7 +63,36 @@ export default function Result() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <TopoBackground color={colors.primary} opacity={0.05} />
+      <View style={styles.topBar}>
+        <Pressable onPress={() => setConfirming(true)} style={styles.closeBtn} hitSlop={8}>
+          <Ionicons name="close" size={26} color={colors.text} />
+        </Pressable>
+      </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {confirming && (
+          <Card style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>Discard this sighting?</Text>
+            <Text style={styles.confirmText}>It won’t be saved to your journal.</Text>
+            <View style={styles.confirmRow}>
+              <Button
+                label="Cancel"
+                variant="ghost"
+                size="md"
+                onPress={() => setConfirming(false)}
+                style={styles.confirmBtn}
+              />
+              <Button
+                label="Discard"
+                variant="danger"
+                size="md"
+                icon="trash"
+                onPress={discard}
+                style={styles.confirmBtn}
+              />
+            </View>
+          </Card>
+        )}
+
         {sighting.photoUri && (
           <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
         )}
@@ -139,6 +175,13 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingTop: spacing.xs },
+  closeBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  confirmCard: { width: '100%', marginBottom: spacing.lg, backgroundColor: colors.dangerSoft, borderColor: colors.dangerSoft },
+  confirmTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.danger, marginBottom: spacing.xs },
+  confirmText: { fontSize: font.small, color: colors.danger, lineHeight: 20, marginBottom: spacing.md },
+  confirmRow: { flexDirection: 'row', gap: spacing.sm },
+  confirmBtn: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, alignItems: 'center' },
   missing: { textAlign: 'center', marginTop: spacing.xxl, color: colors.muted },
   photo: { width: '100%', height: 260, borderRadius: radius.lg, marginBottom: spacing.lg },
