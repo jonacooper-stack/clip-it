@@ -2,6 +2,7 @@
 // mock identifier and this stays null.
 
 import 'react-native-url-polyfill/auto';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
@@ -16,7 +17,9 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         storage: AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: false,
+        // On web, OAuth and email-confirmation links return with the session in
+        // the URL and must be parsed; native restores from AsyncStorage only.
+        detectSessionInUrl: Platform.OS === 'web',
       },
     })
   : null;

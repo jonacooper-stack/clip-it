@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { create } from 'zustand';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -26,6 +27,7 @@ interface AuthState {
   init: () => void;
   signUp: (a: SignUpArgs) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signInWithGoogle: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -38,9 +40,13 @@ function syncMetadata(session: Session | null) {
     displayName?: string;
     ageBracket?: AgeBracket;
     isChild?: boolean;
+    full_name?: string;
+    name?: string;
   };
   const app = useAppStore.getState();
-  if (meta.displayName && meta.displayName !== app.displayName) app.setDisplayName(meta.displayName);
+  // OAuth providers (Google) supply full_name/name instead of our displayName.
+  const name = meta.displayName || meta.full_name || meta.name;
+  if (name && name !== app.displayName) app.setDisplayName(name);
   if (meta.ageBracket && meta.ageBracket !== app.ageBracket) {
     app.setAge(meta.ageBracket, Boolean(meta.isChild));
   }
@@ -79,6 +85,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   signIn: async (email, password) => {
     if (!supabase) return { error: 'Accounts are not set up yet.' };
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { error: error.message };
+    return {};
+  },
+
+  signInWithGoogle: async () => {
+    if (!supabase) return { error: 'Accounts are not set up yet.' };
+    // Web: redirect back to the current origin, where detectSessionInUrl picks up
+    // the session. (Native deep-linking is wired when the native app is built.)
+    const redirectTo = typeof window !== 'undefined' ? (window as any).location?.origin : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
     if (error) return { error: error.message };
     return {};
   },

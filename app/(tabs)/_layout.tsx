@@ -10,7 +10,11 @@ export default function TabsLayout() {
   const session = useAuthStore((s) => s.session);
   // When accounts are enabled, a session is required; otherwise the app is local-only.
   if (isSupabaseConfigured && !session) return <Redirect href="/onboarding/welcome" />;
-  if (!hasOnboarded) return <Redirect href="/onboarding/welcome" />;
+  // A signed-in user who hasn't finished the intro (e.g. returning from the Google
+  // redirect) just needs the ethos step; a local-only user starts at welcome.
+  if (!hasOnboarded) {
+    return <Redirect href={isSupabaseConfigured ? '/onboarding/ethos' : '/onboarding/welcome'} />;
+  }
 
   return (
     <Tabs

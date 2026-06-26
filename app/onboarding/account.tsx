@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Platform, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
@@ -22,6 +22,7 @@ export default function Account() {
   const setOnboarded = useAppStore((s) => s.setOnboarded);
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
+  const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
 
   const [mode, setMode] = useState<'signup' | 'signin'>(params.mode === 'signin' ? 'signin' : 'signup');
   const [name, setName] = useState('');
@@ -59,6 +60,18 @@ export default function Account() {
       // Returning user — their profile already exists, skip straight in.
       setOnboarded(true);
       router.replace('/');
+    }
+  };
+
+  const onGoogle = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await signInWithGoogle();
+    // On success the browser redirects to Google and back; only surface failures.
+    if (res.error) {
+      setError(res.error);
+      setBusy(false);
     }
   };
 
@@ -109,6 +122,20 @@ export default function Account() {
             and stay involved.
           </Text>
         </Card>
+      )}
+
+      {Platform.OS === 'web' && (
+        <>
+          <Pressable onPress={onGoogle} disabled={busy} style={({ pressed }) => [styles.googleBtn, pressed && styles.googlePressed]}>
+            <Ionicons name="logo-google" size={18} color={colors.text} />
+            <Text style={styles.googleText}>Continue with Google</Text>
+          </Pressable>
+          <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>or</Text>
+            <View style={styles.orLine} />
+          </View>
+        </>
       )}
 
       <View style={styles.form}>
@@ -199,6 +226,23 @@ const styles = StyleSheet.create({
   childHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
   childTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk },
   childText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
+
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 54,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  googlePressed: { opacity: 0.85 },
+  googleText: { fontSize: font.body + 1, fontFamily: fonts.bodyBold, color: colors.text },
+  orRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginVertical: spacing.lg },
+  orLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  orText: { fontSize: font.small, color: colors.faint },
 
   form: { gap: spacing.md },
   field: { gap: spacing.xs },
