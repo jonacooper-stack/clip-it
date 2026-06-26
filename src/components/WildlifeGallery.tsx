@@ -3,7 +3,11 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { GALLERY } from '@/lib/galleryPhotos';
 
 // A horizontally-scrolling strip of real wildlife photos — branding for the
-// welcome screen ("here's what's out there").
+// welcome screen. Each card is the same height and exactly as wide as its
+// photo's aspect ratio, so `cover` fills it with no crop — the whole animal
+// shows instead of a zoomed-in slice.
+const CARD_H = 150;
+
 export function WildlifeGallery() {
   return (
     <ScrollView
@@ -11,16 +15,19 @@ export function WildlifeGallery() {
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
     >
-      {GALLERY.map((g) => (
-        <View key={g.label} style={styles.card}>
-          <Image source={g.photo} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          <View style={styles.labelWrap}>
-            <Text style={styles.label} numberOfLines={1}>
-              {g.label}
-            </Text>
+      {GALLERY.map((g) => {
+        const w = Math.round(CARD_H * g.aspect);
+        return (
+          <View key={g.label} style={[styles.card, { width: w }]}>
+            <Image source={g.photo} style={{ width: w, height: CARD_H }} resizeMode="cover" />
+            <View style={styles.labelWrap}>
+              <Text style={styles.label} numberOfLines={1}>
+                {g.label}
+              </Text>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
@@ -28,19 +35,21 @@ export function WildlifeGallery() {
 const styles = StyleSheet.create({
   row: { paddingRight: spacing.lg, gap: spacing.sm },
   card: {
-    width: 132,
-    height: 172,
+    height: CARD_H,
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    justifyContent: 'flex-end',
   },
   labelWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    backgroundColor: 'rgba(7,11,8,0.5)',
+    paddingVertical: 6,
+    backgroundColor: 'rgba(7,11,8,0.55)',
   },
   label: {
     fontSize: font.small,

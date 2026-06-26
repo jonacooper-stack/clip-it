@@ -80,7 +80,8 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   hero: {
-    aspectRatio: 0.9,
+    // Close to the landscape photo's 1.33 ratio so it isn't cropped to a strip.
+    aspectRatio: 1.2,
     marginTop: spacing.md,
     marginBottom: spacing.xl,
     borderRadius: radius.xl,
