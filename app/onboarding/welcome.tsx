@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
+import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { HERO_PHOTO } from '@/lib/heroPhoto';
@@ -40,6 +41,11 @@ export default function Welcome() {
           <Text style={styles.title}>ClipIt</Text>
           <Text style={styles.tagline}>Catch-and-release hunting — a game for real wildlife.</Text>
         </View>
+      </View>
+
+      <View style={styles.gallerySection}>
+        <Text style={styles.galleryTitle}>A few of the locals</Text>
+        <WildlifeGallery />
       </View>
 
       <View style={styles.points}>
@@ -86,6 +92,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   heroContent: { padding: spacing.lg, paddingBottom: spacing.xl },
+  gallerySection: { marginBottom: spacing.xl },
+  galleryTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs },
   kicker: { fontSize: font.tiny, fontFamily: fonts.bodyBold, letterSpacing: 1.6, color: colors.accentInk },
   title: {
