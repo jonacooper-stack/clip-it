@@ -52,10 +52,10 @@ export const spacing = {
 };
 
 export const radius = {
-  sm: 10,
-  md: 16,
-  lg: 22,
-  xl: 28,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 22,
   pill: 999,
 };
 
@@ -64,24 +64,24 @@ export const radius = {
 export const shadow = {
   soft: {
     shadowColor: '#15311F',
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
   card: {
     shadowColor: '#15311F',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 9 },
-    elevation: 4,
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   lifted: {
     shadowColor: '#15311F',
-    shadowOpacity: 0.16,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 6,
   },
 };
 
@@ -96,12 +96,14 @@ export const font = {
   tiny: 12,
 };
 
-// Font families. Oswald = condensed outfitter character (display/headings/numbers);
-// DM Sans = warm, legible body. Loaded in app/_layout.tsx.
+// Font families. One modern family (DM Sans) across the UI — hierarchy comes from
+// weight + size + tracking, not a condensed display face. This is the single
+// biggest move away from the "kids' game" look toward a clean, modern feel.
+// (Oswald is still loaded in app/_layout.tsx but no longer used in the UI.)
 export const fonts = {
-  display: 'Oswald_700Bold',
-  heading: 'Oswald_600SemiBold',
-  headingMd: 'Oswald_500Medium',
+  display: 'DMSans_700Bold',
+  heading: 'DMSans_700Bold',
+  headingMd: 'DMSans_500Medium',
   body: 'DMSans_400Regular',
   bodyMedium: 'DMSans_500Medium',
   bodyBold: 'DMSans_700Bold',
