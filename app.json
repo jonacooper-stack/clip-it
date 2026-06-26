@@ -3,27 +3,46 @@
     "name": "Clip-It",
     "slug": "clip-it",
     "scheme": "clipit",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#F7F8F5",
+    "backgroundColor": "#F3EFE4",
     "newArchEnabled": true,
+    "runtimeVersion": { "policy": "appVersion" },
+    "assetBundlePatterns": ["**/*"],
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/favicon.png"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.clipit.app",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.clipit.app"
+      "package": "com.clipit.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#13502E"
+      }
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#13502E"
+        }
+      ],
       [
         "expo-camera",
         {

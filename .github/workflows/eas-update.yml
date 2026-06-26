@@ -1,0 +1,47 @@
+name: EAS Update (OTA)
+
+# Pushes an over-the-air update to installed apps on every push — the native-app
+# equivalent of the current "push → live" web loop. No-ops until you add an
+# EXPO_TOKEN repo secret (Expo dashboard → Account settings → Access tokens) and
+# have run `eas update:configure` once. See docs/RELEASE.md.
+
+on:
+  push:
+    branches: [main, claude/lucid-galileo-m7fj2l]
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: gate
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN not set — skipping OTA update."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: expo/expo-github-action@v8
+        if: steps.gate.outputs.run == 'true'
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish OTA update
+        if: steps.gate.outputs.run == 'true'
+        run: eas update --branch preview --message "${{ github.event.head_commit.message }}" --non-interactive
