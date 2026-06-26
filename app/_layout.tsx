@@ -15,6 +15,7 @@ import { colors } from '@/theme';
 import { applyGlobalFont } from '@/lib/fonts';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
+import { useAuthStore } from '@/state/useAuthStore';
 
 applyGlobalFont();
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -30,7 +31,12 @@ export default function RootLayout() {
   });
   const appHydrated = useAppStore((s) => s.hasHydrated);
   const journalHydrated = useJournalStore((s) => s.hasHydrated);
-  const ready = fontsLoaded && appHydrated && journalHydrated;
+  const authInitialized = useAuthStore((s) => s.initialized);
+  const ready = fontsLoaded && appHydrated && journalHydrated && authInitialized;
+
+  useEffect(() => {
+    useAuthStore.getState().init();
+  }, []);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});

@@ -5,6 +5,7 @@ import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { TopoBackground } from '@/components/TopoBackground';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 const POINTS: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string }[] = [
   { icon: 'camera', title: 'Photograph wildlife', text: 'Snap real wild animals to score points.' },
@@ -46,6 +47,12 @@ export default function Welcome() {
         icon="arrow-forward"
         onPress={() => router.push('/onboarding/age-gate')}
       />
+
+      {isSupabaseConfigured && (
+        <Text style={styles.signin} onPress={() => router.push('/onboarding/account?mode=signin')}>
+          Already have an account? <Text style={styles.signinLink}>Sign in</Text>
+        </Text>
+      )}
     </ScreenContainer>
   );
 }
@@ -101,4 +108,6 @@ const styles = StyleSheet.create({
   pointBody: { flex: 1 },
   pointTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
   pointText: { fontSize: font.small, color: colors.muted, lineHeight: 20, marginTop: 1 },
+  signin: { fontSize: font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.lg },
+  signinLink: { color: colors.primary, fontFamily: fonts.bodyBold },
 });

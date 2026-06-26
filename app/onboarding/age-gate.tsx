@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import type { AgeBracket } from '@/types';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -37,7 +38,8 @@ export default function AgeGate() {
   const onContinue = () => {
     if (!bracket) return;
     setAge(bracket, isChild);
-    router.push('/onboarding/ethos');
+    // With accounts enabled, create/sign in next; otherwise go straight to ethos.
+    router.push(isSupabaseConfigured ? '/onboarding/account' : '/onboarding/ethos');
   };
 
   return (

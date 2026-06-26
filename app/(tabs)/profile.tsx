@@ -6,7 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
+import { useAuthStore } from '@/state/useAuthStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import type { AgeBracket } from '@/types';
 
 const BRACKET_LABEL: Record<AgeBracket, string> = {
@@ -23,11 +25,20 @@ export default function Profile() {
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
   const resetJournal = useJournalStore((s) => s.reset);
+  const session = useAuthStore((s) => s.session);
+  const signOut = useAuthStore((s) => s.signOut);
+  const email = session?.user?.email;
 
   const points = useMemo(() => totalPoints(sightings), [sightings]);
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
 
   const soon = (label: string) => Alert.alert(label, 'Coming in a later phase.');
+
+  const onSignOut = () =>
+    Alert.alert('Sign out?', 'You can sign back in anytime.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
 
   const onReset = () =>
     Alert.alert('Reset app data?', 'This clears your journal and onboarding (for testing).', [
@@ -35,7 +46,8 @@ export default function Profile() {
       {
         text: 'Reset',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          await signOut();
           resetJournal();
           resetApp();
           router.replace('/onboarding/welcome');
@@ -51,6 +63,7 @@ export default function Profile() {
             <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
           </View>
           <Text style={styles.name}>{displayName}</Text>
+          {email && <Text style={styles.email}>{email}</Text>}
           {ageBracket && <Text style={styles.bracket}>{BRACKET_LABEL[ageBracket]}</Text>}
         </View>
 
@@ -79,6 +92,12 @@ export default function Profile() {
           <Row icon="people" label="Manage child profile" onPress={() => soon('Child profiles')} />
           <Divider />
           <Row icon="trash" label="Delete account" danger onPress={() => soon('Delete account')} />
+          {isSupabaseConfigured && session && (
+            <>
+              <Divider />
+              <Row icon="log-out" label="Sign out" onPress={onSignOut} />
+            </>
+          )}
         </Card>
 
         <Pressable onPress={onReset} style={styles.devReset}>
@@ -136,7 +155,8 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 34, fontFamily: fonts.display, color: colors.white },
   name: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.sm },
-  bracket: { fontSize: font.small, color: colors.muted, marginTop: 2 },
+  email: { fontSize: font.small, color: colors.muted, marginTop: 2 },
+  bracket: { fontSize: font.small, color: colors.faint, marginTop: 2 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
   statCard: { width: '47.5%', alignItems: 'center', paddingVertical: spacing.md, flexGrow: 1 },
   statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
