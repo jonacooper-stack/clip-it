@@ -11,8 +11,8 @@ on:
       platform:
         description: Platform to build
         type: choice
-        options: [android, ios]
-        default: android
+        options: [ios, android]
+        default: ios
       profile:
         description: Build profile (preview = shareable install link)
         type: choice

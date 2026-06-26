@@ -1,4 +1,4 @@
-# Clip-It — Concept
+# ClipIt — Concept
 
 *What the app is, who it's for, and the decisions that anchor it. See also
 [ROADMAP.md](ROADMAP.md) for sequencing and [ARCHITECTURE.md](ARCHITECTURE.md) for how
@@ -26,7 +26,7 @@ Two things have to be true at once:
 
 ## What the app is
 
-> **Clip-It is a mobile game where you photograph wild animals to earn points, complete
+> **ClipIt is a mobile game where you photograph wild animals to earn points, complete
 > quests, and build a personal field journal — and your sightings quietly become
 > citizen-science data that helps protect the animals you're chasing.**
 

@@ -1,4 +1,4 @@
-# Clip-It — Roadmap
+# ClipIt — Roadmap
 
 *The MVP definition and the phased plan after it. See [CONCEPT.md](CONCEPT.md) for what
 we're building and [ARCHITECTURE.md](ARCHITECTURE.md) for how.*

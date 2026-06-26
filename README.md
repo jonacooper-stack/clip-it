@@ -1,8 +1,8 @@
-# Clip-It
+# ClipIt
 
 > Catch-and-release hunting — a game for real wildlife.
 
-Clip-It is a mobile game where you go outside, photograph wild animals in their real
+ClipIt is a mobile game where you go outside, photograph wild animals in their real
 habitats, and earn points that scale with how **rare** and how **dramatic** the sighting
 is — a common deer is worth a little; a fox eating a rabbit is worth a lot. It's heavily
 gamified (quests, milestones, collections, streaks), and every sighting quietly becomes

@@ -1,4 +1,4 @@
-# Clip-It — Architecture
+# ClipIt — Architecture
 
 *The technical plan: stack, how identification works, the scoring engine, the data model,
 cost control, and safety. See [CONCEPT.md](CONCEPT.md) and [ROADMAP.md](ROADMAP.md) for the
