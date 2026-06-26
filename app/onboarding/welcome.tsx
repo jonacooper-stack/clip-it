@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
@@ -21,14 +22,15 @@ export default function Welcome() {
   return (
     <ScreenContainer scroll>
       <View style={styles.hero}>
-        <ImageBackground source={HERO_PHOTO} resizeMode="cover" style={StyleSheet.absoluteFill} />
-        {/* Dark gradient so the wordmark stays legible over any photo. */}
+        <ExpoImage source={HERO_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+        {/* Gradient only at the bottom, so the landscape shows but the wordmark stays legible. */}
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100">
           <Defs>
             <LinearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#0A1410" stopOpacity="0.05" />
-              <Stop offset="0.5" stopColor="#0A1410" stopOpacity="0.34" />
-              <Stop offset="1" stopColor="#0A1410" stopOpacity="0.94" />
+              <Stop offset="0" stopColor="#0A1410" stopOpacity="0" />
+              <Stop offset="0.5" stopColor="#0A1410" stopOpacity="0.08" />
+              <Stop offset="0.78" stopColor="#0A1410" stopOpacity="0.46" />
+              <Stop offset="1" stopColor="#0A1410" stopOpacity="0.9" />
             </LinearGradient>
           </Defs>
           <Rect width="100" height="100" fill="url(#scrim)" />
@@ -96,7 +98,15 @@ const styles = StyleSheet.create({
   gallerySection: { marginBottom: spacing.xl },
   galleryTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs },
-  kicker: { fontSize: font.tiny, fontFamily: fonts.bodyBold, letterSpacing: 1.6, color: colors.accentInk },
+  kicker: {
+    fontSize: font.tiny,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: 1.6,
+    color: colors.accentInk,
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
   title: {
     fontSize: font.hero + 4,
     fontFamily: fonts.display,
