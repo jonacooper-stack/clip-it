@@ -62,6 +62,33 @@ eas device:create               # register each tester's iPhone (once per device
 eas build -p ios --profile preview
 ```
 
+### iOS code signing from CI (App Store Connect API key)
+A headless CI build can't do the interactive Apple login, so EAS authenticates to
+Apple with an **App Store Connect API key** to create/manage the signing
+certificate + provisioning profile automatically. One-time setup:
+
+1. **Create the key:** App Store Connect → **Users and Access → Integrations**
+   (API keys) → **＋** beside *Active* → name it, role **Admin** → **Download** the
+   `.p8` (you only get one download) and copy the **Key ID** and **Issuer ID**.
+2. **Base64-encode the .p8** so it fits in a secret: `base64 -i AuthKey_XXXX.p8`
+   (macOS prints it; copy the whole string).
+3. **Add repo secrets** (GitHub → Settings → Secrets and variables → Actions):
+   | Secret | Value |
+   |---|---|
+   | `ASC_API_KEY_BASE64` | the base64 string from step 2 |
+   | `ASC_KEY_ID` | the Key ID (e.g. `SFB993FB5F`) |
+   | `ASC_ISSUER_ID` | the Issuer ID (a UUID) |
+   | `APPLE_TEAM_ID` | your 10-char Apple Team ID (Apple Developer → Membership) |
+   | `APPLE_TEAM_TYPE` | `INDIVIDUAL` (personal account) or `COMPANY_OR_ORGANIZATION` |
+
+   The `eas-build.yml` workflow already reads these (`EXPO_ASC_*` / `EXPO_APPLE_*`)
+   and writes the `.p8` to a temp file at build time — nothing key-related is
+   committed. Android builds ignore them.
+
+> Even simpler if you prefer no secrets: once the project exists on expo.dev, go to
+> **Project → Credentials → iOS** and upload the same `.p8` there. EAS then stores
+> it and every CI build uses it automatically — for both building and `eas submit`.
+
 ## 3. Iterate fast — OTA updates (no rebuild, no review)
 For any JavaScript / UI / content change (which is almost everything — including the
 whole design refresh), push it instantly to installed apps:
