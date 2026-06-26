@@ -18,6 +18,7 @@ export function ProgressBar({ value, goal }: { value: number; goal: number }) {
 
 const styles = StyleSheet.create({
   track: {
+    flex: 1,
     height: 8,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceAlt,
