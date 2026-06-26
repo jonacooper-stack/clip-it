@@ -2,6 +2,7 @@
   "expo": {
     "name": "ClipIt",
     "slug": "clip-it",
+    "owner": "clip-it",
     "scheme": "clipit",
     "version": "1.0.0",
     "orientation": "portrait",
