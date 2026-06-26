@@ -14,7 +14,7 @@ const POINTS: { icon: keyof typeof Ionicons.glyphMap; title: string; text: strin
   { icon: 'camera', title: 'Photograph wildlife', text: 'Snap real wild animals to score points.' },
   { icon: 'sparkles', title: 'Rare = big points', text: 'Elusive species and dramatic moments are worth more.' },
   { icon: 'book', title: 'Build your journal', text: 'Collect species, complete quests, keep streaks.' },
-  { icon: 'leaf', title: 'Observe, never disturb', text: 'Catch-and-release — your sightings help science.' },
+  { icon: 'leaf', title: 'Observe, never disturb', text: 'Leave no trace — your photos help protect wild places.' },
 ];
 
 export default function Welcome() {
@@ -41,7 +41,7 @@ export default function Welcome() {
             <Text style={styles.kicker}>FIELD GUIDE TO THE WILD</Text>
           </View>
           <Text style={styles.title}>ClipIt</Text>
-          <Text style={styles.tagline}>Catch-and-release hunting — a game for real wildlife.</Text>
+          <Text style={styles.tagline}>Spot wild animals, grow your field journal, and help protect them.</Text>
         </View>
       </View>
 

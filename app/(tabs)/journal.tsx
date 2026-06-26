@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { Card } from '@/components/Card';
+import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
 import type { Sighting } from '@/types';
@@ -66,9 +67,15 @@ export default function Journal() {
           <Card style={styles.empty}>
             <Ionicons name="book-outline" size={40} color={colors.faint} style={styles.emptyEmoji} />
             <Text style={styles.emptyText}>
-              Your journal is empty. Every species you photograph gets a page here.
+              No species yet. Photograph your first animal and it earns a page here!
             </Text>
           </Card>
+        }
+        ListFooterComponent={
+          <View style={styles.discover}>
+            <Text style={styles.discoverTitle}>Out there to discover</Text>
+            <WildlifeGallery limit={8} />
+          </View>
         }
       />
     </SafeAreaView>
@@ -92,4 +99,6 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyEmoji: { fontSize: 40, marginBottom: spacing.sm },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  discover: { marginTop: spacing.lg },
+  discoverTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
 });

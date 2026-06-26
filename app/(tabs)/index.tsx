@@ -9,6 +9,7 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { PointsBadge } from '@/components/PointsBadge';
 import { TopoBackground } from '@/components/TopoBackground';
+import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
@@ -93,12 +94,12 @@ export default function Home() {
           style={styles.cta}
         />
 
-        <Text style={styles.sectionTitle}>Recent catches</Text>
+        <Text style={styles.sectionTitle}>Recently spotted</Text>
         {recent.length === 0 ? (
           <Card style={styles.empty}>
             <Ionicons name="camera-outline" size={34} color={colors.faint} style={styles.emptyIcon} />
             <Text style={styles.emptyText}>
-              No catches yet. Head outside and photograph your first animal!
+              Nothing here yet. Head outside and photograph your first wild animal!
             </Text>
           </Card>
         ) : (
@@ -126,6 +127,11 @@ export default function Home() {
             ))}
           </ScrollView>
         )}
+
+        <View style={styles.discover}>
+          <Text style={styles.sectionTitle}>Out in the wild</Text>
+          <WildlifeGallery limit={8} />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -199,6 +205,7 @@ const styles = StyleSheet.create({
   },
 
   cta: { marginBottom: spacing.xl },
+  discover: { marginTop: spacing.xl },
   sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyIcon: { marginBottom: spacing.sm },

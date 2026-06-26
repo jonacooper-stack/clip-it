@@ -8,14 +8,15 @@ import { GALLERY } from '@/lib/galleryPhotos';
 // shows instead of a zoomed-in slice.
 const CARD_H = 150;
 
-export function WildlifeGallery() {
+export function WildlifeGallery({ limit }: { limit?: number }) {
+  const items = limit ? GALLERY.slice(0, limit) : GALLERY;
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
     >
-      {GALLERY.map((g) => {
+      {items.map((g) => {
         const w = Math.round(CARD_H * g.aspect);
         return (
           <View key={g.label} style={[styles.card, { width: w }]}>

@@ -3,7 +3,7 @@ import { findMockSpecies } from './mockSpecies';
 import { distinctSpecies } from '@/state/useJournalStore';
 
 export const SEED_QUESTS: Quest[] = [
-  { id: 'first-catch', title: 'First Catch', description: 'Log your very first animal', goal: 1, rewardPoints: 10, group: 'any' },
+  { id: 'first-catch', title: 'First Sighting', description: 'Photograph your very first animal', goal: 1, rewardPoints: 10, group: 'any' },
   { id: 'birdwatcher', title: 'Birdwatcher', description: 'Photograph 3 different birds', goal: 3, rewardPoints: 25, group: 'bird' },
   { id: 'naturalist', title: 'Naturalist', description: 'Collect 5 different species', goal: 5, rewardPoints: 40, group: 'any' },
   { id: 'mammal-tracker', title: 'Mammal Tracker', description: 'Find 3 different mammals', goal: 3, rewardPoints: 25, group: 'mammal' },

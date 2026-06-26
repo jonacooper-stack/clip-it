@@ -26,7 +26,7 @@ const ETHOS: { icon: keyof typeof Ionicons.glyphMap; color: string; title: strin
     icon: 'star',
     color: colors.accent,
     title: 'How scoring works',
-    body: 'Rarer animals and more dramatic moments — babies, hunting, flight — are worth more points.',
+    body: 'Rarer animals and standout moments — babies, action shots, birds in flight — are worth more points.',
   },
 ];
 
