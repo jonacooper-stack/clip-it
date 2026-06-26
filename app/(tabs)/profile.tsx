@@ -62,9 +62,12 @@ export default function Profile() {
         </View>
 
         <Card style={styles.ethos}>
-          <Text style={styles.ethosTitle}>🌲 Observe, don't disturb</Text>
+          <View style={styles.ethosHead}>
+            <Ionicons name="leaf" size={18} color={colors.primary} />
+            <Text style={styles.ethosTitle}>Observe, don't disturb</Text>
+          </View>
           <Text style={styles.ethosText}>
-            Clip-It rewards the photo, never the proximity. Keep your distance, leave no trace, and
+            ClipIt rewards the photo, never the proximity. Keep your distance, leave no trace, and
             let wildlife stay wild.
           </Text>
         </Card>
@@ -139,8 +142,9 @@ const styles = StyleSheet.create({
   statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
   statLabel: { fontSize: font.tiny, color: colors.muted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   ethos: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft, marginBottom: spacing.lg },
-  ethosTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.primaryDark, marginBottom: spacing.xs },
-  ethosText: { fontSize: font.small, color: colors.primaryDark, lineHeight: 20 },
+  ethosHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  ethosTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.onPrimary },
+  ethosText: { fontSize: font.small, color: colors.onPrimary, lineHeight: 20 },
   sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },
   settings: { padding: 0, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from './Card';
 import { Button } from './Button';
 import { colors, spacing, font, radius } from '@/theme';
@@ -16,7 +17,10 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
   if (sighting.idStatus === 'disputed') {
     return (
       <Card style={styles.done}>
-        <Text style={styles.doneTitle}>✅ Sent for review</Text>
+        <View style={styles.doneHead}>
+          <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+          <Text style={styles.doneTitle}>Sent for review</Text>
+        </View>
         <Text style={styles.doneText}>
           Thanks — a human reviewer will take a look
           {sighting.proposedSpecies ? `. You suggested: ${sighting.proposedSpecies}` : ''}.
@@ -56,8 +60,9 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
 
 const styles = StyleSheet.create({
   done: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
-  doneTitle: { fontSize: font.body, fontWeight: '800', color: colors.primaryDark, marginBottom: spacing.xs },
-  doneText: { fontSize: font.small, color: colors.primaryDark, lineHeight: 20 },
+  doneHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  doneTitle: { fontSize: font.body, fontWeight: '800', color: colors.onPrimary },
+  doneText: { fontSize: font.small, color: colors.onPrimary, lineHeight: 20 },
   label: { fontSize: font.small, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
   input: {
     borderWidth: 1,

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { Card } from '@/components/Card';
 import { colors, spacing, font, fonts } from '@/theme';
@@ -63,7 +64,7 @@ export default function Journal() {
         }
         ListEmptyComponent={
           <Card style={styles.empty}>
-            <Text style={styles.emptyEmoji}>📔</Text>
+            <Ionicons name="book-outline" size={40} color={colors.faint} style={styles.emptyEmoji} />
             <Text style={styles.emptyText}>
               Your journal is empty. Every species you photograph gets a page here.
             </Text>

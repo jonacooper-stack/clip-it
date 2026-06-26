@@ -69,7 +69,7 @@ export default function Result() {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.rejected}>
-          <Text style={styles.rejEmoji}>🤔</Text>
+          <Ionicons name="help-circle-outline" size={54} color={colors.faint} style={styles.rejEmoji} />
           <Text style={styles.rejTitle}>Nothing to identify</Text>
           <Text style={styles.rejText}>
             We couldn't find an animal or person in that photo. Try getting your subject clearly in
@@ -195,7 +195,10 @@ export default function Result() {
 
         {sighting.dangerous && (
           <Card style={styles.danger}>
-            <Text style={styles.dangerTitle}>⚠️ Keep your distance</Text>
+            <View style={styles.dangerHead}>
+              <Ionicons name="warning" size={18} color={colors.danger} />
+              <Text style={styles.dangerTitle}>Keep your distance</Text>
+            </View>
             <Text style={styles.dangerText}>
               This animal can be dangerous. Never approach — a great photo is worth more than a close
               one.
@@ -274,7 +277,8 @@ const styles = StyleSheet.create({
   reviewNote: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: spacing.sm },
   danger: { backgroundColor: colors.dangerSoft, borderColor: colors.dangerSoft, marginTop: spacing.lg, width: '100%' },
-  dangerTitle: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.danger, marginBottom: spacing.xs },
+  dangerHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  dangerTitle: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.danger },
   dangerText: { fontSize: font.small, color: colors.danger, lineHeight: 20 },
   breakdown: { width: '100%', marginTop: spacing.lg, marginBottom: spacing.md },
   breakdownTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },

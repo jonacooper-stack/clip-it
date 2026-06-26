@@ -2,25 +2,29 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useCameraPermissions } from 'expo-camera';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { colors, spacing, font, fonts } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 
-const ETHOS = [
+const ETHOS: { icon: keyof typeof Ionicons.glyphMap; color: string; title: string; body: string }[] = [
   {
-    emoji: '🌿',
+    icon: 'leaf',
+    color: colors.primary,
     title: 'Respect wildlife',
     body: 'Observe from a distance. Never bait, chase, or disturb an animal or its home for a photo.',
   },
   {
-    emoji: '🛡️',
+    icon: 'shield-checkmark',
+    color: colors.primary,
     title: 'Stay safe',
     body: 'Keep your distance from anything that could be dangerous. Points are for the photo — never for how close you got.',
   },
   {
-    emoji: '⭐',
+    icon: 'star',
+    color: colors.accent,
     title: 'How scoring works',
     body: 'Rarer animals and more dramatic moments — babies, hunting, flight — are worth more points.',
   },
@@ -47,11 +51,13 @@ export default function Ethos() {
   return (
     <ScreenContainer scroll>
       <Text style={styles.title}>Before you head out</Text>
-      <Text style={styles.subtitle}>The spirit of Clip-It in three ideas.</Text>
+      <Text style={styles.subtitle}>The spirit of ClipIt in three ideas.</Text>
 
       {ETHOS.map((e) => (
         <Card key={e.title} style={styles.card}>
-          <Text style={styles.cardEmoji}>{e.emoji}</Text>
+          <View style={styles.cardIcon}>
+            <Ionicons name={e.icon} size={20} color={e.color} />
+          </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle}>{e.title}</Text>
             <Text style={styles.cardText}>{e.body}</Text>
@@ -61,7 +67,7 @@ export default function Ethos() {
 
       <View style={styles.perms}>
         <Text style={styles.permsText}>
-          Clip-It needs your <Text style={styles.bold}>camera</Text> to photograph animals and your{' '}
+          ClipIt needs your <Text style={styles.bold}>camera</Text> to photograph animals and your{' '}
           <Text style={styles.bold}>location</Text> to tag where you saw them — kept private to you.
         </Text>
       </View>
@@ -75,8 +81,16 @@ export default function Ethos() {
 const styles = StyleSheet.create({
   title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.lg },
   subtitle: { fontSize: font.body, color: colors.muted, marginTop: spacing.xs, marginBottom: spacing.lg },
-  card: { flexDirection: 'row', marginBottom: spacing.md },
-  cardEmoji: { fontSize: 28, width: 44 },
+  card: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  cardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
   cardBody: { flex: 1 },
   cardTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: 2 },
   cardText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },

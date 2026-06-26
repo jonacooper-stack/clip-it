@@ -18,9 +18,9 @@ import type { IdStatus } from '@/types';
 
 const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   identifying: { label: 'Identifying', color: colors.muted, bg: colors.surfaceAlt },
-  ai_confident: { label: 'Identified', color: colors.primaryDark, bg: colors.primarySoft },
+  ai_confident: { label: 'Identified', color: colors.primary, bg: colors.primarySoft },
   needs_review: { label: 'Pending review', color: colors.accentInk, bg: colors.accentSoft },
-  human_confirmed: { label: 'Confirmed', color: colors.primaryDark, bg: colors.primarySoft },
+  human_confirmed: { label: 'Confirmed', color: colors.primary, bg: colors.primarySoft },
   disputed: { label: 'In review', color: colors.accentInk, bg: colors.accentSoft },
   ineligible: { label: 'Not eligible', color: colors.clay, bg: colors.claySoft },
   rejected: { label: 'No animal', color: colors.danger, bg: colors.dangerSoft },

@@ -8,7 +8,7 @@ type Level = { label: string; color: string; bg: string; icon: keyof typeof Ioni
 // needsReview cutoff (<0.75 gets a human look) so the wording stays consistent.
 export function confidenceLevel(confidence: number): Level {
   if (confidence >= 0.85) {
-    return { label: 'High confidence', color: colors.primaryDark, bg: colors.primarySoft, icon: 'checkmark-circle' };
+    return { label: 'High confidence', color: colors.primary, bg: colors.primarySoft, icon: 'checkmark-circle' };
   }
   if (confidence >= 0.6) {
     return { label: 'Likely', color: colors.accentInk, bg: colors.accentSoft, icon: 'help-circle' };

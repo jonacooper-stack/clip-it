@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -42,7 +43,9 @@ export default function AgeGate() {
   return (
     <ScreenContainer scroll>
       <View style={styles.header}>
-        <Text style={styles.emoji}>🦉</Text>
+        <View style={styles.iconBadge}>
+          <Ionicons name="calendar-outline" size={26} color={colors.accent} />
+        </View>
         <Text style={styles.title}>What year were you born?</Text>
         <Text style={styles.subtitle}>
           Type the four digits of your birth year. We store your age range, never your full birth
@@ -77,7 +80,10 @@ export default function AgeGate() {
 
       {isChild && (
         <Card style={styles.childNote}>
-          <Text style={styles.childTitle}>👋 A grown-up should help</Text>
+          <View style={styles.childHead}>
+            <Ionicons name="people" size={18} color={colors.accentInk} />
+            <Text style={styles.childTitle}>A grown-up should help</Text>
+          </View>
           <Text style={styles.childText}>
             Since you're under 13, a parent or guardian needs to set up and approve your profile, and
             we keep extra-strict privacy protections on your account.
@@ -111,7 +117,15 @@ const webInputReset: any =
 
 const styles = StyleSheet.create({
   header: { marginTop: spacing.lg, marginBottom: spacing.lg },
-  emoji: { fontSize: 44, marginBottom: spacing.sm },
+  iconBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
   title: { fontSize: font.title + 2, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, lineHeight: 21 },
 
@@ -135,7 +149,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     color: colors.faint,
   },
-  readoutLabelActive: { color: colors.primarySoft },
+  readoutLabelActive: { color: colors.onPrimary },
   input: {
     fontSize: 56,
     fontFamily: fonts.display,
@@ -147,7 +161,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   inputActive: { color: colors.white },
-  readoutAge: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.primarySoft, marginTop: spacing.xs },
+  readoutAge: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.onPrimary, marginTop: spacing.xs },
 
   error: {
     fontSize: font.small,
@@ -162,11 +176,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
     borderColor: colors.accentSoft,
   },
+  childHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
   childTitle: {
     fontSize: font.body,
     fontFamily: fonts.heading,
     color: colors.accentInk,
-    marginBottom: spacing.xs,
   },
   childText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
 

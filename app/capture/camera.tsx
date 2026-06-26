@@ -98,10 +98,10 @@ export default function CameraScreen() {
     return (
       <SafeAreaView style={styles.permSafe}>
         <View style={styles.permBox}>
-          <Text style={styles.permEmoji}>📷</Text>
+          <Ionicons name="camera-outline" size={48} color={colors.faint} style={styles.permEmoji} />
           <Text style={styles.permTitle}>Camera access needed</Text>
           <Text style={styles.permText}>
-            Clip-It captures the animals you spot in-app, so every sighting is genuinely yours.
+            ClipIt captures the animals you spot in-app, so every sighting is genuinely yours.
           </Text>
           <Button label="Enable camera" onPress={requestPermission} />
           {Platform.OS === 'web' && (
@@ -188,7 +188,8 @@ export default function CameraScreen() {
             <Ionicons name="close" size={26} color={colors.white} />
           </Pressable>
           <View style={styles.reminder}>
-            <Text style={styles.reminderText}>🛡️ Keep your distance</Text>
+            <Ionicons name="shield-checkmark" size={14} color={colors.accent} />
+            <Text style={styles.reminderText}>Keep your distance</Text>
           </View>
           <Pressable onPress={cycleFlash} style={styles.iconBtn} hitSlop={8}>
             <Ionicons
@@ -247,6 +248,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.overlay,
   },
   reminder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.overlay,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,

@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from './Card';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import type { ScienceQuestion } from '@/lib/scienceQuestions';
@@ -17,7 +18,10 @@ export function ScienceQuestions({
   return (
     <Card style={styles.card}>
       <View style={styles.head}>
-        <Text style={styles.title}>🔬 Help science</Text>
+        <View style={styles.titleRow}>
+          <Ionicons name="flask" size={16} color={colors.accent} />
+          <Text style={styles.title}>Help science</Text>
+        </View>
         <Text style={styles.bonus}>{answered > 0 ? `+${answered}` : 'optional'}</Text>
       </View>
       <Text style={styles.sub}>
@@ -53,6 +57,7 @@ export function ScienceQuestions({
 const styles = StyleSheet.create({
   card: { width: '100%', marginTop: spacing.md, marginBottom: spacing.md },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   title: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
   bonus: { fontSize: font.small, fontFamily: fonts.display, color: colors.accent },
   sub: { fontSize: font.small, color: colors.muted, marginTop: 2, marginBottom: spacing.md, lineHeight: 19 },
