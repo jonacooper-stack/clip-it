@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
@@ -46,7 +47,7 @@ export default function Home() {
           </View>
           {streak > 0 && (
             <View style={styles.streak}>
-              <Text style={styles.streakFlame}>🔥</Text>
+              <Ionicons name="flame" size={15} color={colors.accent} />
               <Text style={styles.streakText}>{streak}</Text>
             </View>
           )}
@@ -95,7 +96,7 @@ export default function Home() {
         <Text style={styles.sectionTitle}>Recent catches</Text>
         {recent.length === 0 ? (
           <Card style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🔭</Text>
+            <Ionicons name="camera-outline" size={34} color={colors.faint} style={styles.emptyIcon} />
             <Text style={styles.emptyText}>
               No catches yet. Head outside and photograph your first animal!
             </Text>
@@ -176,7 +177,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     fontFamily: fonts.bodyBold,
   },
-  statLabelOnDark: { color: colors.primarySoft },
+  statLabelOnDark: { color: colors.onPrimary },
 
   questCard: { marginBottom: spacing.lg },
   questHead: {
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
   cta: { marginBottom: spacing.xl },
   sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
-  emptyEmoji: { fontSize: 40, marginBottom: spacing.sm },
+  emptyIcon: { marginBottom: spacing.sm },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   recentRow: { gap: spacing.md, paddingRight: spacing.lg },
   recentItem: { width: 76, alignItems: 'center' },

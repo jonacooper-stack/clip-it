@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "Clip-It",
+    "name": "ClipIt",
     "slug": "clip-it",
     "scheme": "clipit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "backgroundColor": "#F3EFE4",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0E1411",
     "newArchEnabled": true,
     "runtimeVersion": { "policy": "appVersion" },
     "assetBundlePatterns": ["**/*"],
+    "extra": {
+      "eas": { "projectId": "503232c7-e996-4969-ae22-66bf26b5951f" }
+    },
     "web": {
       "bundler": "metro",
       "output": "single",
@@ -40,19 +43,19 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#13502E"
+          "backgroundColor": "#0E1411"
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Clip-It uses the camera so you can photograph the wildlife you spot."
+          "cameraPermission": "ClipIt uses the camera so you can photograph the wildlife you spot."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Clip-It tags each sighting with where you saw the animal. Your precise location stays private to you."
+          "locationWhenInUsePermission": "ClipIt tags each sighting with where you saw the animal. Your precise location stays private to you."
         }
       ],
       "expo-secure-store"

@@ -1,15 +1,16 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { TopoBackground } from '@/components/TopoBackground';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 
-const POINTS = [
-  { emoji: '📸', title: 'Photograph wildlife', text: 'Snap real wild animals to score points.' },
-  { emoji: '🦊', title: 'Rare = big points', text: 'Elusive species and dramatic moments are worth more.' },
-  { emoji: '📔', title: 'Build your journal', text: 'Collect species, complete quests, keep streaks.' },
-  { emoji: '🌿', title: 'Observe, never disturb', text: 'Catch-and-release — your sightings help science.' },
+const POINTS: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string }[] = [
+  { icon: 'camera', title: 'Photograph wildlife', text: 'Snap real wild animals to score points.' },
+  { icon: 'sparkles', title: 'Rare = big points', text: 'Elusive species and dramatic moments are worth more.' },
+  { icon: 'book', title: 'Build your journal', text: 'Collect species, complete quests, keep streaks.' },
+  { icon: 'leaf', title: 'Observe, never disturb', text: 'Catch-and-release — your sightings help science.' },
 ];
 
 export default function Welcome() {
@@ -17,11 +18,11 @@ export default function Welcome() {
   return (
     <ScreenContainer scroll>
       <View style={styles.hero}>
-        <TopoBackground color={colors.white} opacity={0.12} />
+        <TopoBackground color={colors.white} opacity={0.1} />
         <View style={styles.logoBadge}>
-          <Text style={styles.logo}>🌲</Text>
+          <Ionicons name="eye" size={44} color={colors.accent} />
         </View>
-        <Text style={styles.title}>CLIP-IT</Text>
+        <Text style={styles.title}>ClipIt</Text>
         <Text style={styles.tagline}>Catch-and-release hunting — a game for real wildlife.</Text>
       </View>
 
@@ -29,7 +30,7 @@ export default function Welcome() {
         {POINTS.map((p) => (
           <View key={p.title} style={styles.point}>
             <View style={styles.pointBadge}>
-              <Text style={styles.pointEmoji}>{p.emoji}</Text>
+              <Ionicons name={p.icon} size={22} color={colors.primary} />
             </View>
             <View style={styles.pointBody}>
               <Text style={styles.pointTitle}>{p.title}</Text>
@@ -58,28 +59,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.primaryDark,
     borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     overflow: 'hidden',
     ...shadow.card,
   },
   logoBadge: {
-    width: 96,
-    height: 96,
+    width: 92,
+    height: 92,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  logo: { fontSize: 56 },
   title: {
     fontSize: font.hero,
     fontFamily: fonts.display,
     color: colors.white,
-    letterSpacing: 3,
+    letterSpacing: 1,
   },
   tagline: {
     fontSize: font.body,
-    color: colors.primarySoft,
+    color: colors.onPrimary,
     textAlign: 'center',
     marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -96,7 +98,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  pointEmoji: { fontSize: 26 },
   pointBody: { flex: 1 },
   pointTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
   pointText: { fontSize: font.small, color: colors.muted, lineHeight: 20, marginTop: 1 },

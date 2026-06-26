@@ -1,44 +1,44 @@
-// Clip-It visual theme — "outdoor adventure" hybrid:
-// Patagonia-grade refined nature palette + GOHUNT rugged credibility +
-// Duolingo/Strava gamified energy. Catch-and-release, all-ages: rugged and
-// playful, never a literal hunting vibe.
+// ClipIt visual theme — GOHUNT-grade rugged outdoor-tech: dark spruce-black
+// canvas, topographic texture, blaze accent, real icons. Technical and premium,
+// never a literal hunting vibe (catch-and-release, all-ages).
 
 export const colors = {
-  bg: '#F3EFE4', // warm archival sand
-  surface: '#FFFFFF',
-  surfaceAlt: '#EBE5D6',
-  text: '#16241B', // deep spruce-black
-  muted: '#566254',
-  faint: '#8E988A',
+  bg: '#0E1411', // deep spruce-black canvas
+  surface: '#18201A', // elevated card
+  surfaceAlt: '#222C24', // chips, inputs, wells
+  text: '#ECECE2', // warm off-white
+  muted: '#9BA89A',
+  faint: '#6B776C',
 
-  // Greens — refined nature + spruce depth
-  primary: '#1F7A45', // field green
-  primaryDark: '#13502E', // spruce
-  primaryDarker: '#0C3A21', // pressed "lip" under buttons
-  primarySoft: '#DCEEDD',
-  primaryEdge: '#BCD9BD', // soft button lip
-  pine: '#0E2117', // deep spruce — nav, overlays, topo lines
+  // Greens — field green brightened to carry on a dark canvas
+  primary: '#35A65F',
+  primaryDark: '#103E24', // deep panel (hero, dark fills)
+  primaryDarker: '#0A2C19',
+  primarySoft: '#1B3727', // soft green WELL on dark (button/chips bg)
+  primaryEdge: '#1B3727',
+  pine: '#070B08', // deepest — overlays, topo lines on light
+  onPrimary: '#CFEAD6', // light green for text/labels sitting on a green fill
 
-  // Blaze reward accent — GOHUNT / Strava energy (points + primary CTAs)
-  accent: '#F07B2D',
-  accentDark: '#C25A16', // pressed "lip"
-  accentSoft: '#FBE4CC',
-  accentInk: '#8A4516', // readable text on accentSoft
+  // Blaze reward accent — GOHUNT energy (points + primary CTAs)
+  accent: '#F4812F',
+  accentDark: '#C25A16',
+  accentSoft: '#352311', // warm dark amber wash
+  accentInk: '#F2B074', // readable amber on dark
 
-  // Supporting earth + sky tones
+  // Supporting earth + sky tones (tuned for dark)
   gold: '#E6B23C',
-  goldSoft: '#F8EBC8',
-  clay: '#B5532E',
-  claySoft: '#F1DBCD',
-  dusk: '#34607A',
-  duskSoft: '#D7E5EC',
-  sky: '#34607A',
-  skySoft: '#D7E5EC',
+  goldSoft: '#2C2410',
+  clay: '#D27C4A',
+  claySoft: '#34231A',
+  dusk: '#7CA9C6',
+  duskSoft: '#19262F',
+  sky: '#7CA9C6',
+  skySoft: '#19262F',
 
-  danger: '#BE3A2A',
-  dangerSoft: '#F4D9D2',
-  border: '#E0D9C8', // warm hairline
-  overlay: 'rgba(11, 20, 14, 0.58)',
+  danger: '#E45B4C',
+  dangerSoft: '#341D1A',
+  border: 'rgba(255,255,255,0.09)', // subtle hairline on dark
+  overlay: 'rgba(0,0,0,0.62)',
   white: '#FFFFFF',
 };
 

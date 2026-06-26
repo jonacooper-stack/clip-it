@@ -62,8 +62,8 @@ export function Button({
 const VARIANTS: Record<Variant, { bg: string; fg: string; filled?: boolean; outline?: boolean }> = {
   primary: { bg: colors.primary, fg: colors.white, filled: true },
   accent: { bg: colors.accent, fg: colors.white, filled: true },
-  secondary: { bg: colors.primarySoft, fg: colors.primaryDark },
-  ghost: { bg: colors.surface, fg: colors.primaryDark, outline: true },
+  secondary: { bg: colors.primarySoft, fg: colors.onPrimary },
+  ghost: { bg: colors.surface, fg: colors.primary, outline: true },
   danger: { bg: colors.danger, fg: colors.white, filled: true },
 };
 
