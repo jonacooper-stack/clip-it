@@ -14,10 +14,15 @@ on:
         options: [ios, android]
         default: ios
       profile:
-        description: Build profile (preview = shareable install link)
+        description: Build profile (production = TestFlight/App Store)
         type: choice
         options: [preview, production]
-        default: preview
+        default: production
+      submit:
+        description: Submit the finished build to TestFlight (iOS)
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
 
 jobs:
   build:
@@ -64,3 +69,16 @@ jobs:
           EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           EXPO_APPLE_TEAM_TYPE: ${{ secrets.APPLE_TEAM_TYPE }}
         run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive
+
+      # Upload the finished build to App Store Connect → TestFlight. Reuses the
+      # ASC API key (the .p8 path is inherited from the Prepare step, or EAS uses
+      # the key stored on your Expo account). Auto-creates the App Store app record
+      # on first run.
+      - name: Submit to TestFlight (iOS)
+        if: ${{ inputs.submit == 'yes' && inputs.platform == 'ios' }}
+        env:
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EXPO_APPLE_TEAM_TYPE: ${{ secrets.APPLE_TEAM_TYPE }}
+        run: eas submit --platform ios --latest --non-interactive
