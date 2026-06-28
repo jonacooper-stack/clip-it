@@ -12,10 +12,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
+import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
+import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { newId } from '@/lib/id';
 
@@ -35,6 +37,21 @@ function fingerDistance(touches: ReadonlyArray<{ pageX: number; pageY: number }>
   return Math.sqrt(dx * dx + dy * dy) || 1;
 }
 
+// Best-effort copy of a freshly captured photo into the device camera roll, so a
+// player keeps their own shot without screenshotting. Uses a write-only Photos
+// permission (we only add, never read the library). Native-only and never throws:
+// saving a copy is a nicety and must never break the capture loop.
+async function saveCaptureToCameraRoll(uri: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    let granted = (await MediaLibrary.getPermissionsAsync(true)).granted;
+    if (!granted) granted = (await MediaLibrary.requestPermissionsAsync(true)).granted;
+    if (granted) await MediaLibrary.saveToLibraryAsync(uri);
+  } catch {
+    // ignore — keeping a camera-roll copy is optional
+  }
+}
+
 export default function CameraScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
@@ -46,6 +63,7 @@ export default function CameraScreen() {
   const zoomRef = useRef(0);
   const pinch = useRef<{ dist: number; zoom: number } | null>(null);
   const addSighting = useJournalStore((s) => s.addSighting);
+  const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
 
   const applyZoom = (z: number) => {
     const clamped = Math.min(Math.max(z, 0), 1);
@@ -129,6 +147,9 @@ export default function CameraScreen() {
         // Some browsers can't capture; continue without a photo so the demo loop still completes.
         photo = undefined;
       }
+
+      // Keep a copy in the player's camera roll (opt-out in Settings). Best-effort.
+      if (photo?.uri && saveToCameraRoll) await saveCaptureToCameraRoll(photo.uri);
 
       let lat: number | undefined;
       let lng: number | undefined;

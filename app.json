@@ -25,7 +25,8 @@
       "bundleIdentifier": "com.clipitwildlife.app",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryAddUsageDescription": "ClipIt saves the wildlife photos you capture to your camera roll so you keep your own copy."
       }
     },
     "android": {

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,8 @@ export default function Profile() {
   const displayName = useAppStore((s) => s.displayName);
   const ageBracket = useAppStore((s) => s.ageBracket);
   const streak = useAppStore((s) => s.streakCount);
+  const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
+  const setSaveToCameraRoll = useAppStore((s) => s.setSaveToCameraRoll);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
   const resetJournal = useJournalStore((s) => s.reset);
@@ -87,6 +89,17 @@ export default function Profile() {
 
         <Text style={styles.sectionTitle}>Settings</Text>
         <Card style={styles.settings}>
+          {Platform.OS !== 'web' && (
+            <>
+              <ToggleRow
+                icon="images"
+                label="Save photos to camera roll"
+                value={saveToCameraRoll}
+                onValueChange={setSaveToCameraRoll}
+              />
+              <Divider />
+            </>
+          )}
           <Row icon="lock-closed" label="Privacy & location" onPress={() => soon('Privacy & location')} />
           <Divider />
           <Row icon="people" label="Manage child profile" onPress={() => soon('Child profiles')} />
@@ -134,6 +147,32 @@ function Row({
       <Text style={[styles.rowLabel, danger && { color: colors.danger }]}>{label}</Text>
       <Ionicons name="chevron-forward" size={18} color={colors.faint} />
     </Pressable>
+  );
+}
+
+function ToggleRow({
+  icon,
+  label,
+  value,
+  onValueChange,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+}) {
+  return (
+    <View style={styles.row}>
+      <Ionicons name={icon} size={20} color={colors.muted} />
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.white}
+        ios_backgroundColor={colors.border}
+      />
+    </View>
   );
 }
 

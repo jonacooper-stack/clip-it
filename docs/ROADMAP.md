@@ -156,6 +156,18 @@ bald eagle…) in 24h" → earn a badge.
 - Strong fit for trips and park partnerships; pairs naturally with the feed and
   leaderboard.
 
+### F. Save captured photo to camera roll — ✅ shipped
+When you snap a sighting in-app, ClipIt also saves the photo to your device
+camera roll so you keep your own copy without screenshotting. On by default
+with a toggle in **Profile → Settings → Save photos to camera roll**.
+- iOS uses a write-only Photos permission (`NSPhotoLibraryAddUsageDescription`)
+  — ClipIt only *adds* photos, never reads your library. Save is best-effort and
+  never blocks the capture loop; native-only (no camera roll on web).
+- See `app/capture/camera.tsx` (save on capture), `src/state/useAppStore.ts`
+  (`saveToCameraRoll` setting), and `app/(tabs)/profile.tsx` (the toggle).
+- Possible follow-ups: a per-shot "Save" affordance on the result screen, and
+  saving an annotated card (species + points overlay) instead of the raw frame.
+
 ### E. Freemium specifics — ads vs unlimited — *Phase 4 monetization*
 Concrete shape for the free vs paid split:
 - **Free:** rate-limited capture — e.g. an interstitial ad after every 3 photos,

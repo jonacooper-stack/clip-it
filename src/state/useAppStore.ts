@@ -18,11 +18,13 @@ interface AppState {
   displayName: string;
   streakCount: number;
   lastActiveDate: string | null;
+  saveToCameraRoll: boolean;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
   setAge: (bracket: AgeBracket, isChild: boolean) => void;
   setDisplayName: (name: string) => void;
+  setSaveToCameraRoll: (v: boolean) => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -37,11 +39,13 @@ export const useAppStore = create<AppState>()(
       displayName: 'Explorer',
       streakCount: 0,
       lastActiveDate: null,
+      saveToCameraRoll: true,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
       setAge: (ageBracket, isChild) => set({ ageBracket, isChild }),
       setDisplayName: (displayName) => set({ displayName }),
+      setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -60,6 +64,7 @@ export const useAppStore = create<AppState>()(
           displayName: 'Explorer',
           streakCount: 0,
           lastActiveDate: null,
+          saveToCameraRoll: true,
         }),
     }),
     {
