@@ -8,6 +8,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
+import { ShareToWall } from '@/components/ShareToWall';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
@@ -166,6 +167,7 @@ export default function SightingDetail() {
 
         {sighting.source === 'mock' && <DemoNotice compact reason={sighting.note} />}
 
+        <ShareToWall sighting={sighting} />
         <DisputeBox sighting={sighting} />
       </ScrollView>
     </SafeAreaView>

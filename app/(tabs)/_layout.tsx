@@ -52,6 +52,15 @@ export default function TabsLayout() {
         options={{ title: 'Quests', tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} /> }}
       />
       <Tabs.Screen
+        name="social"
+        options={{
+          title: 'Social',
+          // Only a tab when accounts are on; otherwise hidden + unreachable.
+          href: isSupabaseConfigured ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <Ionicons name="person" color={color} size={size} /> }}
       />
