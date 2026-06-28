@@ -29,7 +29,7 @@ eas update:configure           # wires up OTA (sets the updates URL + channels)
 ```
 
 That's it for setup — `app.json` already has the icon, splash, permissions, bundle
-IDs (`com.clipit.app`), and a `runtimeVersion` policy ready to go.
+ID (`com.clipitwildlife.app`), and a `runtimeVersion` policy ready to go.
 
 > Want a different bundle id (e.g. `com.getoveralls.clipit`)? Change `ios.bundleIdentifier`
 > in `app.json` **before** the first build — it can't change after you submit to the store.
