@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Mapped here so the step `if` can detect whether the iOS signing key is set.
+      # ASC_API_KEY_P8 = the raw .p8 contents (easiest); ASC_API_KEY_BASE64 = base64 of it.
+      ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
       ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
     steps:
       - name: Check EXPO_TOKEN
@@ -56,9 +58,13 @@ jobs:
       # secret so EAS can manage signing credentials non-interactively. Skips
       # cleanly when the secret isn't set (e.g. Android builds, or before setup).
       - name: Prepare App Store Connect API key (iOS)
-        if: ${{ inputs.platform == 'ios' && env.ASC_API_KEY_BASE64 != '' }}
+        if: ${{ inputs.platform == 'ios' && (env.ASC_API_KEY_P8 != '' || env.ASC_API_KEY_BASE64 != '') }}
         run: |
-          printf '%s' "$ASC_API_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/asc_api_key.p8"
+          if [ -n "$ASC_API_KEY_P8" ]; then
+            printf '%s' "$ASC_API_KEY_P8" > "$RUNNER_TEMP/asc_api_key.p8"
+          else
+            printf '%s' "$ASC_API_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/asc_api_key.p8"
+          fi
           echo "EXPO_ASC_API_KEY_PATH=$RUNNER_TEMP/asc_api_key.p8" >> "$GITHUB_ENV"
 
       - name: Build
