@@ -18,6 +18,11 @@
     "production": {
       "channel": "production",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://oybkykeoatfgcfqgaqpl.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY",
+        "EXPO_PUBLIC_IDENTIFY_URL": "https://clip-it-rose.vercel.app/api/identify"
+      },
       "ios": {
         "image": "latest"
       }
