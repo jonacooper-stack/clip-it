@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,6 +16,7 @@ import { applyGlobalFont } from '@/lib/fonts';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
+import { processAnalysisQueue } from '@/lib/analysis';
 
 applyGlobalFont();
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -36,7 +37,17 @@ export default function RootLayout() {
 
   useEffect(() => {
     useAuthStore.getState().init();
+    // Retry offline-queued captures whenever the app returns to the foreground.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') processAnalysisQueue();
+    });
+    return () => sub.remove();
   }, []);
+
+  // Once the journal has loaded, flush anything captured while offline.
+  useEffect(() => {
+    if (journalHydrated) processAnalysisQueue();
+  }, [journalHydrated]);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});

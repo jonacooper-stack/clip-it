@@ -6,10 +6,25 @@
 
 import { Platform } from 'react-native';
 import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
-import { isSupabaseConfigured, supabase } from './supabase';
+import { supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
 
 const IDENTIFY_URL = process.env.EXPO_PUBLIC_IDENTIFY_URL ?? '/api/identify';
+// On web the endpoint is same-origin ('/api/identify'). On native a relative path
+// can't be reached, so the real AI runs only when an absolute URL is configured.
+const hasAbsoluteIdentifyUrl = /^https?:\/\//i.test(IDENTIFY_URL);
+// The Supabase identify-and-score function isn't deployed yet, so don't route
+// identification through it just because Supabase is configured for auth/social.
+const USE_SUPABASE_IDENTIFY = process.env.EXPO_PUBLIC_USE_SUPABASE_IDENTIFY === 'true';
+
+// Thrown when the identify endpoint can't be reached (no connectivity) so the
+// caller can queue the capture and analyze it once the device is back online.
+export class OfflineError extends Error {
+  constructor(message = 'offline') {
+    super(message);
+    this.name = 'OfflineError';
+  }
+}
 
 export interface IdentifyInput {
   photoBase64?: string | null;
@@ -47,8 +62,8 @@ export interface IdentifyOutcome {
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function identifySighting(input: IdentifyInput): Promise<IdentifyOutcome> {
-  // Future shared-data backend (unused until we stand up Supabase).
-  if (isSupabaseConfigured && supabase) {
+  // Future shared-data backend (only when explicitly enabled — the function isn't deployed yet).
+  if (USE_SUPABASE_IDENTIFY && supabase) {
     try {
       return await identifyViaBackend(input);
     } catch (err) {
@@ -56,19 +71,25 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     }
   }
 
-  // Real AI via the Vercel function — when we're on the web build and have a photo to send.
+  // Real AI via the Vercel function — on web (same-origin) or native (absolute URL).
   let note: string | undefined;
-  if (Platform.OS === 'web' && input.photoBase64) {
+  if (input.photoBase64 && (Platform.OS === 'web' || hasAbsoluteIdentifyUrl)) {
     try {
       return await identifyViaEndpoint(input);
     } catch (err: any) {
-      note = String(err?.message ?? err);
-      console.warn('AI endpoint failed, using mock:', err);
+      if (err instanceof OfflineError) {
+        // Native queues the capture and retries later; web just uses the demo identifier.
+        if (Platform.OS !== 'web') throw err;
+        note = 'You appear to be offline — used the demo identifier.';
+      } else {
+        note = String(err?.message ?? err);
+        console.warn('AI endpoint failed, using mock:', err);
+      }
     }
-  } else if (Platform.OS !== 'web') {
-    note = 'Real AI runs only on the deployed web app, not in the native build.';
   } else if (!input.photoBase64) {
     note = 'No photo was captured to send to the AI.';
+  } else {
+    note = 'Real AI isn’t configured for this build yet — used the demo identifier.';
   }
 
   // Offline / dev fallback. The mock can't see the photo, so it always returns an
@@ -91,11 +112,18 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
 }
 
 async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcome> {
-  const resp = await fetch(IDENTIFY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(IDENTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
+    });
+  } catch (err: any) {
+    // fetch rejects (rather than returning a bad status) when the network is
+    // unreachable — treat that as offline so the caller can queue the capture.
+    throw new OfflineError(String(err?.message ?? err));
+  }
   if (!resp.ok) {
     // Surface the server's reason (e.g. the real Anthropic API error) so the app
     // can tell the user why it fell back to the demo identifier. Prefer `detail`

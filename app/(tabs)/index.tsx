@@ -116,9 +116,11 @@ export default function Home() {
               >
                 <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
                 <Text style={styles.recentName} numberOfLines={1}>
-                  {s.species?.commonName}
+                  {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Awaiting signal' : 'Identifying…')}
                 </Text>
-                {s.idStatus === 'needs_review' ? (
+                {s.idStatus === 'queued' ? (
+                  <Text style={styles.pending}>offline</Text>
+                ) : s.idStatus === 'needs_review' ? (
                   <Text style={styles.pending}>pending</Text>
                 ) : (
                   <Text style={styles.recentPts}>{s.points ?? 0} pts</Text>

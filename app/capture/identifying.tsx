@@ -5,10 +5,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts } from '@/theme';
-import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
-import { useAppStore } from '@/state/useAppStore';
-import { identifySighting } from '@/lib/identify';
-import { scoreSighting } from '@/lib/scoring';
+import { useJournalStore } from '@/state/useJournalStore';
+import { identifySighting, OfflineError } from '@/lib/identify';
+import { applyIdentifyOutcome, persistQueuedPhoto, processAnalysisQueue } from '@/lib/analysis';
 import { takePendingPhoto } from '@/state/pendingCaptures';
 
 export default function Identifying() {
@@ -16,7 +15,6 @@ export default function Identifying() {
   const router = useRouter();
   const updateSighting = useJournalStore((s) => s.updateSighting);
   const removeSighting = useJournalStore((s) => s.removeSighting);
-  const registerActivity = useAppStore((s) => s.registerActivityToday);
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const ran = useRef(false);
   const cancelled = useRef(false);
@@ -34,74 +32,34 @@ export default function Identifying() {
     ran.current = true;
 
     (async () => {
-      const snapshot = useJournalStore.getState().sightings;
-      const current = snapshot.find((x) => x.id === id);
+      const current = useJournalStore.getState().sightings.find((x) => x.id === id);
+      const base64 = takePendingPhoto(id);
 
-      const outcome = await identifySighting({
-        photoBase64: takePendingPhoto(id),
-        lat: current?.lat,
-        lng: current?.lng,
-        accuracyM: current?.accuracyM,
-        observedAt: current?.observedAt ?? Date.now(),
-      });
-
-      if (cancelled.current) return;
-
-      // Nothing identifiable at all → rejected.
-      if (!outcome.present) {
-        updateSighting(id, {
-          idStatus: 'rejected',
-          caption: outcome.caption,
-          source: outcome.source,
-          note: outcome.note,
+      try {
+        const outcome = await identifySighting({
+          photoBase64: base64,
+          lat: current?.lat,
+          lng: current?.lng,
+          accuracyM: current?.accuracyM,
+          observedAt: current?.observedAt ?? Date.now(),
         });
+        if (cancelled.current) return;
+        applyIdentifyOutcome(id, outcome);
         router.replace(`/capture/result?id=${id}`);
-        return;
-      }
-
-      // Identified, but a pet / person / object → show the ID, but it doesn't score.
-      if (!outcome.eligible) {
-        updateSighting(id, {
-          idStatus: 'ineligible',
-          species: outcome.species,
-          caption: outcome.caption,
-          dangerous: outcome.dangerous,
-          ineligibleReason: outcome.ineligibleReason,
-          source: outcome.source,
-          note: outcome.note,
-        });
+        // We just reached the AI, so flush anything that was queued while offline.
+        processAnalysisQueue();
+      } catch (err) {
+        if (cancelled.current) return;
+        if (err instanceof OfflineError) {
+          // No signal: keep the photo (and its time/place) and queue it for later.
+          const uri = base64 ? await persistQueuedPhoto(id, base64) : undefined;
+          if (cancelled.current) return;
+          updateSighting(id, { idStatus: 'queued', photoUri: uri ?? current?.photoUri });
+        } else {
+          updateSighting(id, { idStatus: 'rejected' });
+        }
         router.replace(`/capture/result?id=${id}`);
-        return;
       }
-
-      let points = outcome.points;
-      let score = outcome.score;
-      if (points == null && outcome.species && outcome.rarityScore != null) {
-        const known = new Set(
-          distinctSpecies(snapshot.filter((s) => s.id !== id)).map((s) => s.species!.scientificName),
-        );
-        const firstOfSpecies = !known.has(outcome.species.scientificName);
-        score = scoreSighting({
-          rarityScore: outcome.rarityScore,
-          sceneTags: outcome.sceneTags,
-          firstOfSpecies,
-        });
-        points = score.totalPoints;
-      }
-
-      updateSighting(id, {
-        species: outcome.species,
-        sceneTags: outcome.sceneTags,
-        caption: outcome.caption,
-        idStatus: outcome.idStatus,
-        dangerous: outcome.dangerous,
-        points,
-        score,
-        source: outcome.source,
-        note: outcome.note,
-      });
-      registerActivity();
-      router.replace(`/capture/result?id=${id}`);
     })();
   }, [id]);
 

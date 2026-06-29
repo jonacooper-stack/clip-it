@@ -2,6 +2,7 @@
 
 export type IdStatus =
   | 'identifying'
+  | 'queued' // captured offline; awaiting analysis when back online
   | 'ai_confident'
   | 'needs_review'
   | 'human_confirmed'

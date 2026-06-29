@@ -122,6 +122,36 @@ export default function Result() {
     );
   }
 
+  // Captured offline — no AI yet. Reassure the player it's saved and will score
+  // itself once they're back online.
+  if (sighting.idStatus === 'queued') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <TopoBackground color={colors.primary} opacity={0.05} />
+        <View style={styles.topBar}>
+          <Pressable onPress={done} style={styles.closeBtn} hitSlop={8}>
+            <Ionicons name="close" size={26} color={colors.text} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {sighting.photoUri && (
+            <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+          )}
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.accentInk} style={styles.rejEmoji} />
+          <Text style={styles.common}>Photo captured</Text>
+          <Card style={styles.queuedCard}>
+            <Text style={styles.queuedText}>
+              You’re offline, so we couldn’t identify this one yet. It’s saved with the time and place
+              you took it — ClipIt will analyze it and assign points automatically as soon as you’re
+              back online.
+            </Text>
+          </Card>
+          <Button label="Got it" icon="checkmark" onPress={done} style={styles.doneBtn} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   const pending = sighting.idStatus === 'needs_review';
   const confidence = sighting.species?.confidence ?? 0;
   const lowConf = confidence < 0.6;
@@ -310,4 +340,12 @@ const styles = StyleSheet.create({
   },
   ineligibleText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.clay, lineHeight: 22 },
   ineligibleSub: { fontSize: font.small, color: colors.text, opacity: 0.7, marginTop: spacing.xs, lineHeight: 20 },
+  queuedCard: {
+    width: '100%',
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentSoft,
+  },
+  queuedText: { fontSize: font.body, color: colors.accentInk, lineHeight: 22, textAlign: 'center' },
 });
