@@ -19,6 +19,7 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
+import { pickImageWithMetadata } from '@/lib/importPhoto';
 import { newId } from '@/lib/id';
 
 // expo-camera's `zoom` is a normalized 0..1 value, not a true magnification. We
@@ -104,6 +105,33 @@ export default function CameraScreen() {
     router.replace(`/capture/identifying?id=${id}`);
   };
 
+  // Upload an existing photo from the camera roll, carrying its real date and
+  // location from the photo's metadata. Works without camera permission.
+  const importFromLibrary = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const picked = await pickImageWithMetadata();
+      if (!picked) return;
+      const id = newId();
+      const now = Date.now();
+      if (picked.base64) setPendingPhoto(id, picked.base64);
+      addSighting({
+        id,
+        createdAt: now,
+        observedAt: picked.observedAt,
+        photoUri: picked.uri,
+        lat: picked.lat,
+        lng: picked.lng,
+        sceneTags: [],
+        idStatus: 'identifying',
+      });
+      router.replace(`/capture/identifying?id=${id}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!permission) {
     return (
       <View style={styles.center}>
@@ -122,6 +150,13 @@ export default function CameraScreen() {
             ClipIt captures the animals you spot in-app, so every sighting is genuinely yours.
           </Text>
           <Button label="Enable camera" onPress={requestPermission} />
+          <Button
+            label="Upload from camera roll"
+            variant="secondary"
+            icon="images"
+            onPress={importFromLibrary}
+            style={styles.permBack}
+          />
           {Platform.OS === 'web' && (
             <Button
               label="Continue without camera"
@@ -235,7 +270,14 @@ export default function CameraScreen() {
           </View>
 
           <View style={styles.shutterRow} pointerEvents="box-none">
-            <View style={styles.sideSlot} />
+            <Pressable
+              onPress={importFromLibrary}
+              disabled={busy}
+              style={[styles.sideSlot, styles.flipBtn]}
+              hitSlop={8}
+            >
+              <Ionicons name="images" size={26} color={colors.white} />
+            </Pressable>
             <Pressable onPress={capture} disabled={busy} style={styles.shutterOuter}>
               {busy ? <ActivityIndicator color={colors.primary} /> : <View style={styles.shutterInner} />}
             </Pressable>
@@ -243,7 +285,7 @@ export default function CameraScreen() {
               <Ionicons name="camera-reverse" size={28} color={colors.white} />
             </Pressable>
           </View>
-          <Text style={styles.hint}>Pinch to zoom · tap to capture</Text>
+          <Text style={styles.hint}>Pinch to zoom · tap to capture · or upload from your roll</Text>
         </View>
       </SafeAreaView>
     </View>

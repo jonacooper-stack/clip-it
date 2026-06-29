@@ -26,7 +26,8 @@
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryAddUsageDescription": "ClipIt saves the wildlife photos you capture to your camera roll so you keep your own copy."
+        "NSPhotoLibraryAddUsageDescription": "ClipIt saves the wildlife photos you capture to your camera roll so you keep your own copy.",
+        "NSPhotoLibraryUsageDescription": "ClipIt lets you upload a wildlife photo from your camera roll and reads its date and location so the sighting is placed and timed correctly."
       }
     },
     "android": {
