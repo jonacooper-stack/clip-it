@@ -47,8 +47,13 @@ const svg = ({ bg = true, scale = 1 } = {}) => `<svg viewBox="0 0 1024 1024" xml
   ${art(scale)}
 </svg>`;
 
-const page = (inner) =>
-  `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}svg{display:block;width:100vw;height:100vh}</style></head><body>${inner}</body></html>`;
+// Center the SVG and overscan it past the viewport so the canvas is always fully
+// covered — otherwise a sub-pixel viewport shortfall leaves a white strip at the
+// edge (which reads as an off-center icon on the home screen). The art sits well
+// inside the safe zone, so the few cropped background pixels are invisible. Opaque
+// icons also get a solid background matching the gradient's base as a final guard.
+const page = (inner, bg = 'transparent') =>
+  `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:${bg}}svg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:104vw;height:104vh}</style></head><body>${inner}</body></html>`;
 
 const dir = mkdtempSync(join(tmpdir(), 'clipit-icons-'));
 // [output, markup, size, transparent]
@@ -62,7 +67,7 @@ const targets = [
 for (const [out, markup, size, transparent] of targets) {
   const html = join(dir, out + '.html');
   const png = join(dir, out);
-  writeFileSync(html, page(markup));
+  writeFileSync(html, page(markup, transparent ? 'transparent' : '#0F3D23'));
   execFileSync(CHROME, [
     '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
     '--force-device-scale-factor=1', `--window-size=${size},${size}`,
