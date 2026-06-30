@@ -13,6 +13,9 @@ export type IdStatus =
 export interface ScoreBreakdown {
   basePoints: number;
   behaviorMultiplier: number;
+  /** <1 when this species was already photographed (diminishing returns); 0 for an
+   * exact-duplicate photo. Absent on scores from before this rule (treat as 1). */
+  repeatMultiplier?: number;
   bonuses: {
     firstOfSpecies: number;
     quest: number;
@@ -38,6 +41,8 @@ export interface Sighting {
   createdAt: number;
   observedAt: number;
   photoUri?: string;
+  /** Hash of the photo bytes, for detecting an exact-duplicate resubmission. */
+  photoHash?: string;
   lat?: number;
   lng?: number;
   accuracyM?: number;

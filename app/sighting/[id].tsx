@@ -132,6 +132,16 @@ export default function SightingDetail() {
             {sighting.score.behaviorMultiplier > 1 && (
               <Row label="Behavior bonus" value={`×${sighting.score.behaviorMultiplier}`} />
             )}
+            {sighting.score.repeatMultiplier != null && sighting.score.repeatMultiplier < 1 && (
+              <Row
+                label="Repeat sighting"
+                value={
+                  sighting.score.repeatMultiplier === 0
+                    ? 'no points'
+                    : `×${sighting.score.repeatMultiplier.toFixed(2)}`
+                }
+              />
+            )}
             {sighting.score.bonuses.firstOfSpecies > 0 && (
               <Row label="First of species" value={`+${sighting.score.bonuses.firstOfSpecies}`} />
             )}

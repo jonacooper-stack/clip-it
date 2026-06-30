@@ -7,7 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { identifySighting, OfflineError } from '@/lib/identify';
-import { applyIdentifyOutcome, persistQueuedPhoto, processAnalysisQueue } from '@/lib/analysis';
+import {
+  applyIdentifyOutcome,
+  persistQueuedPhoto,
+  processAnalysisQueue,
+  hashPhotoBase64,
+} from '@/lib/analysis';
 import { takePendingPhoto } from '@/state/pendingCaptures';
 
 export default function Identifying() {
@@ -44,7 +49,7 @@ export default function Identifying() {
           observedAt: current?.observedAt ?? Date.now(),
         });
         if (cancelled.current) return;
-        applyIdentifyOutcome(id, outcome);
+        applyIdentifyOutcome(id, outcome, base64 ? hashPhotoBase64(base64) : undefined);
         router.replace(`/capture/result?id=${id}`);
         // We just reached the AI, so flush anything that was queued while offline.
         processAnalysisQueue();

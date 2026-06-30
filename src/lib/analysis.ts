@@ -10,7 +10,7 @@ import * as FileSystem from 'expo-file-system';
 import type { IdentifyInput, IdentifyOutcome } from './identify';
 import { identifySighting, OfflineError } from './identify';
 import { scoreSighting } from './scoring';
-import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
+import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 
 // Queued-capture photos live here so they survive app restarts (native only).
@@ -30,9 +30,21 @@ export async function persistQueuedPhoto(id: string, base64: string): Promise<st
   }
 }
 
+// Cheap, stable hash of a photo's bytes (FNV-1a, salted with length) for detecting
+// an exact-duplicate resubmission within a player's own journal.
+export function hashPhotoBase64(base64: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < base64.length; i++) {
+    h ^= base64.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${(h >>> 0).toString(16)}-${base64.length}`;
+}
+
 // Writes an identification result into the journal: rejected / ineligible / scored.
 // Shared by the capture screen and the offline retry queue so both score identically.
-export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome): void {
+// `photoHash` (when provided) drives exact-duplicate and repeat-species scoring.
+export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photoHash?: string): void {
   const { updateSighting } = useJournalStore.getState();
 
   if (!outcome.present) {
@@ -61,13 +73,26 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome): void
   let points = outcome.points;
   let score = outcome.score;
   if (points == null && outcome.species && outcome.rarityScore != null) {
-    const others = useJournalStore.getState().sightings.filter((s) => s.id !== id);
-    const known = new Set(distinctSpecies(others).map((s) => s.species!.scientificName));
-    const firstOfSpecies = !known.has(outcome.species.scientificName);
+    const sci = outcome.species.scientificName;
+    // Compare only against already-scored sightings (skip rejected / ineligible and
+    // not-yet-analyzed ones) so repeats and exact duplicates are detected fairly.
+    const priors = useJournalStore
+      .getState()
+      .sightings.filter(
+        (s) =>
+          s.id !== id &&
+          s.points != null &&
+          s.idStatus !== 'rejected' &&
+          s.idStatus !== 'ineligible',
+      );
+    const priorSameSpecies = priors.filter((s) => s.species?.scientificName === sci).length;
+    const duplicatePhoto = photoHash != null && priors.some((s) => s.photoHash === photoHash);
     score = scoreSighting({
       rarityScore: outcome.rarityScore,
       sceneTags: outcome.sceneTags,
-      firstOfSpecies,
+      firstOfSpecies: priorSameSpecies === 0,
+      priorSameSpecies,
+      duplicatePhoto,
     });
     points = score.totalPoints;
   }
@@ -80,6 +105,7 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome): void
     dangerous: outcome.dangerous,
     points,
     score,
+    photoHash,
     source: outcome.source,
     note: outcome.note,
   });
@@ -114,7 +140,7 @@ export async function processAnalysisQueue(): Promise<void> {
         observedAt: s.observedAt,
       };
       try {
-        applyIdentifyOutcome(s.id, await identifySighting(input));
+        applyIdentifyOutcome(s.id, await identifySighting(input), hashPhotoBase64(base64));
       } catch (err) {
         if (err instanceof OfflineError) break; // still offline — stop and retry later
         // Any other error: leave this capture queued and move on.

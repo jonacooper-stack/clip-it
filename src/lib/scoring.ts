@@ -16,9 +16,18 @@ const MAX_TOTAL_POINTS = 500;
 const FIRST_OF_SPECIES_BONUS = 5;
 /** Bonus points per answered science question (client-side incentive). */
 export const FIELD_NOTE_BONUS = 1;
+/** Diminishing returns never drop a repeat below this fraction of its base value. */
+const REPEAT_FLOOR = 0.1;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi);
+}
+
+// Diminishing returns for re-photographing a species already in your journal:
+// 1st = full, 2nd = 1/2, 3rd = 1/3 … floored so a repeat is always worth a little.
+export function repeatFactor(priorSameSpecies: number): number {
+  if (priorSameSpecies <= 0) return 1;
+  return Math.max(1 / (priorSameSpecies + 1), REPEAT_FLOOR);
 }
 
 export function basePointsFromRarity(rarityScore: number): number {
@@ -38,29 +47,38 @@ export interface ScoreInput {
   firstOfSpecies?: boolean;
   questBonus?: number;
   streakBonus?: number;
+  /** How many counted captures of this species the player already has. */
+  priorSameSpecies?: number;
+  /** True when this exact photo was already submitted — earns nothing. */
+  duplicatePhoto?: boolean;
 }
 
 export function scoreSighting(input: ScoreInput): ScoreBreakdown {
   const basePoints = basePointsFromRarity(input.rarityScore);
   const mult = behaviorMultiplier(input.sceneTags);
-  const subtotal = Math.round(basePoints * mult);
+  const repeatMultiplier = input.duplicatePhoto ? 0 : repeatFactor(input.priorSameSpecies ?? 0);
+  const subtotal = Math.round(basePoints * mult * repeatMultiplier);
 
   const bonuses = {
-    firstOfSpecies: input.firstOfSpecies ? FIRST_OF_SPECIES_BONUS : 0,
-    quest: Math.max(0, input.questBonus ?? 0),
-    streak: Math.max(0, input.streakBonus ?? 0),
+    firstOfSpecies: !input.duplicatePhoto && input.firstOfSpecies ? FIRST_OF_SPECIES_BONUS : 0,
+    quest: input.duplicatePhoto ? 0 : Math.max(0, input.questBonus ?? 0),
+    streak: input.duplicatePhoto ? 0 : Math.max(0, input.streakBonus ?? 0),
     fieldNotes: 0,
   };
 
-  const totalPoints = clamp(
-    subtotal + bonuses.firstOfSpecies + bonuses.quest + bonuses.streak + bonuses.fieldNotes,
-    1,
-    MAX_TOTAL_POINTS,
-  );
+  // An exact-duplicate photo earns nothing; any other eligible capture is worth >= 1.
+  const totalPoints = input.duplicatePhoto
+    ? 0
+    : clamp(
+        subtotal + bonuses.firstOfSpecies + bonuses.quest + bonuses.streak + bonuses.fieldNotes,
+        1,
+        MAX_TOTAL_POINTS,
+      );
 
   return {
     basePoints,
     behaviorMultiplier: mult,
+    repeatMultiplier,
     bonuses,
     totalPoints,
     ruleVersion: RULE_VERSION,
@@ -75,16 +93,20 @@ export function applyFieldNotesBonus(
   answeredCount: number,
 ): { score: ScoreBreakdown; points: number } {
   const fieldNotes = Math.max(0, answeredCount) * FIELD_NOTE_BONUS;
-  const subtotal = Math.round(score.basePoints * score.behaviorMultiplier);
-  const totalPoints = clamp(
-    subtotal +
-      score.bonuses.firstOfSpecies +
-      score.bonuses.quest +
-      score.bonuses.streak +
-      fieldNotes,
-    1,
-    MAX_TOTAL_POINTS,
-  );
+  const repeat = score.repeatMultiplier ?? 1;
+  const subtotal = Math.round(score.basePoints * score.behaviorMultiplier * repeat);
+  const totalPoints =
+    repeat === 0
+      ? 0 // exact-duplicate photo stays at zero; field notes can't revive it
+      : clamp(
+          subtotal +
+            score.bonuses.firstOfSpecies +
+            score.bonuses.quest +
+            score.bonuses.streak +
+            fieldNotes,
+          1,
+          MAX_TOTAL_POINTS,
+        );
   return {
     score: { ...score, bonuses: { ...score.bonuses, fieldNotes }, totalPoints },
     points: totalPoints,

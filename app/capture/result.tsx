@@ -155,6 +155,9 @@ export default function Result() {
   const pending = sighting.idStatus === 'needs_review';
   const confidence = sighting.species?.confidence ?? 0;
   const lowConf = confidence < 0.6;
+  const repeatMult = sighting.score?.repeatMultiplier;
+  const duplicate = repeatMult === 0; // exact photo already submitted
+  const repeated = repeatMult != null && repeatMult > 0 && repeatMult < 1; // same species again
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -215,6 +218,24 @@ export default function Result() {
         </View>
         {pending && <Text style={styles.reviewNote}>A human will double-check this one.</Text>}
 
+        {duplicate && (
+          <Card style={styles.duplicateCard}>
+            <View style={styles.duplicateHead}>
+              <Ionicons name="copy-outline" size={18} color={colors.accentInk} />
+              <Text style={styles.duplicateTitle}>Already in your journal</Text>
+            </View>
+            <Text style={styles.duplicateText}>
+              You’ve submitted this exact photo before, so it doesn’t earn points again. Snap a fresh
+              shot to score.
+            </Text>
+          </Card>
+        )}
+        {repeated && (
+          <Text style={styles.repeatNote}>
+            You’ve photographed this species before — repeat sightings earn reduced points.
+          </Text>
+        )}
+
         {sighting.sceneTags.length > 0 && (
           <View style={styles.tags}>
             {sighting.sceneTags.map((t) => (
@@ -236,12 +257,15 @@ export default function Result() {
           </Card>
         )}
 
-        {sighting.score && !pending && (
+        {sighting.score && !pending && !duplicate && (
           <Card style={styles.breakdown}>
             <Text style={styles.breakdownTitle}>How you scored</Text>
             <Row label="Base (rarity)" value={`${sighting.score.basePoints}`} />
             {sighting.score.behaviorMultiplier > 1 && (
               <Row label="Behavior bonus" value={`×${sighting.score.behaviorMultiplier}`} />
+            )}
+            {repeated && (
+              <Row label="Repeat sighting" value={`×${repeatMult!.toFixed(2)}`} />
             )}
             {sighting.score.bonuses.firstOfSpecies > 0 && (
               <Row label="First of species" value={`+${sighting.score.bonuses.firstOfSpecies}`} />
@@ -348,4 +372,14 @@ const styles = StyleSheet.create({
     borderColor: colors.accentSoft,
   },
   queuedText: { fontSize: font.body, color: colors.accentInk, lineHeight: 22, textAlign: 'center' },
+  duplicateCard: {
+    width: '100%',
+    marginTop: spacing.md,
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentSoft,
+  },
+  duplicateHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  duplicateTitle: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.accentInk },
+  duplicateText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
+  repeatNote: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
 });
