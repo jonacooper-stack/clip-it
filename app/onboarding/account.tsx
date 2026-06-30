@@ -68,10 +68,16 @@ export default function Account() {
     setBusy(true);
     setError(null);
     const res = await signInWithGoogle();
-    // On success the browser redirects to Google and back; only surface failures.
     if (res.error) {
       setError(res.error);
       setBusy(false);
+      return;
+    }
+    // Web reloads via the OAuth redirect; native returns here with a live session,
+    // so continue onboarding ourselves (ethos marks the user onboarded).
+    if (Platform.OS !== 'web') {
+      setBusy(false);
+      router.replace('/onboarding/ethos');
     }
   };
 
@@ -124,19 +130,15 @@ export default function Account() {
         </Card>
       )}
 
-      {Platform.OS === 'web' && (
-        <>
-          <Pressable onPress={onGoogle} disabled={busy} style={({ pressed }) => [styles.googleBtn, pressed && styles.googlePressed]}>
-            <Ionicons name="logo-google" size={18} color={colors.text} />
-            <Text style={styles.googleText}>Continue with Google</Text>
-          </Pressable>
-          <View style={styles.orRow}>
-            <View style={styles.orLine} />
-            <Text style={styles.orText}>or</Text>
-            <View style={styles.orLine} />
-          </View>
-        </>
-      )}
+      <Pressable onPress={onGoogle} disabled={busy} style={({ pressed }) => [styles.googleBtn, pressed && styles.googlePressed]}>
+        <Ionicons name="logo-google" size={18} color={colors.text} />
+        <Text style={styles.googleText}>Continue with Google</Text>
+      </Pressable>
+      <View style={styles.orRow}>
+        <View style={styles.orLine} />
+        <Text style={styles.orText}>or</Text>
+        <View style={styles.orLine} />
+      </View>
 
       <View style={styles.form}>
         {isSignup && (
