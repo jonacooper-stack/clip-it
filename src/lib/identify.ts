@@ -5,6 +5,7 @@
 // the app never gets stuck.
 
 import { Platform } from 'react-native';
+import * as Network from 'expo-network';
 import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
 import { supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
@@ -23,6 +24,20 @@ export class OfflineError extends Error {
   constructor(message = 'offline') {
     super(message);
     this.name = 'OfflineError';
+  }
+}
+
+// Fast, local connectivity check (no network round trip) so we can queue an
+// offline capture immediately instead of waiting for a request to time out.
+// Unknown/ambiguous states return true — let the request try and fall back.
+async function deviceIsOnline(): Promise<boolean> {
+  try {
+    const state = await Network.getNetworkStateAsync();
+    if (state.isConnected === false) return false;
+    if (state.isInternetReachable === false) return false;
+    return true;
+  } catch {
+    return true;
   }
 }
 
@@ -74,6 +89,11 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
   // Real AI via the Vercel function — on web (same-origin) or native (absolute URL).
   let note: string | undefined;
   if (input.photoBase64 && (Platform.OS === 'web' || hasAbsoluteIdentifyUrl)) {
+    // Check for a signal first: if the device is offline, queue the capture right
+    // away rather than waiting on a request that's bound to fail.
+    if (Platform.OS !== 'web' && !(await deviceIsOnline())) {
+      throw new OfflineError('no network');
+    }
     try {
       return await identifyViaEndpoint(input);
     } catch (err: any) {
