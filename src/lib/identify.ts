@@ -131,18 +131,28 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
   };
 }
 
+const IDENTIFY_TIMEOUT_MS = 20000;
+
 async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcome> {
   let resp: Response;
+  // Bound the request so a stalled connection (signal present but going nowhere)
+  // can never spin forever — on timeout we treat it as offline and queue.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IDENTIFY_TIMEOUT_MS);
   try {
     resp = await fetch(IDENTIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
+      signal: controller.signal,
     });
   } catch (err: any) {
     // fetch rejects (rather than returning a bad status) when the network is
-    // unreachable — treat that as offline so the caller can queue the capture.
+    // unreachable or the request times out — treat both as offline so the caller
+    // can queue the capture.
     throw new OfflineError(String(err?.message ?? err));
+  } finally {
+    clearTimeout(timer);
   }
   if (!resp.ok) {
     // Surface the server's reason (e.g. the real Anthropic API error) so the app

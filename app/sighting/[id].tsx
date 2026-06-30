@@ -19,7 +19,7 @@ import type { IdStatus } from '@/types';
 
 const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   identifying: { label: 'Identifying', color: colors.muted, bg: colors.surfaceAlt },
-  queued: { label: 'Awaiting signal', color: colors.accentInk, bg: colors.accentSoft },
+  queued: { label: 'Queued', color: colors.accentInk, bg: colors.accentSoft },
   ai_confident: { label: 'Identified', color: colors.primary, bg: colors.primarySoft },
   needs_review: { label: 'Pending review', color: colors.accentInk, bg: colors.accentSoft },
   human_confirmed: { label: 'Confirmed', color: colors.primary, bg: colors.primarySoft },

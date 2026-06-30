@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Platform,
   PanResponder,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,7 +21,11 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { pickImageWithMetadata } from '@/lib/importPhoto';
+import { persistQueuedPhotoFromUri, processAnalysisQueue } from '@/lib/analysis';
 import { newId } from '@/lib/id';
+
+// Rapid-fire capture is native-only — it relies on the on-device analysis queue.
+const RAPID_FIRE_AVAILABLE = Platform.OS !== 'web';
 
 // expo-camera's `zoom` is a normalized 0..1 value, not a true magnification. We
 // show it as 1.0×..MAX× purely as a readout; pinch and the +/- buttons move the
@@ -65,6 +70,15 @@ export default function CameraScreen() {
   const pinch = useRef<{ dist: number; zoom: number } | null>(null);
   const addSighting = useJournalStore((s) => s.addSighting);
   const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
+  const [rapidFire, setRapidFire] = useState(false);
+  const [burstCount, setBurstCount] = useState(0);
+  const flashAnim = useRef(new Animated.Value(0)).current;
+
+  // Quick white flash to confirm each rapid-fire shot landed.
+  const flashShutter = () => {
+    flashAnim.setValue(0.55);
+    Animated.timing(flashAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start();
+  };
 
   const applyZoom = (z: number) => {
     const clamped = Math.min(Math.max(z, 0), 1);
@@ -223,6 +237,84 @@ export default function CameraScreen() {
     }
   };
 
+  // Rapid fire: snap and queue instantly — no waiting on the AI. The on-device
+  // queue identifies and scores the burst later (when finished / back online).
+  const captureRapid = async () => {
+    if (busy || !camRef.current) return;
+    setBusy(true);
+    try {
+      let photo: { uri?: string } | undefined;
+      try {
+        photo = await camRef.current.takePictureAsync({ quality: 0.6 });
+      } catch {
+        photo = undefined;
+      }
+      if (!photo?.uri) return;
+
+      // Cached location only — never block a burst waiting for a fresh GPS fix.
+      let lat: number | undefined;
+      let lng: number | undefined;
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.granted) {
+          const pos = await Location.getLastKnownPositionAsync();
+          if (pos) {
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+          }
+        }
+      } catch {
+        // location is best-effort
+      }
+
+      const id = newId();
+      const now = Date.now();
+      const stored = await persistQueuedPhotoFromUri(id, photo.uri);
+      addSighting({
+        id,
+        createdAt: now,
+        observedAt: now,
+        photoUri: stored ?? photo.uri,
+        lat,
+        lng,
+        sceneTags: [],
+        idStatus: 'queued',
+      });
+      // Copy to the camera roll only if already permitted — never prompt mid-burst.
+      if (saveToCameraRoll) {
+        const savedUri = photo.uri;
+        MediaLibrary.getPermissionsAsync(true)
+          .then((p) => {
+            if (p.granted) return MediaLibrary.saveToLibraryAsync(savedUri);
+          })
+          .catch(() => {});
+      }
+      setBurstCount((n) => n + 1);
+      flashShutter();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleRapidFire = () => {
+    setRapidFire((on) => {
+      if (!on) setBurstCount(0); // starting a fresh burst
+      return !on;
+    });
+  };
+
+  // Finish a burst: start identifying the queued shots and go watch them resolve.
+  const finishBurst = () => {
+    processAnalysisQueue();
+    router.replace('/');
+  };
+
+  // Leaving the camera: if a burst is pending, start analyzing it on the way out.
+  const onClose = () => {
+    if (burstCount > 0) processAnalysisQueue();
+    router.back();
+  };
+
   const toggleFacing = () => setFacing((f) => (f === 'back' ? 'front' : 'back'));
   const cycleFlash = () => setFlash((f) => (f === 'off' ? 'auto' : f === 'auto' ? 'on' : 'off'));
   const flashIcon = flash === 'on' ? 'flash' : flash === 'auto' ? 'flash-outline' : 'flash-off';
@@ -238,9 +330,13 @@ export default function CameraScreen() {
         flash={flash}
         autofocus="on"
       />
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, styles.captureFlash, { opacity: flashAnim }]}
+      />
       <SafeAreaView style={styles.overlay} edges={['top', 'bottom']} pointerEvents="box-none">
         <View style={styles.topBar} pointerEvents="box-none">
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
+          <Pressable onPress={onClose} style={styles.iconBtn} hitSlop={8}>
             <Ionicons name="close" size={26} color={colors.white} />
           </Pressable>
           <View style={styles.reminder}>
@@ -257,6 +353,19 @@ export default function CameraScreen() {
         </View>
 
         <View style={styles.bottomBar} pointerEvents="box-none">
+          {RAPID_FIRE_AVAILABLE && (
+            <Pressable
+              onPress={toggleRapidFire}
+              style={[styles.rapidPill, rapidFire && styles.rapidPillOn]}
+              hitSlop={6}
+            >
+              <Ionicons name="flash" size={15} color={rapidFire ? colors.accentInk : colors.white} />
+              <Text style={[styles.rapidPillText, rapidFire && styles.rapidPillTextOn]}>
+                {rapidFire ? `Rapid fire · ${burstCount}` : 'Rapid fire'}
+              </Text>
+            </Pressable>
+          )}
+
           <View style={styles.zoomRow} pointerEvents="box-none">
             <Pressable onPress={() => applyZoom(zoomRef.current - ZOOM_STEP)} style={styles.zoomBtn} hitSlop={6}>
               <Ionicons name="remove" size={20} color={colors.white} />
@@ -278,14 +387,35 @@ export default function CameraScreen() {
             >
               <Ionicons name="images" size={26} color={colors.white} />
             </Pressable>
-            <Pressable onPress={capture} disabled={busy} style={styles.shutterOuter}>
-              {busy ? <ActivityIndicator color={colors.primary} /> : <View style={styles.shutterInner} />}
+            <Pressable
+              onPress={rapidFire ? captureRapid : capture}
+              disabled={busy}
+              style={styles.shutterOuter}
+            >
+              {busy && !rapidFire ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <View style={[styles.shutterInner, rapidFire && styles.shutterInnerRapid]} />
+              )}
             </Pressable>
             <Pressable onPress={toggleFacing} style={[styles.sideSlot, styles.flipBtn]} hitSlop={8}>
               <Ionicons name="camera-reverse" size={28} color={colors.white} />
             </Pressable>
           </View>
-          <Text style={styles.hint}>Pinch to zoom · tap to capture · or upload from your roll</Text>
+          {rapidFire && burstCount > 0 ? (
+            <Pressable onPress={finishBurst} style={styles.doneBurstBtn}>
+              <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
+              <Text style={styles.doneBurstText}>
+                Review {burstCount} shot{burstCount > 1 ? 's' : ''}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.hint}>
+              {rapidFire
+                ? 'Tap to capture — we’ll identify them all later'
+                : 'Pinch to zoom · tap to capture · or upload from your roll'}
+            </Text>
+          )}
         </View>
       </SafeAreaView>
     </View>
@@ -368,6 +498,32 @@ const styles = StyleSheet.create({
   },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.white },
   hint: { color: colors.white, fontSize: font.small, marginTop: spacing.md, fontFamily: fonts.bodyMedium },
+  captureFlash: { backgroundColor: '#fff' },
+  rapidPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.overlay,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    marginBottom: spacing.md,
+  },
+  rapidPillOn: { backgroundColor: colors.accentSoft },
+  rapidPillText: { color: colors.white, fontSize: font.small, fontFamily: fonts.bodyBold, letterSpacing: 0.3 },
+  rapidPillTextOn: { color: colors.accentInk },
+  shutterInnerRapid: { backgroundColor: colors.accent },
+  doneBurstBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  doneBurstText: { color: colors.onPrimary, fontSize: font.body, fontFamily: fonts.bodyBold },
 
   permSafe: { flex: 1, backgroundColor: colors.bg },
   permBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },

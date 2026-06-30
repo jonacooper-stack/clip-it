@@ -30,7 +30,12 @@ export default function Home() {
 
   const points = useMemo(() => totalPoints(sightings), [sightings]);
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
-  const recent = useMemo(() => sightings.filter((s) => s.species).slice(0, 8), [sightings]);
+  // Include still-queued captures (rapid-fire / offline) so a burst is visible
+  // and the player can watch each one resolve from "queued" to a scored species.
+  const recent = useMemo(
+    () => sightings.filter((s) => s.species || s.idStatus === 'queued').slice(0, 8),
+    [sightings],
+  );
 
   const nextQuest = useMemo(
     () => SEED_QUESTS.find((q) => questProgress(q, sightings) < q.goal) ?? null,
@@ -116,10 +121,10 @@ export default function Home() {
               >
                 <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
                 <Text style={styles.recentName} numberOfLines={1}>
-                  {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Awaiting signal' : 'Identifying…')}
+                  {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
                 </Text>
                 {s.idStatus === 'queued' ? (
-                  <Text style={styles.pending}>offline</Text>
+                  <Text style={styles.pending}>queued</Text>
                 ) : s.idStatus === 'needs_review' ? (
                   <Text style={styles.pending}>pending</Text>
                 ) : (

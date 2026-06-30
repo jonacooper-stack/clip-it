@@ -30,6 +30,21 @@ export async function persistQueuedPhoto(id: string, base64: string): Promise<st
   }
 }
 
+// Same, but copies an existing photo file into the queue (no base64 round-trip).
+// Used by rapid-fire capture so each shot is as fast as possible — the queue reads
+// the bytes back when it analyzes. Native-only; returns undefined on web.
+export async function persistQueuedPhotoFromUri(id: string, srcUri: string): Promise<string | undefined> {
+  if (Platform.OS === 'web' || !QUEUE_DIR) return undefined;
+  try {
+    await FileSystem.makeDirectoryAsync(QUEUE_DIR, { intermediates: true });
+    const uri = `${QUEUE_DIR}${id}.jpg`;
+    await FileSystem.copyAsync({ from: srcUri, to: uri });
+    return uri;
+  } catch {
+    return undefined;
+  }
+}
+
 // Cheap, stable hash of a photo's bytes (FNV-1a, salted with length) for detecting
 // an exact-duplicate resubmission within a player's own journal.
 export function hashPhotoBase64(base64: string): string {

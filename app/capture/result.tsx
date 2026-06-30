@@ -141,9 +141,8 @@ export default function Result() {
           <Text style={styles.common}>Photo captured</Text>
           <Card style={styles.queuedCard}>
             <Text style={styles.queuedText}>
-              You’re offline, so we couldn’t identify this one yet. It’s saved with the time and place
-              you took it — ClipIt will analyze it and assign points automatically as soon as you’re
-              back online.
+              We couldn’t reach the identifier just now, so it’s saved with the time and place you took
+              it — ClipIt will identify it and award points automatically as soon as it’s back online.
             </Text>
           </Card>
           <Button label="Got it" icon="checkmark" onPress={done} style={styles.doneBtn} />
