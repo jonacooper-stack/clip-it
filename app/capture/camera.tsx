@@ -22,6 +22,7 @@ import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { pickImageWithMetadata } from '@/lib/importPhoto';
 import { persistQueuedPhotoFromUri, processAnalysisQueue } from '@/lib/analysis';
+import { resizedBase64 } from '@/lib/prepareImage';
 import { newId } from '@/lib/id';
 
 // Rapid-fire capture is native-only — it relies on the on-device analysis queue.
@@ -191,7 +192,12 @@ export default function CameraScreen() {
     try {
       let photo: { uri?: string; base64?: string } | undefined;
       try {
-        photo = await camRef.current.takePictureAsync({ base64: true, quality: 0.6 });
+        // Only pull base64 straight from the camera on web; on native we downscale
+        // from the file so the AI payload stays under the request-size limit.
+        photo = await camRef.current.takePictureAsync({
+          base64: Platform.OS === 'web',
+          quality: 0.6,
+        });
       } catch {
         // Some browsers can't capture; continue without a photo so the demo loop still completes.
         photo = undefined;
@@ -199,6 +205,14 @@ export default function CameraScreen() {
 
       // Keep a copy in the player's camera roll (opt-out in Settings). Best-effort.
       if (photo?.uri && saveToCameraRoll) await saveCaptureToCameraRoll(photo.uri);
+
+      // Shrink for the AI (native), or use the browser's base64 (web).
+      const b64 =
+        Platform.OS === 'web'
+          ? photo?.base64
+          : photo?.uri
+            ? await resizedBase64(photo.uri)
+            : undefined;
 
       let lat: number | undefined;
       let lng: number | undefined;
@@ -219,7 +233,7 @@ export default function CameraScreen() {
 
       const id = newId();
       const now = Date.now();
-      if (photo?.base64) setPendingPhoto(id, photo.base64);
+      if (b64) setPendingPhoto(id, b64);
       addSighting({
         id,
         createdAt: now,

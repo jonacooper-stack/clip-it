@@ -10,6 +10,7 @@
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
+import { resizedBase64 } from './prepareImage';
 
 export interface ImportedPhoto {
   uri: string;
@@ -44,7 +45,7 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     quality: 0.6,
-    base64: true,
+    base64: Platform.OS === 'web', // native downscales from the uri below
     exif: true,
   });
   if (result.canceled || !result.assets?.length) return null;
@@ -87,5 +88,6 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
     observedAt = parseExifDate(ex.DateTimeOriginal ?? exif.DateTimeOriginal ?? exif.DateTime);
   }
 
-  return { uri: a.uri, base64: a.base64 ?? undefined, lat, lng, observedAt: observedAt ?? Date.now() };
+  const base64 = Platform.OS === 'web' ? a.base64 ?? undefined : await resizedBase64(a.uri);
+  return { uri: a.uri, base64, lat, lng, observedAt: observedAt ?? Date.now() };
 }

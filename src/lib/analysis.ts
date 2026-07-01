@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system';
 import type { IdentifyInput, IdentifyOutcome } from './identify';
 import { identifySighting, OfflineError } from './identify';
 import { scoreSighting } from './scoring';
+import { resizedBase64 } from './prepareImage';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 
@@ -139,14 +140,10 @@ export async function processAnalysisQueue(): Promise<void> {
     const queued = useJournalStore.getState().sightings.filter((s) => s.idStatus === 'queued');
     for (const s of queued) {
       if (!s.photoUri) continue;
-      let base64: string;
-      try {
-        base64 = await FileSystem.readAsStringAsync(s.photoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-      } catch {
-        continue; // photo unreadable; leave it queued
-      }
+      // Downscale the stored photo before sending so a queued full-res capture
+      // doesn't blow the request-size limit either.
+      const base64 = await resizedBase64(s.photoUri);
+      if (!base64) continue; // couldn't read/resize; leave it queued for next time
       const input: IdentifyInput = {
         photoBase64: base64,
         lat: s.lat,
