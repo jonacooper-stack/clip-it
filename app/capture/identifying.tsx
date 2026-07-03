@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, font, fonts } from '@/theme';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { identifySighting, OfflineError } from '@/lib/identify';
 import {
   applyIdentifyOutcome,
   persistQueuedPhoto,
+  persistQueuedPhotoFromUri,
   processAnalysisQueue,
   hashPhotoBase64,
 } from '@/lib/analysis';
@@ -30,6 +31,18 @@ export default function Identifying() {
     cancelled.current = true;
     if (id) removeSighting(id);
     router.replace('/');
+  };
+
+  // Don't wait on the AI — stash this shot in the queue (it gets scored in the
+  // background) and jump straight into rapid fire to keep shooting.
+  const switchToRapidFire = async () => {
+    cancelled.current = true;
+    if (id) {
+      const current = useJournalStore.getState().sightings.find((x) => x.id === id);
+      const uri = current?.photoUri ? await persistQueuedPhotoFromUri(id, current.photoUri) : undefined;
+      updateSighting(id, { idStatus: 'queued', photoUri: uri ?? current?.photoUri });
+    }
+    router.replace('/capture/camera?rapid=1');
   };
 
   useEffect(() => {
@@ -83,6 +96,15 @@ export default function Identifying() {
         <ActivityIndicator size="large" color={colors.white} />
         <Text style={styles.title}>Identifying…</Text>
         <Text style={styles.sub}>Checking the species and scoring your find</Text>
+        {Platform.OS !== 'web' && (
+          <>
+            <Pressable onPress={switchToRapidFire} style={styles.rapidBtn} hitSlop={8}>
+              <Ionicons name="flash" size={18} color={colors.accentInk} />
+              <Text style={styles.rapidBtnText}>Keep shooting — rapid fire</Text>
+            </Pressable>
+            <Text style={styles.rapidHint}>This shot is saved — we’ll score it in the background.</Text>
+          </>
+        )}
       </View>
     </View>
   );
@@ -96,4 +118,16 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   title: { color: colors.white, fontSize: font.title, fontFamily: fonts.heading, marginTop: spacing.lg, letterSpacing: 0.5 },
   sub: { color: 'rgba(255,255,255,0.85)', fontSize: font.body, marginTop: spacing.sm, textAlign: 'center' },
+  rapidBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xxl,
+  },
+  rapidBtnText: { color: colors.accentInk, fontSize: font.body, fontFamily: fonts.bodyBold },
+  rapidHint: { color: 'rgba(255,255,255,0.7)', fontSize: font.small, marginTop: spacing.sm, textAlign: 'center' },
 });

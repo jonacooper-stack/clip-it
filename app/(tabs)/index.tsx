@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -119,7 +120,11 @@ export default function Home() {
                 style={styles.recentItem}
                 onPress={() => router.push(`/sighting/${s.id}`)}
               >
-                <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
+                {s.photoUri ? (
+                  <Image source={{ uri: s.photoUri }} style={styles.recentThumb} contentFit="cover" />
+                ) : (
+                  <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
+                )}
                 <Text style={styles.recentName} numberOfLines={1}>
                   {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
                 </Text>
@@ -219,6 +224,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   recentRow: { gap: spacing.md, paddingRight: spacing.lg },
   recentItem: { width: 76, alignItems: 'center' },
+  recentThumb: { width: 72, height: 72, borderRadius: 16, backgroundColor: colors.surfaceAlt },
   recentName: {
     fontSize: font.tiny,
     color: colors.text,

@@ -10,10 +10,11 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
@@ -32,7 +33,10 @@ const RAPID_FIRE_AVAILABLE = Platform.OS !== 'web';
 // show it as 1.0×..MAX× purely as a readout; pinch and the +/- buttons move the
 // normalized value.
 const MAX_ZOOM_X = 8;
-const ZOOM_STEP = 0.1;
+const ZOOM_STEP = 0.04;
+// How much a pinch moves the normalized zoom. expo-camera's iOS zoom curve is very
+// sensitive at the low end, so keep this gentle to avoid the "zooms in too fast" feel.
+const PINCH_SENSITIVITY = 0.15;
 
 // On web, stop the browser from claiming the two-finger pinch as a page zoom so
 // the gesture reaches our handler (where the browser exposes camera zoom at all).
@@ -61,6 +65,8 @@ async function saveCaptureToCameraRoll(uri: string): Promise<void> {
 
 export default function CameraScreen() {
   const router = useRouter();
+  // `?rapid=1` opens straight into rapid-fire (used by "switch to rapid fire").
+  const params = useLocalSearchParams<{ rapid?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const camRef = useRef<CameraView>(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +77,7 @@ export default function CameraScreen() {
   const pinch = useRef<{ dist: number; zoom: number } | null>(null);
   const addSighting = useJournalStore((s) => s.addSighting);
   const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
-  const [rapidFire, setRapidFire] = useState(false);
+  const [rapidFire, setRapidFire] = useState(params.rapid === '1');
   const [burstCount, setBurstCount] = useState(0);
   const flashAnim = useRef(new Animated.Value(0)).current;
 
@@ -100,7 +106,7 @@ export default function CameraScreen() {
         const t = e.nativeEvent.touches;
         if (t.length === 2 && pinch.current) {
           const ratio = fingerDistance(t) / pinch.current.dist;
-          applyZoom(pinch.current.zoom + (ratio - 1) * 0.5);
+          applyZoom(pinch.current.zoom + (ratio - 1) * PINCH_SENSITIVITY);
         }
       },
       onPanResponderRelease: () => {
@@ -251,6 +257,57 @@ export default function CameraScreen() {
     }
   };
 
+  // Capture with the native iOS camera (better focus + smoother zoom than the
+  // in-app preview). Opens the system camera, then runs the returned photo through
+  // the normal identify flow.
+  const captureViaSystemCamera = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await ImagePicker.launchCameraAsync({ quality: 0.6, exif: true });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+
+      let lat: number | undefined;
+      let lng: number | undefined;
+      let accuracyM: number | undefined;
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        let granted = perm.granted;
+        if (!granted) granted = (await Location.requestForegroundPermissionsAsync()).granted;
+        if (granted) {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+          accuracyM = pos.coords.accuracy ?? undefined;
+        }
+      } catch {
+        // location is best-effort
+      }
+
+      if (saveToCameraRoll) await saveCaptureToCameraRoll(a.uri);
+
+      const id = newId();
+      const now = Date.now();
+      const b64 = await resizedBase64(a.uri);
+      if (b64) setPendingPhoto(id, b64);
+      addSighting({
+        id,
+        createdAt: now,
+        observedAt: now,
+        photoUri: a.uri,
+        lat,
+        lng,
+        accuracyM,
+        sceneTags: [],
+        idStatus: 'identifying',
+      });
+      router.replace(`/capture/identifying?id=${id}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Rapid fire: snap and queue instantly — no waiting on the AI. The on-device
   // queue identifies and scores the burst later (when finished / back online).
   const captureRapid = async () => {
@@ -368,16 +425,29 @@ export default function CameraScreen() {
 
         <View style={styles.bottomBar} pointerEvents="box-none">
           {RAPID_FIRE_AVAILABLE && (
-            <Pressable
-              onPress={toggleRapidFire}
-              style={[styles.rapidPill, rapidFire && styles.rapidPillOn]}
-              hitSlop={6}
-            >
-              <Ionicons name="flash" size={15} color={rapidFire ? colors.accentInk : colors.white} />
-              <Text style={[styles.rapidPillText, rapidFire && styles.rapidPillTextOn]}>
-                {rapidFire ? `Rapid fire · ${burstCount}` : 'Rapid fire'}
-              </Text>
-            </Pressable>
+            <View style={styles.modeRow} pointerEvents="box-none">
+              <Pressable
+                onPress={toggleRapidFire}
+                style={[styles.rapidPill, rapidFire && styles.rapidPillOn]}
+                hitSlop={6}
+              >
+                <Ionicons name="flash" size={15} color={rapidFire ? colors.accentInk : colors.white} />
+                <Text style={[styles.rapidPillText, rapidFire && styles.rapidPillTextOn]}>
+                  {rapidFire ? `Rapid fire · ${burstCount}` : 'Rapid fire'}
+                </Text>
+              </Pressable>
+              {!rapidFire && (
+                <Pressable
+                  onPress={captureViaSystemCamera}
+                  disabled={busy}
+                  style={styles.rapidPill}
+                  hitSlop={6}
+                >
+                  <Ionicons name="camera-outline" size={15} color={colors.white} />
+                  <Text style={styles.rapidPillText}>System camera</Text>
+                </Pressable>
+              )}
+            </View>
           )}
 
           <View style={styles.zoomRow} pointerEvents="box-none">
@@ -513,6 +583,13 @@ const styles = StyleSheet.create({
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.white },
   hint: { color: colors.white, fontSize: font.small, marginTop: spacing.md, fontFamily: fonts.bodyMedium },
   captureFlash: { backgroundColor: '#fff' },
+  modeRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   rapidPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,7 +598,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: 7,
-    marginBottom: spacing.md,
   },
   rapidPillOn: { backgroundColor: colors.accentSoft },
   rapidPillText: { color: colors.white, fontSize: font.small, fontFamily: fonts.bodyBold, letterSpacing: 0.3 },
