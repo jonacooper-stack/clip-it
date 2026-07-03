@@ -90,17 +90,23 @@ certificate + provisioning profile automatically. One-time setup:
 > it and every CI build uses it automatically — for both building and `eas submit`.
 
 ## 3. Iterate fast — OTA updates (no rebuild, no review)
-For any JavaScript / UI / content change (which is almost everything — including the
-whole design refresh), push it instantly to installed apps:
-```bash
-eas update --branch preview -m "what changed"      # for the preview/TestFlight build
-eas update --branch production -m "what changed"   # for the store build
-```
-Installed apps pick it up on next launch. This keeps the same speed we have on web.
+The project is already wired for OTA (`expo-updates` + the update URL in `app.json`), so
+once a build that includes `expo-updates` is installed, any **JavaScript / UI / content**
+change ships straight to installed apps — live on next launch, same speed as the web loop.
 
-**Automated:** `.github/workflows/eas-update.yml` runs this on every push once you add an
-`EXPO_TOKEN` repo secret (Expo dashboard → Account settings → Access tokens). Until then
-it safely skips.
+**From GitHub (no local machine):** Actions tab → **"EAS Update (OTA)" → Run workflow** →
+pick your branch, set a message, channel `production` (the TestFlight / App Store build).
+~1 minute. Needs the `EXPO_TOKEN` secret.
+
+**From a terminal (if you have one):**
+```bash
+eas update --branch production -m "what changed"   # TestFlight / App Store builds
+eas update --branch preview   -m "what changed"    # internal preview builds
+```
+
+> **First OTA-capable build:** an update only reaches a build that **already included
+> `expo-updates`**. The current pending full build is the first such build — after it's
+> installed, JS-only tweaks are OTA from then on.
 
 ### What needs a new build (occasional) vs. an OTA update (almost always)
 | New build + TestFlight | OTA update (`eas update`) |
@@ -110,7 +116,10 @@ it safely skips.
 | Push notifications, in-app purchases, ads | Copy, images, bug fixes |
 
 Rule of thumb: if you didn't change anything under `ios.` / `plugins` in `app.json`
-and didn't add a native dependency, an OTA update is all you need.
+and didn't add a native dependency, an OTA update is all you need. (The OTA workflow is
+intentionally **manual**, not on-every-push, so a native change can't accidentally ship a
+broken update — those go through a full build, which bumps the runtime and is only
+delivered to a matching build.)
 
 ## 4. Build without a local machine (from GitHub)
 `.github/workflows/eas-build.yml` runs the build on Expo's servers straight from the

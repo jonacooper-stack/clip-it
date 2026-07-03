@@ -11,6 +11,9 @@
     "backgroundColor": "#0E1411",
     "newArchEnabled": true,
     "runtimeVersion": { "policy": "appVersion" },
+    "updates": {
+      "url": "https://u.expo.dev/503232c7-e996-4969-ae22-66bf26b5951f"
+    },
     "assetBundlePatterns": ["**/*"],
     "extra": {
       "eas": { "projectId": "503232c7-e996-4969-ae22-66bf26b5951f" }

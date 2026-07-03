@@ -1,47 +1,56 @@
 name: EAS Update (OTA)
 
-# Pushes an over-the-air update to installed apps on every push — the native-app
-# equivalent of the current "push → live" web loop. No-ops until you add an
-# EXPO_TOKEN repo secret (Expo dashboard → Account settings → Access tokens) and
-# have run `eas update:configure` once. See docs/RELEASE.md.
+# Push a JavaScript-only update over-the-air to already-installed builds — no
+# rebuild, no TestFlight, live on the next app launch. Trigger it from GitHub:
+# Actions → "EAS Update (OTA)" → Run workflow (pick your feature branch as the
+# source, and the channel to publish to). Requires an EXPO_TOKEN repo secret.
+#
+# Deliberately manual (not on every push): OTA only ships changes that DON'T touch
+# native code. Anything that adds/removes a native module, edits native config
+# (app.json ios/android, permissions, plugins), or bumps the Expo SDK still needs
+# a full "EAS Build" — those bump the runtime version, and an incompatible update
+# simply won't be delivered to an old build (safe by design; it can't crash it).
 
 on:
-  push:
-    branches: [main, claude/lucid-galileo-m7fj2l]
   workflow_dispatch:
+    inputs:
+      message:
+        description: What changed (shown in the update history)
+        type: string
+        default: JS update
+      channel:
+        description: Channel to publish to (production = TestFlight / App Store builds)
+        type: choice
+        options: [production, preview]
+        default: production
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate on EXPO_TOKEN
-        id: gate
+      - name: Check EXPO_TOKEN
         run: |
           if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "EXPO_TOKEN not set — skipping OTA update."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Add an EXPO_TOKEN repo secret first (Expo dashboard → Account settings → Access tokens)."
+            exit 1
           fi
 
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'true'
 
       - uses: actions/setup-node@v4
-        if: steps.gate.outputs.run == 'true'
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
-        if: steps.gate.outputs.run == 'true'
 
       - uses: expo/expo-github-action@v8
-        if: steps.gate.outputs.run == 'true'
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      # Channels and branches share a name by default (channel "production" points
+      # to branch "production"), so publishing to the branch reaches builds on that
+      # channel.
       - name: Publish OTA update
-        if: steps.gate.outputs.run == 'true'
-        run: eas update --branch preview --message "${{ github.event.head_commit.message }}" --non-interactive
+        run: eas update --branch ${{ inputs.channel }} --message "${{ inputs.message }}" --non-interactive
