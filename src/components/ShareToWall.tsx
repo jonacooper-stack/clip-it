@@ -37,6 +37,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       scientificName: sighting.species?.scientificName,
       points: sighting.points,
       caption: sighting.caption,
+      photoUri: sighting.photoUri,
     });
     setState(res.error ? 'error' : 'done');
   };

@@ -4,8 +4,20 @@
 
 import { supabase } from './supabase';
 import { useAuthStore } from '@/state/useAuthStore';
+import { resizedBase64 } from './prepareImage';
 
 export type Scope = 'everyone' | 'friends';
+
+// Public Storage bucket that holds wall photos. Create it in Supabase (see
+// supabase/migrations/0003_feed_photos.sql); sharing degrades gracefully without it.
+const WALL_BUCKET = 'feed-photos';
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = globalThis.atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 
 export interface LeaderboardEntry {
   id: string;
@@ -22,6 +34,7 @@ export interface FeedPost {
   scientificName: string | null;
   points: number;
   caption: string | null;
+  photoUrl: string | null;
   createdAt: string;
   isMine: boolean;
 }
@@ -81,7 +94,7 @@ export async function getFeed(scope: Scope): Promise<FeedPost[]> {
   if (!supabase || !uid) return [];
   let q = supabase
     .from('feed_posts')
-    .select('id, user_id, common_name, scientific_name, points, caption, created_at, profiles(display_name)')
+    .select('id, user_id, common_name, scientific_name, points, caption, photo_url, created_at, profiles(display_name)')
     .order('created_at', { ascending: false })
     .limit(100);
   if (scope === 'friends') {
@@ -96,26 +109,52 @@ export async function getFeed(scope: Scope): Promise<FeedPost[]> {
     scientificName: r.scientific_name,
     points: r.points ?? 0,
     caption: r.caption,
+    photoUrl: r.photo_url ?? null,
     createdAt: r.created_at,
     isMine: r.user_id === uid,
   }));
 }
 
-// Share a sighting to the wall (de-identified — species, points, caption only).
+// Share a sighting to the wall (de-identified — species, points, caption, and an
+// optional downscaled photo; never the location).
 export async function shareToWall(input: {
   commonName?: string;
   scientificName?: string;
   points?: number;
   caption?: string;
+  photoUri?: string;
 }): Promise<{ error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+
+  // Best-effort photo upload to the public wall bucket. Resizing strips EXIF
+  // (including any GPS), and if the bucket/policy isn't set up we simply share
+  // without a photo rather than failing.
+  let photoUrl: string | null = null;
+  if (input.photoUri) {
+    try {
+      const b64 = await resizedBase64(input.photoUri);
+      if (b64) {
+        const path = `${uid}/${Date.now()}.jpg`;
+        const { error: upErr } = await supabase.storage
+          .from(WALL_BUCKET)
+          .upload(path, base64ToBytes(b64), { contentType: 'image/jpeg', upsert: true });
+        if (!upErr) {
+          photoUrl = supabase.storage.from(WALL_BUCKET).getPublicUrl(path).data.publicUrl;
+        }
+      }
+    } catch {
+      // photo is optional — share the post regardless
+    }
+  }
+
   const { error } = await supabase.from('feed_posts').insert({
     user_id: uid,
     common_name: input.commonName ?? null,
     scientific_name: input.scientificName ?? null,
     points: input.points ?? 0,
     caption: input.caption ?? null,
+    photo_url: photoUrl,
   });
   return error ? { error: error.message } : {};
 }

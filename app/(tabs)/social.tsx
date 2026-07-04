@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
@@ -109,6 +110,9 @@ function WallView() {
       ) : (
         posts.map((p) => (
           <Card key={p.id} style={styles.post}>
+            {p.photoUrl && (
+              <Image source={{ uri: p.photoUrl }} style={styles.postPhoto} contentFit="cover" />
+            )}
             <View style={styles.postHead}>
               <SpeciesAvatar scientificName={p.scientificName ?? undefined} size={44} />
               <View style={styles.postHeadText}>
@@ -312,6 +316,7 @@ const styles = StyleSheet.create({
   rowPts: { fontSize: font.heading, fontFamily: fonts.display, color: colors.primary },
 
   post: { marginBottom: spacing.md },
+  postPhoto: { width: '100%', height: 200, borderRadius: radius.md, marginBottom: spacing.md, backgroundColor: colors.surfaceAlt },
   postHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   postHeadText: { flex: 1 },
   postSpecies: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
