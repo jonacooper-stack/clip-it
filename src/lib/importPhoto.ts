@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { resizedBase64 } from './prepareImage';
+import { savePhoto } from './photoStore';
 
 export interface ImportedPhoto {
   uri: string;
@@ -89,5 +90,7 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
   }
 
   const base64 = Platform.OS === 'web' ? a.base64 ?? undefined : await resizedBase64(a.uri);
-  return { uri: a.uri, base64, lat, lng, observedAt: observedAt ?? Date.now() };
+  // Persist a copy so it survives app updates (stored as a stable relative ref).
+  const uri = Platform.OS === 'web' ? a.uri : (await savePhoto(a.uri)) ?? a.uri;
+  return { uri, base64, lat, lng, observedAt: observedAt ?? Date.now() };
 }

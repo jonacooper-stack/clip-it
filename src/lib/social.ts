@@ -5,6 +5,7 @@
 import { supabase } from './supabase';
 import { useAuthStore } from '@/state/useAuthStore';
 import { resizedBase64 } from './prepareImage';
+import { resolvePhoto } from './photoStore';
 
 export type Scope = 'everyone' | 'friends';
 
@@ -133,7 +134,7 @@ export async function shareToWall(input: {
   let photoUrl: string | null = null;
   if (input.photoUri) {
     try {
-      const b64 = await resizedBase64(input.photoUri);
+      const b64 = await resizedBase64(resolvePhoto(input.photoUri) ?? input.photoUri);
       if (b64) {
         const path = `${uid}/${Date.now()}.jpg`;
         const { error: upErr } = await supabase.storage

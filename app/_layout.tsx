@@ -41,7 +41,13 @@ export default function RootLayout() {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') processAnalysisQueue();
     });
-    return () => sub.remove();
+    // Also poll periodically so the queue drains when the signal returns while the
+    // app stays open (AppState won't fire then). No-ops when nothing's queued.
+    const iv = setInterval(() => processAnalysisQueue(), 20000);
+    return () => {
+      sub.remove();
+      clearInterval(iv);
+    };
   }, []);
 
   // Once the journal has loaded, flush anything captured while offline.

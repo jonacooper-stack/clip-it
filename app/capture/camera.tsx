@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,8 +22,9 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { pickImageWithMetadata } from '@/lib/importPhoto';
-import { persistQueuedPhotoFromUri, processAnalysisQueue } from '@/lib/analysis';
+import { processAnalysisQueue } from '@/lib/analysis';
 import { resizedBase64 } from '@/lib/prepareImage';
+import { savePhoto } from '@/lib/photoStore';
 import { newId } from '@/lib/id';
 
 // Rapid-fire capture is native-only — it relies on the on-device analysis queue.
@@ -80,12 +81,39 @@ export default function CameraScreen() {
   const [rapidFire, setRapidFire] = useState(params.rapid === '1');
   const [burstCount, setBurstCount] = useState(0);
   const flashAnim = useRef(new Animated.Value(0)).current;
+  // One GPS fix for the whole burst, so rapid shots get a location without each
+  // one waiting on the locator.
+  const burstLoc = useRef<{ lat: number; lng: number } | null>(null);
 
   // Quick white flash to confirm each rapid-fire shot landed.
   const flashShutter = () => {
     flashAnim.setValue(0.55);
     Animated.timing(flashAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start();
   };
+
+  // Warm up a location fix whenever rapid fire turns on (via the toggle or the
+  // ?rapid=1 deep link), so burst shots aren't stamped "Not recorded".
+  useEffect(() => {
+    if (!rapidFire) {
+      burstLoc.current = null;
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        const granted = perm.granted || (await Location.requestForegroundPermissionsAsync()).granted;
+        if (!granted) return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (active) burstLoc.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      } catch {
+        // location is best-effort
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [rapidFire]);
 
   const applyZoom = (z: number) => {
     const clamped = Math.min(Math.max(z, 0), 1);
@@ -240,11 +268,12 @@ export default function CameraScreen() {
       const id = newId();
       const now = Date.now();
       if (b64) setPendingPhoto(id, b64);
+      const photoRef = photo?.uri ? await savePhoto(photo.uri) : undefined;
       addSighting({
         id,
         createdAt: now,
         observedAt: now,
-        photoUri: photo?.uri,
+        photoUri: photoRef,
         lat,
         lng,
         accuracyM,
@@ -291,11 +320,12 @@ export default function CameraScreen() {
       const now = Date.now();
       const b64 = await resizedBase64(a.uri);
       if (b64) setPendingPhoto(id, b64);
+      const photoRef = await savePhoto(a.uri);
       addSighting({
         id,
         createdAt: now,
         observedAt: now,
-        photoUri: a.uri,
+        photoUri: photoRef,
         lat,
         lng,
         accuracyM,
@@ -322,25 +352,28 @@ export default function CameraScreen() {
       }
       if (!photo?.uri) return;
 
-      // Cached location only — never block a burst waiting for a fresh GPS fix.
-      let lat: number | undefined;
-      let lng: number | undefined;
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        if (perm.granted) {
-          const pos = await Location.getLastKnownPositionAsync();
-          if (pos) {
-            lat = pos.coords.latitude;
-            lng = pos.coords.longitude;
+      // Use the burst's warmed-up fix; fall back to the last known position. Never
+      // block a burst waiting on a fresh locate.
+      let lat: number | undefined = burstLoc.current?.lat;
+      let lng: number | undefined = burstLoc.current?.lng;
+      if (lat == null) {
+        try {
+          const perm = await Location.getForegroundPermissionsAsync();
+          if (perm.granted) {
+            const pos = await Location.getLastKnownPositionAsync();
+            if (pos) {
+              lat = pos.coords.latitude;
+              lng = pos.coords.longitude;
+            }
           }
+        } catch {
+          // location is best-effort
         }
-      } catch {
-        // location is best-effort
       }
 
       const id = newId();
       const now = Date.now();
-      const stored = await persistQueuedPhotoFromUri(id, photo.uri);
+      const stored = await savePhoto(photo.uri);
       addSighting({
         id,
         createdAt: now,

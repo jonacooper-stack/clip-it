@@ -16,6 +16,7 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { applyFieldNotesBonus } from '@/lib/scoring';
 import { questionsForSighting } from '@/lib/scienceQuestions';
+import { resolvePhoto } from '@/lib/photoStore';
 
 export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -65,6 +66,8 @@ export default function Result() {
     );
   }
 
+  const photoSrc = resolvePhoto(sighting.photoUri);
+
   if (sighting.idStatus === 'rejected') {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -95,8 +98,8 @@ export default function Result() {
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {sighting.photoUri && (
-            <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+          {photoSrc && (
+            <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
           )}
           <Text style={styles.bestGuess}>NOT ELIGIBLE</Text>
           <Text style={styles.common}>{sighting.species?.commonName ?? 'Unknown'}</Text>
@@ -134,8 +137,8 @@ export default function Result() {
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {sighting.photoUri && (
-            <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+          {photoSrc && (
+            <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
           )}
           <Ionicons name="cloud-offline-outline" size={48} color={colors.accentInk} style={styles.rejEmoji} />
           <Text style={styles.common}>Photo captured</Text>
@@ -191,8 +194,8 @@ export default function Result() {
           </Card>
         )}
 
-        {sighting.photoUri && (
-          <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+        {photoSrc && (
+          <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
         )}
 
         <Animated.View style={[styles.pointsWrap, { transform: [{ scale }] }]}>

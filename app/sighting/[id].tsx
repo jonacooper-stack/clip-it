@@ -13,6 +13,7 @@ import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
 import { SCIENCE_QUESTIONS, answerLabel } from '@/lib/scienceQuestions';
+import { resolvePhoto } from '@/lib/photoStore';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import type { IdStatus } from '@/types';
@@ -58,6 +59,7 @@ export default function SightingDetail() {
   }
 
   const status = STATUS[sighting.idStatus];
+  const photoSrc = resolvePhoto(sighting.photoUri);
   const observed = new Date(sighting.observedAt);
   const hasLoc = sighting.lat != null && sighting.lng != null;
 
@@ -91,8 +93,8 @@ export default function SightingDetail() {
           </Card>
         )}
 
-        {sighting.photoUri ? (
-          <Image source={{ uri: sighting.photoUri }} style={styles.photo} contentFit="cover" />
+        {photoSrc ? (
+          <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
         ) : (
           <View style={styles.photoFallback}>
             <SpeciesAvatar scientificName={sighting.species?.scientificName} size={96} />

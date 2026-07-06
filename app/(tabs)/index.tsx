@@ -15,6 +15,7 @@ import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
+import { resolvePhoto } from '@/lib/photoStore';
 
 function greeting() {
   const h = new Date().getHours();
@@ -121,7 +122,7 @@ export default function Home() {
                 onPress={() => router.push(`/sighting/${s.id}`)}
               >
                 {s.photoUri ? (
-                  <Image source={{ uri: s.photoUri }} style={styles.recentThumb} contentFit="cover" />
+                  <Image source={{ uri: resolvePhoto(s.photoUri) }} style={styles.recentThumb} contentFit="cover" />
                 ) : (
                   <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
                 )}

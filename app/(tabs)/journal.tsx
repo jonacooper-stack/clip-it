@@ -9,6 +9,7 @@ import { Card } from '@/components/Card';
 import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
+import { resolvePhoto } from '@/lib/photoStore';
 import type { Sighting } from '@/types';
 
 export default function Journal() {
@@ -32,7 +33,7 @@ export default function Journal() {
     <Pressable style={styles.cell} onPress={() => router.push(`/sighting/${item.id}`)}>
       <Card style={styles.card}>
         {item.photoUri ? (
-          <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
+          <Image source={{ uri: resolvePhoto(item.photoUri) }} style={styles.thumb} contentFit="cover" />
         ) : (
           <SpeciesAvatar scientificName={item.species?.scientificName} size={56} />
         )}

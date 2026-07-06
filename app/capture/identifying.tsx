@@ -7,13 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { identifySighting, OfflineError } from '@/lib/identify';
-import {
-  applyIdentifyOutcome,
-  persistQueuedPhoto,
-  persistQueuedPhotoFromUri,
-  processAnalysisQueue,
-  hashPhotoBase64,
-} from '@/lib/analysis';
+import { applyIdentifyOutcome, processAnalysisQueue, hashPhotoBase64 } from '@/lib/analysis';
+import { savePhotoBase64, resolvePhoto } from '@/lib/photoStore';
 import { takePendingPhoto } from '@/state/pendingCaptures';
 
 export default function Identifying() {
@@ -35,13 +30,10 @@ export default function Identifying() {
 
   // Don't wait on the AI — stash this shot in the queue (it gets scored in the
   // background) and jump straight into rapid fire to keep shooting.
-  const switchToRapidFire = async () => {
+  const switchToRapidFire = () => {
     cancelled.current = true;
-    if (id) {
-      const current = useJournalStore.getState().sightings.find((x) => x.id === id);
-      const uri = current?.photoUri ? await persistQueuedPhotoFromUri(id, current.photoUri) : undefined;
-      updateSighting(id, { idStatus: 'queued', photoUri: uri ?? current?.photoUri });
-    }
+    // The photo was already persisted at capture, so just queue it for scoring.
+    if (id) updateSighting(id, { idStatus: 'queued' });
     router.replace('/capture/camera?rapid=1');
   };
 
@@ -69,10 +61,12 @@ export default function Identifying() {
       } catch (err) {
         if (cancelled.current) return;
         if (err instanceof OfflineError) {
-          // No signal: keep the photo (and its time/place) and queue it for later.
-          const uri = base64 ? await persistQueuedPhoto(id, base64) : undefined;
+          // No signal: queue it. The photo was already persisted at capture; if it
+          // somehow wasn't, stash the base64 now so the retry still has it.
+          let photoUri = current?.photoUri;
+          if (!photoUri && base64) photoUri = await savePhotoBase64(base64);
           if (cancelled.current) return;
-          updateSighting(id, { idStatus: 'queued', photoUri: uri ?? current?.photoUri });
+          updateSighting(id, { idStatus: 'queued', photoUri });
         } else {
           updateSighting(id, { idStatus: 'rejected' });
         }
@@ -81,10 +75,11 @@ export default function Identifying() {
     })();
   }, [id]);
 
+  const photoSrc = resolvePhoto(sighting?.photoUri);
   return (
     <View style={styles.container}>
-      {sighting?.photoUri ? (
-        <Image source={{ uri: sighting.photoUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+      {photoSrc ? (
+        <Image source={{ uri: photoSrc }} style={StyleSheet.absoluteFill} contentFit="cover" />
       ) : null}
       <View style={styles.scrim} />
       <SafeAreaView style={styles.topSafe} edges={['top']} pointerEvents="box-none">

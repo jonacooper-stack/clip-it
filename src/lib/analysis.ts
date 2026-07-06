@@ -6,45 +6,13 @@
 // them automatically once connectivity is back.
 
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
 import type { IdentifyInput, IdentifyOutcome } from './identify';
 import { identifySighting, OfflineError } from './identify';
 import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
+import { resolvePhoto } from './photoStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAppStore } from '@/state/useAppStore';
-
-// Queued-capture photos live here so they survive app restarts (native only).
-const QUEUE_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}queued/` : null;
-
-// Persists a captured photo and returns its file URI, so an offline capture can be
-// re-analyzed (and still shown) later. Native-only; returns undefined on web.
-export async function persistQueuedPhoto(id: string, base64: string): Promise<string | undefined> {
-  if (Platform.OS === 'web' || !QUEUE_DIR) return undefined;
-  try {
-    await FileSystem.makeDirectoryAsync(QUEUE_DIR, { intermediates: true });
-    const uri = `${QUEUE_DIR}${id}.jpg`;
-    await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
-    return uri;
-  } catch {
-    return undefined;
-  }
-}
-
-// Same, but copies an existing photo file into the queue (no base64 round-trip).
-// Used by rapid-fire capture so each shot is as fast as possible — the queue reads
-// the bytes back when it analyzes. Native-only; returns undefined on web.
-export async function persistQueuedPhotoFromUri(id: string, srcUri: string): Promise<string | undefined> {
-  if (Platform.OS === 'web' || !QUEUE_DIR) return undefined;
-  try {
-    await FileSystem.makeDirectoryAsync(QUEUE_DIR, { intermediates: true });
-    const uri = `${QUEUE_DIR}${id}.jpg`;
-    await FileSystem.copyAsync({ from: srcUri, to: uri });
-    return uri;
-  } catch {
-    return undefined;
-  }
-}
 
 // Cheap, stable hash of a photo's bytes (FNV-1a, salted with length) for detecting
 // an exact-duplicate resubmission within a player's own journal.
@@ -139,10 +107,11 @@ export async function processAnalysisQueue(): Promise<void> {
   try {
     const queued = useJournalStore.getState().sightings.filter((s) => s.idStatus === 'queued');
     for (const s of queued) {
-      if (!s.photoUri) continue;
+      const photoUri = resolvePhoto(s.photoUri);
+      if (!photoUri) continue;
       // Downscale the stored photo before sending so a queued full-res capture
       // doesn't blow the request-size limit either.
-      const base64 = await resizedBase64(s.photoUri);
+      const base64 = await resizedBase64(photoUri);
       if (!base64) continue; // couldn't read/resize; leave it queued for next time
       const input: IdentifyInput = {
         photoBase64: base64,
