@@ -52,5 +52,15 @@ jobs:
       # Channels and branches share a name by default (channel "production" points
       # to branch "production"), so publishing to the branch reaches builds on that
       # channel.
+      #
+      # EXPO_PUBLIC_* vars are inlined into the JS bundle at export time, so they
+      # MUST be present here too — otherwise the OTA ships a bundle with no Supabase
+      # / AI config and overwrites a good build's config. These mirror the values in
+      # eas.json's build.production.env (all client-public: the Supabase key is a
+      # publishable key, the rest are public URLs).
       - name: Publish OTA update
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: "https://oybkykeoatfgcfqgaqpl.supabase.co"
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY"
+          EXPO_PUBLIC_IDENTIFY_URL: "https://clip-it-rose.vercel.app/api/identify"
         run: eas update --branch ${{ inputs.channel }} --message "${{ inputs.message }}" --non-interactive
