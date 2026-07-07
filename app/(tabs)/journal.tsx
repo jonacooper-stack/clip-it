@@ -2,14 +2,12 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { SpeciesAvatar } from '@/components/SpeciesAvatar';
+import { SightingThumb } from '@/components/SightingThumb';
 import { Card } from '@/components/Card';
 import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts } from '@/theme';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
-import { resolvePhoto } from '@/lib/photoStore';
 import type { Sighting } from '@/types';
 
 export default function Journal() {
@@ -32,11 +30,12 @@ export default function Journal() {
   const renderItem = ({ item }: { item: Sighting }) => (
     <Pressable style={styles.cell} onPress={() => router.push(`/sighting/${item.id}`)}>
       <Card style={styles.card}>
-        {item.photoUri ? (
-          <Image source={{ uri: resolvePhoto(item.photoUri) }} style={styles.thumb} contentFit="cover" />
-        ) : (
-          <SpeciesAvatar scientificName={item.species?.scientificName} size={56} />
-        )}
+        <SightingThumb
+          photoUri={item.photoUri}
+          scientificName={item.species?.scientificName}
+          size={56}
+          radius={14}
+        />
         <Text style={styles.common} numberOfLines={1}>
           {item.species?.commonName}
         </Text>

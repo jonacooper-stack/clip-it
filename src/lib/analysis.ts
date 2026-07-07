@@ -85,7 +85,10 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
     species: outcome.species,
     sceneTags: outcome.sceneTags,
     caption: outcome.caption,
-    idStatus: outcome.idStatus,
+    // No human-review queue in the app yet, so a low-confidence "needs_review" would
+    // sit "pending" forever. Treat it as a scored best guess (the confidence badge
+    // conveys the uncertainty; the dispute flow handles corrections).
+    idStatus: outcome.idStatus === 'needs_review' ? 'ai_confident' : outcome.idStatus,
     dangerous: outcome.dangerous,
     points,
     score,

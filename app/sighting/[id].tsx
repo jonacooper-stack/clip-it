@@ -22,7 +22,7 @@ const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   identifying: { label: 'Identifying', color: colors.muted, bg: colors.surfaceAlt },
   queued: { label: 'Queued', color: colors.accentInk, bg: colors.accentSoft },
   ai_confident: { label: 'Identified', color: colors.primary, bg: colors.primarySoft },
-  needs_review: { label: 'Pending review', color: colors.accentInk, bg: colors.accentSoft },
+  needs_review: { label: 'Best guess', color: colors.accentInk, bg: colors.accentSoft },
   human_confirmed: { label: 'Confirmed', color: colors.primary, bg: colors.primarySoft },
   disputed: { label: 'In review', color: colors.accentInk, bg: colors.accentSoft },
   ineligible: { label: 'Not eligible', color: colors.clay, bg: colors.claySoft },
@@ -35,6 +35,7 @@ export default function SightingDetail() {
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const removeSighting = useJournalStore((s) => s.removeSighting);
   const [confirming, setConfirming] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
 
   // Go back to wherever we came from, but fall back to the home tab when there's
   // no history to pop (e.g. opened via a deep link or after a web reload) so the
@@ -93,8 +94,13 @@ export default function SightingDetail() {
           </Card>
         )}
 
-        {photoSrc ? (
-          <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
+        {photoSrc && !photoFailed ? (
+          <Image
+            source={{ uri: photoSrc }}
+            style={styles.photo}
+            contentFit="cover"
+            onError={() => setPhotoFailed(true)}
+          />
         ) : (
           <View style={styles.photoFallback}>
             <SpeciesAvatar scientificName={sighting.species?.scientificName} size={96} />

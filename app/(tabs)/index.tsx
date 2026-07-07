@@ -2,12 +2,11 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
-import { SpeciesAvatar } from '@/components/SpeciesAvatar';
+import { SightingThumb } from '@/components/SightingThumb';
 import { PointsBadge } from '@/components/PointsBadge';
 import { TopoBackground } from '@/components/TopoBackground';
 import { WildlifeGallery } from '@/components/WildlifeGallery';
@@ -15,7 +14,6 @@ import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
-import { resolvePhoto } from '@/lib/photoStore';
 
 function greeting() {
   const h = new Date().getHours();
@@ -121,18 +119,16 @@ export default function Home() {
                 style={styles.recentItem}
                 onPress={() => router.push(`/sighting/${s.id}`)}
               >
-                {s.photoUri ? (
-                  <Image source={{ uri: resolvePhoto(s.photoUri) }} style={styles.recentThumb} contentFit="cover" />
-                ) : (
-                  <SpeciesAvatar scientificName={s.species?.scientificName} size={72} />
-                )}
+                <SightingThumb
+                  photoUri={s.photoUri}
+                  scientificName={s.species?.scientificName}
+                  size={72}
+                />
                 <Text style={styles.recentName} numberOfLines={1}>
                   {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
                 </Text>
                 {s.idStatus === 'queued' ? (
                   <Text style={styles.pending}>queued</Text>
-                ) : s.idStatus === 'needs_review' ? (
-                  <Text style={styles.pending}>pending</Text>
                 ) : (
                   <Text style={styles.recentPts}>{s.points ?? 0} pts</Text>
                 )}
