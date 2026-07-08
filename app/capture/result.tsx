@@ -15,7 +15,7 @@ import { ScienceQuestions } from '@/components/ScienceQuestions';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { applyFieldNotesBonus } from '@/lib/scoring';
-import { questionsForSighting } from '@/lib/scienceQuestions';
+import { questionsForSighting, coerceScience, SCIENCE_QUESTIONS } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
 
 export default function Result() {
@@ -46,9 +46,15 @@ export default function Result() {
   // Record (or toggle off) a science answer and re-apply the bonus to the score.
   const onAnswer = (qid: string, value: string) => {
     if (!sighting) return;
-    const next = { ...(sighting.science ?? {}) };
-    if (next[qid] === value) delete next[qid];
-    else next[qid] = value;
+    const multi = SCIENCE_QUESTIONS.find((q) => q.id === qid)?.multi ?? false;
+    const next = coerceScience(sighting.science);
+    const current = next[qid] ?? [];
+    let updated: string[];
+    if (current.includes(value)) updated = current.filter((v) => v !== value); // toggle off
+    else if (multi) updated = [...current, value]; // add another
+    else updated = [value]; // single-select: replace
+    if (updated.length) next[qid] = updated;
+    else delete next[qid];
     const answered = Object.keys(next).length;
     if (sighting.score) {
       const { score, points } = applyFieldNotesBonus(sighting.score, answered);

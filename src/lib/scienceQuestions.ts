@@ -9,6 +9,9 @@ export interface ScienceQuestion {
   field: string;
   prompt: string;
   why: string;
+  /** When true, more than one option can be selected (e.g. at the water's edge AND
+   * in the mountains). Single-select otherwise. */
+  multi?: boolean;
   options: { value: string; label: string }[];
 }
 
@@ -30,6 +33,7 @@ export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
     field: 'habitat',
     prompt: 'Where were you?',
     why: 'Habitat shows where species live and how their ranges shift over time.',
+    multi: true,
     options: [
       { value: 'forest', label: 'Forest' },
       { value: 'field', label: 'Field' },
@@ -44,6 +48,7 @@ export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
     field: 'behavior',
     prompt: 'What was it doing?',
     why: 'Behavior reveals feeding, breeding, and migration patterns.',
+    multi: true,
     options: [
       { value: 'feeding', label: 'Feeding' },
       { value: 'resting', label: 'Resting' },
@@ -80,4 +85,28 @@ export function questionsForSighting(id: string): ScienceQuestion[] {
 export function answerLabel(questionId: string, value: string): string {
   const q = SCIENCE_QUESTIONS.find((x) => x.id === questionId);
   return q?.options.find((o) => o.value === value)?.label ?? value;
+}
+
+// Answers are multi-value now. Read one question's answers as an array, tolerating
+// legacy single-string values saved before multi-select.
+export function answerValues(science: Record<string, unknown> | undefined, qid: string): string[] {
+  const v = science?.[qid];
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
+  if (typeof v === 'string' && v) return [v];
+  return [];
+}
+
+// Normalize a whole science map to arrays (coerces any legacy single strings).
+export function coerceScience(science?: Record<string, unknown>): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const k of Object.keys(science ?? {})) {
+    const vals = answerValues(science, k);
+    if (vals.length) out[k] = vals;
+  }
+  return out;
+}
+
+// Comma-joined labels for display.
+export function answerLabelsText(qid: string, values: string[]): string {
+  return values.map((v) => answerLabel(qid, v)).join(', ');
 }

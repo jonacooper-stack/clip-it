@@ -59,8 +59,9 @@ export interface Sighting {
   note?: string;
   /** When idStatus is 'ineligible', why it doesn't score (e.g. pets/people don't count). */
   ineligibleReason?: string;
-  /** Optional citizen-science answers (questionId -> selected value). */
-  science?: Record<string, string>;
+  /** Optional citizen-science answers (questionId -> selected values). Some
+   * questions allow more than one. Legacy data may hold a single string. */
+  science?: Record<string, string[]>;
 }
 
 export interface Quest {

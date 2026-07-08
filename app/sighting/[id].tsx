@@ -12,7 +12,7 @@ import { ShareToWall } from '@/components/ShareToWall';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
-import { SCIENCE_QUESTIONS, answerLabel } from '@/lib/scienceQuestions';
+import { SCIENCE_QUESTIONS, answerValues, answerLabelsText } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -178,8 +178,12 @@ export default function SightingDetail() {
         {sighting.science && Object.keys(sighting.science).length > 0 && (
           <Card style={styles.block}>
             <Text style={styles.blockTitle}>Field notes</Text>
-            {SCIENCE_QUESTIONS.filter((q) => sighting.science![q.id]).map((q) => (
-              <Row key={q.id} label={q.prompt} value={answerLabel(q.id, sighting.science![q.id])} />
+            {SCIENCE_QUESTIONS.filter((q) => answerValues(sighting.science, q.id).length > 0).map((q) => (
+              <Row
+                key={q.id}
+                label={q.prompt}
+                value={answerLabelsText(q.id, answerValues(sighting.science, q.id))}
+              />
             ))}
           </Card>
         )}

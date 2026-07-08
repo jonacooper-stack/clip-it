@@ -137,9 +137,14 @@ export async function shareToWall(input: {
       const b64 = await resizedBase64(resolvePhoto(input.photoUri) ?? input.photoUri);
       if (b64) {
         const path = `${uid}/${Date.now()}.jpg`;
+        // Pass the ArrayBuffer (not the view) — React Native's fetch uploads an
+        // ArrayBuffer reliably, whereas a bare Uint8Array can send 0 bytes.
         const { error: upErr } = await supabase.storage
           .from(WALL_BUCKET)
-          .upload(path, base64ToBytes(b64), { contentType: 'image/jpeg', upsert: true });
+          .upload(path, base64ToBytes(b64).buffer as ArrayBuffer, {
+            contentType: 'image/jpeg',
+            upsert: true,
+          });
         if (!upErr) {
           photoUrl = supabase.storage.from(WALL_BUCKET).getPublicUrl(path).data.publicUrl;
         }

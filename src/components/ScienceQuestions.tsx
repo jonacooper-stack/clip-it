@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './Card';
 import { colors, spacing, font, fonts, radius } from '@/theme';
-import type { ScienceQuestion } from '@/lib/scienceQuestions';
+import { answerValues, type ScienceQuestion } from '@/lib/scienceQuestions';
 
 export function ScienceQuestions({
   questions,
@@ -10,10 +10,10 @@ export function ScienceQuestions({
   onAnswer,
 }: {
   questions: ScienceQuestion[];
-  answers: Record<string, string>;
+  answers: Record<string, string[]>;
   onAnswer: (questionId: string, value: string) => void;
 }) {
-  const answered = questions.filter((q) => answers[q.id]).length;
+  const answered = questions.filter((q) => answerValues(answers, q.id).length > 0).length;
 
   return (
     <Card style={styles.card}>
@@ -28,28 +28,34 @@ export function ScienceQuestions({
         Tap an answer to add a bonus point. Skip anything you're not sure about.
       </Text>
 
-      {questions.map((q) => (
-        <View key={q.id} style={styles.q}>
-          <Text style={styles.prompt}>{q.prompt}</Text>
-          <Text style={styles.why}>{q.why}</Text>
-          <View style={styles.options}>
-            {q.options.map((o) => {
-              const selected = answers[q.id] === o.value;
-              return (
-                <Pressable
-                  key={o.value}
-                  onPress={() => onAnswer(q.id, o.value)}
-                  style={[styles.chip, selected && styles.chipSelected]}
-                >
-                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                    {o.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+      {questions.map((q) => {
+        const selectedVals = answerValues(answers, q.id);
+        return (
+          <View key={q.id} style={styles.q}>
+            <Text style={styles.prompt}>{q.prompt}</Text>
+            <Text style={styles.why}>
+              {q.why}
+              {q.multi ? ' Pick any that apply.' : ''}
+            </Text>
+            <View style={styles.options}>
+              {q.options.map((o) => {
+                const selected = selectedVals.includes(o.value);
+                return (
+                  <Pressable
+                    key={o.value}
+                    onPress={() => onAnswer(q.id, o.value)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {o.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </Card>
   );
 }
