@@ -1,19 +1,23 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { SightingThumb } from '@/components/SightingThumb';
+import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { PointsBadge } from '@/components/PointsBadge';
 import { TopoBackground } from '@/components/TopoBackground';
 import { WildlifeGallery } from '@/components/WildlifeGallery';
+import { resolvePhoto } from '@/lib/photoStore';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
+import type { Sighting } from '@/types';
 
 function greeting() {
   const h = new Date().getHours();
@@ -108,33 +112,39 @@ export default function Home() {
             </Text>
           </Card>
         ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.recentRow}
-          >
-            {recent.map((s) => (
-              <Pressable
-                key={s.id}
-                style={styles.recentItem}
-                onPress={() => router.push(`/sighting/${s.id}`)}
+          <>
+            <RecentHero sighting={recent[0]} onPress={() => router.push(`/sighting/${recent[0].id}`)} />
+            {recent.length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.recentRow}
               >
-                <SightingThumb
-                  photoUri={s.photoUri}
-                  scientificName={s.species?.scientificName}
-                  size={72}
-                />
-                <Text style={styles.recentName} numberOfLines={1}>
-                  {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
-                </Text>
-                {s.idStatus === 'queued' ? (
-                  <Text style={styles.pending}>queued</Text>
-                ) : (
-                  <Text style={styles.recentPts}>{s.points ?? 0} pts</Text>
-                )}
-              </Pressable>
-            ))}
-          </ScrollView>
+                {recent.slice(1).map((s) => (
+                  <Pressable
+                    key={s.id}
+                    style={styles.recentItem}
+                    onPress={() => router.push(`/sighting/${s.id}`)}
+                  >
+                    <SightingThumb
+                      photoUri={s.photoUri}
+                      scientificName={s.species?.scientificName}
+                      size={112}
+                      radius={radius.lg}
+                    />
+                    <Text style={styles.recentName} numberOfLines={1}>
+                      {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
+                    </Text>
+                    {s.idStatus === 'queued' ? (
+                      <Text style={styles.pending}>queued</Text>
+                    ) : (
+                      <Text style={styles.recentPts}>{s.points ?? 0} pts</Text>
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+          </>
         )}
 
         <View style={styles.discover}>
@@ -143,6 +153,47 @@ export default function Home() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// The most recent capture, shown big and image-forward at the top of the strip.
+function RecentHero({ sighting, onPress }: { sighting: Sighting; onPress: () => void }) {
+  const [failed, setFailed] = useState(false);
+  const src = resolvePhoto(sighting.photoUri);
+  const queued = sighting.idStatus === 'queued';
+  const name = sighting.species?.commonName ?? (queued ? 'Queued' : 'Identifying…');
+  return (
+    <Pressable style={styles.hero} onPress={onPress}>
+      {src && !failed ? (
+        <Image
+          source={{ uri: src }}
+          style={styles.heroImg}
+          contentFit="cover"
+          transition={150}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <View style={[styles.heroImg, styles.heroFallback]}>
+          <SpeciesAvatar scientificName={sighting.species?.scientificName} size={96} />
+        </View>
+      )}
+      <View style={styles.heroOverlay}>
+        <View style={styles.heroText}>
+          <Text style={styles.heroName} numberOfLines={1}>{name}</Text>
+          {sighting.species?.scientificName ? (
+            <Text style={styles.heroSci} numberOfLines={1}>{sighting.species.scientificName}</Text>
+          ) : null}
+        </View>
+        {queued ? (
+          <View style={styles.heroPill}><Text style={styles.heroPillText}>queued</Text></View>
+        ) : (
+          <View style={styles.heroPts}>
+            <Ionicons name="flame" size={14} color={colors.accentInk} />
+            <Text style={styles.heroPtsText}>{sighting.points ?? 0}</Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -219,14 +270,45 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyIcon: { marginBottom: spacing.sm },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  hero: { borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.md, ...shadow.soft },
+  heroImg: { width: '100%', height: 230, backgroundColor: colors.surfaceAlt },
+  heroFallback: { alignItems: 'center', justifyContent: 'center' },
+  heroOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
+    backgroundColor: 'rgba(7,11,8,0.5)',
+  },
+  heroText: { flex: 1 },
+  heroName: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.white },
+  heroSci: { fontSize: font.tiny, fontStyle: 'italic', color: 'rgba(236,236,226,0.82)', marginTop: 1 },
+  heroPts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(7,11,8,0.55)',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+  },
+  heroPtsText: { fontSize: font.body, fontFamily: fonts.display, color: colors.accentInk },
+  heroPill: { backgroundColor: 'rgba(7,11,8,0.55)', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5 },
+  heroPillText: { fontSize: font.tiny, color: colors.onPrimary, fontStyle: 'italic' },
+
   recentRow: { gap: spacing.md, paddingRight: spacing.lg },
-  recentItem: { width: 76, alignItems: 'center' },
-  recentThumb: { width: 72, height: 72, borderRadius: 16, backgroundColor: colors.surfaceAlt },
+  recentItem: { width: 112, alignItems: 'center' },
   recentName: {
     fontSize: font.tiny,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
     textAlign: 'center',
   },
   recentPts: { fontSize: font.tiny, color: colors.accentInk, fontFamily: fonts.display },
