@@ -15,6 +15,7 @@ import type { Sighting } from '@/types';
 export function ShareToWall({ sighting }: { sighting: Sighting }) {
   const session = useAuthStore((s) => s.session);
   const [state, setState] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const eligible =
     !!sighting.species &&
@@ -32,6 +33,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
 
   const share = async () => {
     setState('sharing');
+    setErrorMsg(null);
     const res = await shareToWall({
       commonName: sighting.species?.commonName,
       scientificName: sighting.species?.scientificName,
@@ -39,18 +41,26 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       caption: sighting.caption,
       photoUri: sighting.photoUri,
     });
-    setState(res.error ? 'error' : 'done');
+    if (res.error) {
+      setErrorMsg(res.error);
+      setState('error');
+    } else {
+      setState('done');
+    }
   };
 
   return (
-    <Button
-      label={state === 'error' ? 'Couldn’t share — try again' : 'Share to wall'}
-      variant="secondary"
-      icon="share-social"
-      loading={state === 'sharing'}
-      onPress={share}
-      style={styles.btn}
-    />
+    <>
+      <Button
+        label={state === 'error' ? 'Couldn’t share — try again' : 'Share to wall'}
+        variant="secondary"
+        icon="share-social"
+        loading={state === 'sharing'}
+        onPress={share}
+        style={styles.btn}
+      />
+      {state === 'error' && !!errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
+    </>
   );
 }
 
@@ -65,4 +75,5 @@ const styles = StyleSheet.create({
     borderColor: colors.primarySoft,
   },
   doneText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.onPrimary },
+  errorText: { fontSize: font.tiny, color: colors.danger, marginTop: spacing.sm, textAlign: 'center', lineHeight: 18 },
 });

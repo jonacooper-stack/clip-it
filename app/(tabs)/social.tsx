@@ -94,6 +94,7 @@ function LeaderboardView() {
 function WallView() {
   const [scope, setScope] = useState<FeedScope>('everyone');
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Reload on scope change and whenever the tab regains focus, so a sighting you
   // just shared (or a like/comment) shows up without a manual refresh.
@@ -101,7 +102,12 @@ function WallView() {
     useCallback(() => {
       let on = true;
       setPosts(null);
-      getFeed(scope).then((p) => on && setPosts(p));
+      setError(null);
+      getFeed(scope).then((res) => {
+        if (!on) return;
+        setPosts(res.posts);
+        setError(res.error ?? null);
+      });
       return () => { on = false; };
     }, [scope]),
   );
@@ -117,6 +123,8 @@ function WallView() {
       </View>
       {posts === null ? (
         <Loading />
+      ) : error ? (
+        <Empty icon="cloud-offline-outline" text={`Couldn’t load the wall.\n${error}`} />
       ) : posts.length === 0 ? (
         <Empty
           icon="images-outline"

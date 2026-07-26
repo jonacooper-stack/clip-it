@@ -4,6 +4,7 @@
 
 import { supabase } from './supabase';
 import { useAuthStore } from '@/state/useAuthStore';
+import { useAppStore } from '@/state/useAppStore';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 
@@ -115,27 +116,33 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
   }));
 }
 
-const POST_COLUMNS =
-  'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at, profiles(display_name)';
+// Scalar columns only — display names are fetched separately (see enrichPosts)
+// rather than via a `profiles(display_name)` embed, so a flaky PostgREST
+// relationship/schema-cache can't blank the whole wall.
+const POST_COLUMNS = 'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at';
 
-// Turn raw feed_posts rows into FeedPosts, batching the like/comment/follow
-// lookups into three queries total (not per-post). Everything degrades to
-// zero/false if the 0004 tables aren't set up yet, so the images still show.
+// Turn raw feed_posts rows into FeedPosts, batching the author-name, like,
+// comment and follow lookups into a handful of queries (not per-post).
+// Everything degrades gracefully if the 0004 tables aren't set up yet, so the
+// images still show.
 async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   const ids = rows.map((r) => r.id);
   const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
 
+  const nameById = new Map<string, string>();
   const likeCount = new Map<string, number>();
   const likedByMe = new Set<string>();
   const commentCount = new Map<string, number>();
   const followingSet = new Set<string>();
 
   if (supabase && ids.length) {
-    const [likes, comments, follows] = await Promise.all([
+    const [profiles, likes, comments, follows] = await Promise.all([
+      supabase.from('profiles').select('id, display_name').in('id', authorIds),
       supabase.from('post_likes').select('post_id, user_id').in('post_id', ids),
       supabase.from('post_comments').select('post_id').in('post_id', ids),
       supabase.from('follows').select('following_id').eq('follower_id', uid).in('following_id', authorIds),
     ]);
+    for (const p of (profiles.data ?? []) as any[]) nameById.set(p.id, p.display_name || 'Explorer');
     for (const l of (likes.data ?? []) as any[]) {
       likeCount.set(l.post_id, (likeCount.get(l.post_id) ?? 0) + 1);
       if (l.user_id === uid) likedByMe.add(l.post_id);
@@ -149,7 +156,7 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
-    displayName: r.profiles?.display_name || 'Explorer',
+    displayName: nameById.get(r.user_id) || 'Explorer',
     commonName: r.common_name,
     scientificName: r.scientific_name,
     points: r.points ?? 0,
@@ -164,9 +171,15 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   }));
 }
 
-export async function getFeed(scope: FeedScope): Promise<FeedPost[]> {
+export interface FeedResult {
+  posts: FeedPost[];
+  error?: string;
+}
+
+export async function getFeed(scope: FeedScope): Promise<FeedResult> {
   const uid = myId();
-  if (!supabase || !uid) return [];
+  if (!supabase) return { posts: [], error: 'The community backend isn’t configured in this build.' };
+  if (!uid) return { posts: [], error: 'Sign in to see the wall.' };
   let q = supabase.from('feed_posts').select(POST_COLUMNS).order('created_at', { ascending: false }).limit(100);
   if (scope === 'following') {
     // My own posts + people I follow + accepted friends (friends are implicitly
@@ -174,8 +187,12 @@ export async function getFeed(scope: FeedScope): Promise<FeedPost[]> {
     const ids = Array.from(new Set([uid, ...(await followingIds()), ...(await acceptedFriendIds())]));
     q = q.in('user_id', ids);
   }
-  const { data } = await q;
-  return enrichPosts((data ?? []) as any[], uid);
+  // Surface the real error instead of swallowing it — otherwise a failed read
+  // (RLS, schema, relationship) looks identical to an empty wall.
+  const { data, error } = await q;
+  if (error) return { posts: [], error: error.message };
+  const posts = await enrichPosts((data ?? []) as any[], uid);
+  return { posts };
 }
 
 // A single post with its counts — used by the comments screen.
@@ -227,14 +244,22 @@ export async function getComments(postId: string): Promise<Comment[]> {
   if (!supabase) return [];
   const { data } = await supabase
     .from('post_comments')
-    .select('id, user_id, body, created_at, profiles(display_name)')
+    .select('id, user_id, body, created_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
     .limit(200);
-  return (data ?? []).map((r: any) => ({
+  const rows = (data ?? []) as any[];
+  // Fetch commenter names separately (no embed) for the same resilience reason.
+  const nameById = new Map<string, string>();
+  const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
+  if (authorIds.length) {
+    const { data: profs } = await supabase.from('profiles').select('id, display_name').in('id', authorIds);
+    for (const p of (profs ?? []) as any[]) nameById.set(p.id, p.display_name || 'Explorer');
+  }
+  return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
-    displayName: r.profiles?.display_name || 'Explorer',
+    displayName: nameById.get(r.user_id) || 'Explorer',
     body: r.body,
     createdAt: r.created_at,
     isMine: r.user_id === uid,
@@ -261,6 +286,16 @@ export async function shareToWall(input: {
 }): Promise<{ error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+
+  // feed_posts.user_id references profiles(id); a fresh account that shared
+  // before ever opening the Community tab has no profile row yet, which would
+  // fail the insert with a foreign-key violation. Ensure it exists first.
+  await supabase
+    .from('profiles')
+    .upsert(
+      { id: uid, display_name: useAppStore.getState().displayName },
+      { onConflict: 'id', ignoreDuplicates: true },
+    );
 
   // Best-effort photo upload to the public wall bucket. Resizing strips EXIF
   // (including any GPS), and if the bucket/policy isn't set up we simply share
