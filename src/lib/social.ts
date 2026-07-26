@@ -26,6 +26,7 @@ function base64ToBytes(b64: string): Uint8Array {
 export interface LeaderboardEntry {
   id: string;
   displayName: string;
+  avatarUrl: string | null;
   points: number;
   speciesCount: number;
   isMe: boolean;
@@ -35,6 +36,7 @@ export interface FeedPost {
   id: string;
   userId: string;
   displayName: string;
+  avatarUrl: string | null;
   commonName: string | null;
   scientificName: string | null;
   points: number;
@@ -52,6 +54,7 @@ export interface Comment {
   id: string;
   userId: string;
   displayName: string;
+  avatarUrl: string | null;
   body: string;
   createdAt: string;
   isMine: boolean;
@@ -61,6 +64,7 @@ export interface FriendRow {
   id: string; // the friendship row id
   userId: string; // the *other* person's id
   displayName: string;
+  avatarUrl: string | null;
 }
 
 function myId(): string | null {
@@ -101,7 +105,7 @@ async function followingIds(): Promise<string[]> {
 export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> {
   const uid = myId();
   if (!supabase || !uid) return [];
-  let q = supabase.from('profiles').select('id, display_name, points, species_count').order('points', { ascending: false }).limit(100);
+  let q = supabase.from('profiles').select('id, display_name, avatar_url, points, species_count').order('points', { ascending: false }).limit(100);
   if (scope === 'friends') {
     const ids = [uid, ...(await acceptedFriendIds())];
     q = q.in('id', ids);
@@ -110,6 +114,7 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
   return (data ?? []).map((r: any) => ({
     id: r.id,
     displayName: r.display_name || 'Explorer',
+    avatarUrl: r.avatar_url ?? null,
     points: r.points ?? 0,
     speciesCount: r.species_count ?? 0,
     isMe: r.id === uid,
@@ -130,6 +135,7 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
 
   const nameById = new Map<string, string>();
+  const avatarById = new Map<string, string>();
   const likeCount = new Map<string, number>();
   const likedByMe = new Set<string>();
   const commentCount = new Map<string, number>();
@@ -137,12 +143,15 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
 
   if (supabase && ids.length) {
     const [profiles, likes, comments, follows] = await Promise.all([
-      supabase.from('profiles').select('id, display_name').in('id', authorIds),
+      supabase.from('profiles').select('id, display_name, avatar_url').in('id', authorIds),
       supabase.from('post_likes').select('post_id, user_id').in('post_id', ids),
       supabase.from('post_comments').select('post_id').in('post_id', ids),
       supabase.from('follows').select('following_id').eq('follower_id', uid).in('following_id', authorIds),
     ]);
-    for (const p of (profiles.data ?? []) as any[]) nameById.set(p.id, p.display_name || 'Explorer');
+    for (const p of (profiles.data ?? []) as any[]) {
+      nameById.set(p.id, p.display_name || 'Explorer');
+      if (p.avatar_url) avatarById.set(p.id, p.avatar_url);
+    }
     for (const l of (likes.data ?? []) as any[]) {
       likeCount.set(l.post_id, (likeCount.get(l.post_id) ?? 0) + 1);
       if (l.user_id === uid) likedByMe.add(l.post_id);
@@ -157,6 +166,7 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
     id: r.id,
     userId: r.user_id,
     displayName: nameById.get(r.user_id) || 'Explorer',
+    avatarUrl: avatarById.get(r.user_id) ?? null,
     commonName: r.common_name,
     scientificName: r.scientific_name,
     points: r.points ?? 0,
@@ -249,17 +259,22 @@ export async function getComments(postId: string): Promise<Comment[]> {
     .order('created_at', { ascending: true })
     .limit(200);
   const rows = (data ?? []) as any[];
-  // Fetch commenter names separately (no embed) for the same resilience reason.
+  // Fetch commenter names/avatars separately (no embed) for the same resilience reason.
   const nameById = new Map<string, string>();
+  const avatarById = new Map<string, string>();
   const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
   if (authorIds.length) {
-    const { data: profs } = await supabase.from('profiles').select('id, display_name').in('id', authorIds);
-    for (const p of (profs ?? []) as any[]) nameById.set(p.id, p.display_name || 'Explorer');
+    const { data: profs } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', authorIds);
+    for (const p of (profs ?? []) as any[]) {
+      nameById.set(p.id, p.display_name || 'Explorer');
+      if (p.avatar_url) avatarById.set(p.id, p.avatar_url);
+    }
   }
   return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
     displayName: nameById.get(r.user_id) || 'Explorer',
+    avatarUrl: avatarById.get(r.user_id) ?? null,
     body: r.body,
     createdAt: r.created_at,
     isMine: r.user_id === uid,
@@ -334,6 +349,60 @@ export async function shareToWall(input: {
   return error ? { error: error.message } : {};
 }
 
+// Unshare: delete one of my own posts. Likes/comments cascade away with it (FK
+// on delete cascade); the stored photo is removed best-effort.
+export async function deletePost(postId: string, photoUrl?: string | null): Promise<{ error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  const { error } = await supabase.from('feed_posts').delete().eq('id', postId).eq('user_id', uid);
+  if (error) return { error: error.message };
+  if (photoUrl) {
+    const marker = `/${WALL_BUCKET}/`;
+    const i = photoUrl.indexOf(marker);
+    if (i !== -1) {
+      try {
+        await supabase.storage.from(WALL_BUCKET).remove([photoUrl.slice(i + marker.length)]);
+      } catch {
+        // orphaned photo is harmless
+      }
+    }
+  }
+  return {};
+}
+
+// --- profile picture ---
+
+const AVATAR_BUCKET = 'avatars';
+
+// Upload a chosen image as my avatar and save its public URL on my profile.
+// Returns the URL so the caller can mirror it locally for instant display.
+export async function uploadAvatar(localUri: string): Promise<{ url?: string; error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  const b64 = await resizedBase64(resolvePhoto(localUri) ?? localUri);
+  if (!b64) return { error: 'Couldn’t read that image.' };
+  // A fresh filename each time sidesteps any CDN caching of a replaced avatar.
+  const path = `${uid}/avatar_${Date.now()}.jpg`;
+  const { error: upErr } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, base64ToBytes(b64).buffer as ArrayBuffer, { contentType: 'image/jpeg', upsert: true });
+  if (upErr) return { error: upErr.message };
+  const url = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+  const { error: dbErr } = await supabase
+    .from('profiles')
+    .upsert({ id: uid, display_name: useAppStore.getState().displayName, avatar_url: url }, { onConflict: 'id' });
+  if (dbErr) return { error: dbErr.message };
+  return { url };
+}
+
+// My saved avatar URL (used to restore it on a fresh device / after sign-in).
+export async function getMyAvatarUrl(): Promise<string | null> {
+  const uid = myId();
+  if (!supabase || !uid) return null;
+  const { data } = await supabase.from('profiles').select('avatar_url').eq('id', uid).maybeSingle();
+  return (data as any)?.avatar_url ?? null;
+}
+
 // --- friends (double opt-in) ---
 
 export interface FriendsState {
@@ -348,14 +417,15 @@ export async function getFriends(): Promise<FriendsState> {
   if (!supabase || !uid) return empty;
   const { data } = await supabase
     .from('friendships')
-    .select('id, status, requester_id, addressee_id, requester:requester_id(display_name), addressee:addressee_id(display_name)')
+    .select('id, status, requester_id, addressee_id, requester:requester_id(display_name, avatar_url), addressee:addressee_id(display_name, avatar_url)')
     .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
   const state: FriendsState = { friends: [], incoming: [], outgoing: [] };
   for (const r of (data ?? []) as any[]) {
     const iAmRequester = r.requester_id === uid;
     const otherId = iAmRequester ? r.addressee_id : r.requester_id;
-    const otherName = (iAmRequester ? r.addressee?.display_name : r.requester?.display_name) || 'Explorer';
-    const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName };
+    const other = iAmRequester ? r.addressee : r.requester;
+    const otherName = other?.display_name || 'Explorer';
+    const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName, avatarUrl: other?.avatar_url ?? null };
     if (r.status === 'accepted') state.friends.push(row);
     else if (iAmRequester) state.outgoing.push(row);
     else state.incoming.push(row);
@@ -363,17 +433,17 @@ export async function getFriends(): Promise<FriendsState> {
   return state;
 }
 
-export async function searchUsers(query: string): Promise<{ id: string; displayName: string }[]> {
+export async function searchUsers(query: string): Promise<{ id: string; displayName: string; avatarUrl: string | null }[]> {
   const uid = myId();
   const q = query.trim();
   if (!supabase || !uid || q.length < 2) return [];
   const { data } = await supabase
     .from('profiles')
-    .select('id, display_name')
+    .select('id, display_name, avatar_url')
     .ilike('display_name', `%${q}%`)
     .neq('id', uid)
     .limit(20);
-  return (data ?? []).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer' }));
+  return (data ?? []).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {

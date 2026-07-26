@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
@@ -9,11 +10,21 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
 
 export default function Quests() {
+  const router = useRouter();
   const sightings = useJournalStore((s) => s.sightings);
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Pressable onPress={goBack} hitSlop={8} style={styles.back}>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+          <Text style={styles.backText}>Feed</Text>
+        </Pressable>
         <Text style={styles.title}>Quests</Text>
         <Text style={styles.subtitle}>Challenges to chase on your next outing.</Text>
 
@@ -47,6 +58,8 @@ export default function Quests() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  back: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: spacing.sm, marginLeft: -4 },
+  backText: { fontSize: font.body, fontFamily: fonts.bodyMedium, color: colors.text },
   title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.body, color: colors.muted, marginTop: 2, marginBottom: spacing.lg },
   card: { marginBottom: spacing.md },

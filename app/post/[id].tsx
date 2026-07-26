@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,9 +9,10 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
+import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
-  getPost, getComments, addComment, likePost, unlikePost,
+  getPost, getComments, addComment, likePost, unlikePost, deletePost,
   type FeedPost, type Comment,
 } from '@/lib/social';
 
@@ -29,7 +30,23 @@ export default function PostDetail() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/social');
+    else router.replace('/(tabs)');
+  };
+
+  const unshare = () => {
+    if (!post) return;
+    Alert.alert('Remove from wall?', 'This unshares the post for everyone. Your sighting stays in your journal.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unshare',
+        style: 'destructive',
+        onPress: async () => {
+          const res = await deletePost(post.id, post.photoUrl);
+          if (res.error) Alert.alert('Couldn’t unshare', res.error);
+          else goBack();
+        },
+      },
+    ]);
   };
 
   const loadComments = useCallback(() => {
@@ -64,7 +81,13 @@ export default function PostDetail() {
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Post</Text>
-        <View style={styles.iconBtn} />
+        {post && post.isMine ? (
+          <Pressable onPress={unshare} style={styles.iconBtn} hitSlop={8}>
+            <Ionicons name="trash-outline" size={22} color={colors.danger} />
+          </Pressable>
+        ) : (
+          <View style={styles.iconBtn} />
+        )}
       </View>
 
       <KeyboardAvoidingView
@@ -97,7 +120,7 @@ export default function PostDetail() {
               ) : (
                 comments.map((c) => (
                   <View key={c.id} style={styles.commentRow}>
-                    <UserAvatar name={c.displayName} size={34} />
+                    <UserAvatar name={c.displayName} uri={c.avatarUrl} size={34} />
                     <View style={styles.commentBody}>
                       <Text style={styles.commentText}>
                         <Text style={styles.commentName}>{c.displayName}</Text>
@@ -164,7 +187,7 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
   return (
     <View style={styles.post}>
       <View style={styles.postHead}>
-        <UserAvatar name={post.displayName} size={40} />
+        <UserAvatar name={post.displayName} uri={post.avatarUrl} size={40} />
         <View style={{ flex: 1 }}>
           <Text style={styles.postName} numberOfLines={1}>{post.displayName}</Text>
           <Text style={styles.postTime}>{timeAgo(post.createdAt)}</Text>
@@ -201,16 +224,6 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
       {!!post.caption && <Text style={styles.captionText}>{post.caption}</Text>}
     </View>
   );
-}
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 const styles = StyleSheet.create({

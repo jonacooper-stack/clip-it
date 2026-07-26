@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 import { colors, fonts } from '@/theme';
 
-// A person's avatar in the social feed: a colored circle with their initial.
-// (We don't collect profile photos yet — this keeps the feed personal without one.)
+// A person's avatar in the social feed: their uploaded photo if they have one,
+// otherwise a colored circle with their initial.
 const PALETTE = ['#35A65F', '#F4812F', '#7CA9C6', '#E6B23C', '#D27C4A', '#8E7CC3', '#4FB0A5'];
 
 function colorFor(name: string): string {
@@ -11,7 +13,26 @@ function colorFor(name: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
-export function UserAvatar({ name, size = 40 }: { name: string; size?: number }) {
+export function UserAvatar({
+  name,
+  uri,
+  size = 40,
+}: {
+  name: string;
+  uri?: string | null;
+  size?: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (uri && !failed) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.surfaceAlt }}
+        contentFit="cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
   const initial = (name.trim()[0] ?? '?').toUpperCase();
   return (
     <View

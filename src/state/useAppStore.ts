@@ -16,6 +16,7 @@ interface AppState {
   ageBracket: AgeBracket | null;
   isChild: boolean;
   displayName: string;
+  avatarUrl: string | null;
   streakCount: number;
   lastActiveDate: string | null;
   saveToCameraRoll: boolean;
@@ -24,6 +25,7 @@ interface AppState {
   setOnboarded: (v: boolean) => void;
   setAge: (bracket: AgeBracket, isChild: boolean) => void;
   setDisplayName: (name: string) => void;
+  setAvatarUrl: (url: string | null) => void;
   setSaveToCameraRoll: (v: boolean) => void;
   registerActivityToday: () => void;
   reset: () => void;
@@ -37,6 +39,7 @@ export const useAppStore = create<AppState>()(
       ageBracket: null,
       isChild: false,
       displayName: 'Explorer',
+      avatarUrl: null,
       streakCount: 0,
       lastActiveDate: null,
       saveToCameraRoll: true,
@@ -45,6 +48,7 @@ export const useAppStore = create<AppState>()(
       setOnboarded: (v) => set({ hasOnboarded: v }),
       setAge: (ageBracket, isChild) => set({ ageBracket, isChild }),
       setDisplayName: (displayName) => set({ displayName }),
+      setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
 
       registerActivityToday: () => {
@@ -62,6 +66,7 @@ export const useAppStore = create<AppState>()(
           ageBracket: null,
           isChild: false,
           displayName: 'Explorer',
+          avatarUrl: null,
           streakCount: 0,
           lastActiveDate: null,
           saveToCameraRoll: true,

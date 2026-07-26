@@ -1,9 +1,27 @@
-import { Tabs, Redirect } from 'expo-router';
+import { Tabs, Redirect, useRouter } from 'expo-router';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts } from '@/theme';
+import { colors, fonts, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
+
+// The raised "ClipIt" camera button in the center of the tab bar — the primary
+// action, always one tap away.
+function CaptureButton() {
+  const router = useRouter();
+  return (
+    <View style={styles.captureSlot} pointerEvents="box-none">
+      <Pressable
+        onPress={() => router.push('/capture/camera')}
+        style={({ pressed }) => [styles.captureBtn, pressed && styles.capturePressed]}
+        accessibilityLabel="ClipIt — take a photo"
+      >
+        <Ionicons name="camera" size={30} color={colors.white} />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
@@ -41,20 +59,20 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Spot', tabBarIcon: ({ color, size }) => <Ionicons name="camera" color={color} size={size} /> }}
+        options={{ title: 'Feed', tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="journal"
         options={{ title: 'Journal', tabBarIcon: ({ color, size }) => <Ionicons name="book" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="quests"
-        options={{ title: 'Quests', tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} /> }}
+        name="capture"
+        options={{ title: '', tabBarButton: () => <CaptureButton /> }}
       />
       <Tabs.Screen
         name="social"
         options={{
-          title: 'Social',
+          title: 'Community',
           // Only a tab when accounts are on; otherwise hidden + unreachable.
           href: isSupabaseConfigured ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
@@ -64,6 +82,25 @@ export default function TabsLayout() {
         name="profile"
         options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <Ionicons name="person" color={color} size={size} /> }}
       />
+      {/* Quests still exists as a route (reached from the Feed header) but isn't its own tab. */}
+      <Tabs.Screen name="quests" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  captureSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  captureBtn: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: -18, // lift it above the bar
+    borderWidth: 4,
+    borderColor: colors.surface,
+    ...shadow.lifted,
+  },
+  capturePressed: { transform: [{ scale: 0.94 }], opacity: 0.95 },
+});

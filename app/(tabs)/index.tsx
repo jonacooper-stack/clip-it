@@ -1,316 +1,62 @@
-import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
-import { ProgressBar } from '@/components/ProgressBar';
-import { SightingThumb } from '@/components/SightingThumb';
-import { SpeciesAvatar } from '@/components/SpeciesAvatar';
-import { PointsBadge } from '@/components/PointsBadge';
-import { TopoBackground } from '@/components/TopoBackground';
-import { WildlifeGallery } from '@/components/WildlifeGallery';
-import { resolvePhoto } from '@/lib/photoStore';
-import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
+import { WallFeed } from '@/components/WallFeed';
+import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
-import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
-import { SEED_QUESTS, questProgress } from '@/lib/quests';
-import type { Sighting } from '@/types';
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-export default function Home() {
+// The app's home is the community Feed — the wall front-and-center. Capturing a
+// new sighting is the raised camera button in the middle of the tab bar.
+export default function Feed() {
   const router = useRouter();
-  const displayName = useAppStore((s) => s.displayName);
   const streak = useAppStore((s) => s.streakCount);
-  const sightings = useJournalStore((s) => s.sightings);
-
-  const points = useMemo(() => totalPoints(sightings), [sightings]);
-  const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
-  // Include still-queued captures (rapid-fire / offline) so a burst is visible
-  // and the player can watch each one resolve from "queued" to a scored species.
-  const recent = useMemo(
-    () => sightings.filter((s) => s.species || s.idStatus === 'queued').slice(0, 8),
-    [sightings],
-  );
-
-  const nextQuest = useMemo(
-    () => SEED_QUESTS.find((q) => questProgress(q, sightings) < q.goal) ?? null,
-    [sightings],
-  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <TopoBackground color={colors.primary} opacity={0.05} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Text style={styles.greeting}>{greeting()},</Text>
-            <Text style={styles.name}>{displayName}</Text>
-          </View>
+      <View style={styles.header}>
+        <Text style={styles.brand}>
+          Clip<Text style={styles.brandAccent}>It</Text>
+        </Text>
+        <View style={styles.headerRight}>
           {streak > 0 && (
             <View style={styles.streak}>
-              <Ionicons name="flame" size={15} color={colors.accent} />
+              <Ionicons name="flame" size={14} color={colors.accent} />
               <Text style={styles.streakText}>{streak}</Text>
             </View>
           )}
+          <Pressable onPress={() => router.push('/quests')} hitSlop={8} style={styles.iconBtn}>
+            <Ionicons name="trophy-outline" size={22} color={colors.text} />
+          </Pressable>
         </View>
-
-        <View style={styles.stats}>
-          <View style={[styles.statCard, styles.statPrimary]}>
-            <Text style={[styles.statValue, styles.statValueOnDark]}>{points}</Text>
-            <Text style={[styles.statLabel, styles.statLabelOnDark]}>points</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{speciesCount}</Text>
-            <Text style={styles.statLabel}>species</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{sightings.length}</Text>
-            <Text style={styles.statLabel}>sightings</Text>
-          </View>
-        </View>
-
-        {nextQuest && (
-          <Card style={styles.questCard} onPress={() => router.push('/quests')}>
-            <View style={styles.questHead}>
-              <Text style={styles.questLabel}>TODAY'S QUEST</Text>
-              <PointsBadge points={nextQuest.rewardPoints} prefix />
-            </View>
-            <Text style={styles.questTitle}>{nextQuest.title}</Text>
-            <Text style={styles.questDesc}>{nextQuest.description}</Text>
-            <View style={styles.questProgress}>
-              <ProgressBar value={questProgress(nextQuest, sightings)} goal={nextQuest.goal} />
-              <Text style={styles.questCount}>
-                {questProgress(nextQuest, sightings)}/{nextQuest.goal}
-              </Text>
-            </View>
-          </Card>
-        )}
-
-        <Button
-          label="Go Spot"
-          variant="accent"
-          icon="camera"
-          onPress={() => router.push('/capture/camera')}
-          style={styles.cta}
-        />
-
-        <Text style={styles.sectionTitle}>Recently spotted</Text>
-        {recent.length === 0 ? (
-          <Card style={styles.empty}>
-            <Ionicons name="camera-outline" size={34} color={colors.faint} style={styles.emptyIcon} />
-            <Text style={styles.emptyText}>
-              Nothing here yet. Head outside and photograph your first wild animal!
-            </Text>
-          </Card>
-        ) : (
-          <>
-            <RecentHero sighting={recent[0]} onPress={() => router.push(`/sighting/${recent[0].id}`)} />
-            {recent.length > 1 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.recentRow}
-              >
-                {recent.slice(1).map((s) => (
-                  <Pressable
-                    key={s.id}
-                    style={styles.recentItem}
-                    onPress={() => router.push(`/sighting/${s.id}`)}
-                  >
-                    <SightingThumb
-                      photoUri={s.photoUri}
-                      scientificName={s.species?.scientificName}
-                      size={112}
-                      radius={radius.lg}
-                    />
-                    <Text style={styles.recentName} numberOfLines={1}>
-                      {s.species?.commonName ?? (s.idStatus === 'queued' ? 'Queued' : 'Identifying…')}
-                    </Text>
-                    {s.idStatus === 'queued' ? (
-                      <Text style={styles.pending}>queued</Text>
-                    ) : (
-                      <Text style={styles.recentPts}>{s.points ?? 0} pts</Text>
-                    )}
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
-          </>
-        )}
-
-        <View style={styles.discover}>
-          <Text style={styles.sectionTitle}>Out in the wild</Text>
-          <WildlifeGallery limit={8} />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// The most recent capture, shown big and image-forward at the top of the strip.
-function RecentHero({ sighting, onPress }: { sighting: Sighting; onPress: () => void }) {
-  const [failed, setFailed] = useState(false);
-  const src = resolvePhoto(sighting.photoUri);
-  const queued = sighting.idStatus === 'queued';
-  const name = sighting.species?.commonName ?? (queued ? 'Queued' : 'Identifying…');
-  return (
-    <Pressable style={styles.hero} onPress={onPress}>
-      {src && !failed ? (
-        <Image
-          source={{ uri: src }}
-          style={styles.heroImg}
-          contentFit="cover"
-          transition={150}
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <View style={[styles.heroImg, styles.heroFallback]}>
-          <SpeciesAvatar scientificName={sighting.species?.scientificName} size={96} />
-        </View>
-      )}
-      <View style={styles.heroOverlay}>
-        <View style={styles.heroText}>
-          <Text style={styles.heroName} numberOfLines={1}>{name}</Text>
-          {sighting.species?.scientificName ? (
-            <Text style={styles.heroSci} numberOfLines={1}>{sighting.species.scientificName}</Text>
-          ) : null}
-        </View>
-        {queued ? (
-          <View style={styles.heroPill}><Text style={styles.heroPillText}>queued</Text></View>
-        ) : (
-          <View style={styles.heroPts}>
-            <Ionicons name="flame" size={14} color={colors.accentInk} />
-            <Text style={styles.heroPtsText}>{sighting.points ?? 0}</Text>
-          </View>
-        )}
       </View>
-    </Pressable>
+      <WallFeed />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  headerRow: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  headerText: { flex: 1 },
-  greeting: { fontSize: font.body, color: colors.muted, fontFamily: fonts.bodyMedium },
-  name: { fontSize: font.title + 2, fontFamily: fonts.heading, color: colors.text },
+  brand: { fontSize: font.title, fontFamily: fonts.display, color: colors.text, letterSpacing: 0.3 },
+  brandAccent: { color: colors.primary },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   streak: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: colors.accentSoft,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  streakFlame: { fontSize: font.body },
-  streakText: { fontSize: font.heading, fontFamily: fonts.display, color: colors.accentInk },
-
-  stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.soft,
-  },
-  statPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
-  statValue: { fontSize: font.title + 2, fontFamily: fonts.display, color: colors.primary },
-  statValueOnDark: { color: colors.white },
-  statLabel: {
-    fontSize: font.tiny,
-    color: colors.muted,
-    marginTop: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    fontFamily: fonts.bodyBold,
-  },
-  statLabelOnDark: { color: colors.onPrimary },
-
-  questCard: { marginBottom: spacing.lg },
-  questHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  questLabel: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: colors.accent, letterSpacing: 1 },
-  questTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text },
-  questDesc: { fontSize: font.small, color: colors.muted, marginTop: 2, marginBottom: spacing.md },
-  questProgress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  questCount: {
-    fontSize: font.small,
-    fontFamily: fonts.bodyBold,
-    color: colors.muted,
-    width: 44,
-    textAlign: 'right',
-  },
-
-  cta: { marginBottom: spacing.xl },
-  discover: { marginTop: spacing.xl },
-  sectionTitle: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.md },
-  empty: { alignItems: 'center', paddingVertical: spacing.xl },
-  emptyIcon: { marginBottom: spacing.sm },
-  emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
-  hero: { borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.md, ...shadow.soft },
-  heroImg: { width: '100%', height: 230, backgroundColor: colors.surfaceAlt },
-  heroFallback: { alignItems: 'center', justifyContent: 'center' },
-  heroOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.md,
-    backgroundColor: 'rgba(7,11,8,0.5)',
-  },
-  heroText: { flex: 1 },
-  heroName: { fontSize: font.heading, fontFamily: fonts.heading, color: colors.white },
-  heroSci: { fontSize: font.tiny, fontStyle: 'italic', color: 'rgba(236,236,226,0.82)', marginTop: 1 },
-  heroPts: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(7,11,8,0.55)',
-    borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
   },
-  heroPtsText: { fontSize: font.body, fontFamily: fonts.display, color: colors.accentInk },
-  heroPill: { backgroundColor: 'rgba(7,11,8,0.55)', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5 },
-  heroPillText: { fontSize: font.tiny, color: colors.onPrimary, fontStyle: 'italic' },
-
-  recentRow: { gap: spacing.md, paddingRight: spacing.lg },
-  recentItem: { width: 112, alignItems: 'center' },
-  recentName: {
-    fontSize: font.tiny,
-    color: colors.text,
-    fontFamily: fonts.bodyMedium,
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  recentPts: { fontSize: font.tiny, color: colors.accentInk, fontFamily: fonts.display },
-  pending: { fontSize: font.tiny, color: colors.muted, fontStyle: 'italic' },
+  streakText: { fontSize: font.small, fontFamily: fonts.display, color: colors.accentInk },
+  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 });
