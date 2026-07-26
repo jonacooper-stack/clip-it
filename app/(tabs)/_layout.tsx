@@ -1,5 +1,6 @@
 import { Tabs, Redirect, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
@@ -26,6 +27,9 @@ function CaptureButton() {
 export default function TabsLayout() {
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
   const session = useAuthStore((s) => s.session);
+  // Reserve the device's bottom safe area (home indicator / gesture bar) so the
+  // full tab bar sits above it instead of being clipped by the phone frame.
+  const insets = useSafeAreaInsets();
   // When accounts are enabled, a session is required; otherwise the app is local-only.
   if (isSupabaseConfigured && !session) return <Redirect href="/onboarding/welcome" />;
   // A signed-in user who hasn't finished the intro (e.g. returning from the Google
@@ -44,9 +48,11 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          height: 64,
+          // Grow the bar by the bottom inset and pad the content up above it, so
+          // the icons/labels keep their normal room and nothing is cut off.
+          height: 64 + insets.bottom,
           paddingTop: 8,
-          paddingBottom: 10,
+          paddingBottom: 10 + insets.bottom,
           shadowColor: colors.pine,
           shadowOpacity: 0.08,
           shadowRadius: 16,
