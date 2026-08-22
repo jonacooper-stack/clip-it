@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { create } from 'zustand';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAppStore } from './useAppStore';
@@ -46,6 +47,7 @@ interface AuthState {
   signUp: (a: SignUpArgs) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInWithGoogle: () => Promise<{ error?: string }>;
+  signInWithApple: () => Promise<{ error?: string; cancelled?: boolean }>;
   signOut: () => Promise<void>;
 }
 
@@ -148,6 +150,49 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       return {};
     } catch (e: any) {
+      return { error: String(e?.message ?? e) };
+    }
+  },
+
+  // Sign in with Apple. Required alongside Google by App Store Review Guideline
+  // 4.8, and it's the better default on iOS anyway — Apple's private relay means
+  // a user can sign up without handing over a real address.
+  //
+  // Native only: this uses the system sheet, not a web redirect. The identity
+  // token it returns is exchanged with Supabase directly (no browser round trip),
+  // which is why the Google deep-link dance isn't needed here.
+  signInWithApple: async () => {
+    if (!supabase) return { error: 'Accounts are not set up yet.' };
+    if (Platform.OS !== 'ios') return { error: 'Sign in with Apple is only available on iOS.' };
+
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) return { error: 'Apple didn’t return a sign-in token.' };
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) return { error: error.message };
+
+      // Apple hands over the name ONLY on the very first authorization — there's
+      // no second chance to ask — so persist it now if we got one and the account
+      // doesn't already have one.
+      const parts = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean);
+      const appleName = parts.join(' ').trim();
+      if (appleName && !data.user?.user_metadata?.displayName) {
+        await supabase.auth.updateUser({ data: { displayName: appleName } });
+        useAppStore.getState().setDisplayName(appleName);
+      }
+      return {};
+    } catch (e: any) {
+      // The user backing out of the system sheet isn't an error to report.
+      if (e?.code === 'ERR_REQUEST_CANCELED') return { cancelled: true };
       return { error: String(e?.message ?? e) };
     }
   },

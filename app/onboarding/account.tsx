@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { View, Text, StyleSheet, TextInput, Platform, Pressable } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
@@ -23,6 +24,7 @@ export default function Account() {
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
+  const signInWithApple = useAuthStore((s) => s.signInWithApple);
 
   const [mode, setMode] = useState<'signup' | 'signin'>(params.mode === 'signin' ? 'signin' : 'signup');
   const [name, setName] = useState('');
@@ -31,6 +33,14 @@ export default function Account() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  // Sign in with Apple exists only on iOS, and only on new enough hardware —
+  // asking the module beats assuming from Platform.OS alone.
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+  }, []);
 
   const isSignup = mode === 'signup';
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -61,6 +71,17 @@ export default function Account() {
       setOnboarded(true);
       router.replace('/');
     }
+  };
+
+  const onApple = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await signInWithApple();
+    setBusy(false);
+    if (res.cancelled) return;
+    if (res.error) return setError(res.error);
+    router.replace('/onboarding/ethos');
   };
 
   const onGoogle = async () => {
@@ -128,6 +149,20 @@ export default function Account() {
             and stay involved.
           </Text>
         </Card>
+      )}
+
+      {appleAvailable && (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={
+            isSignup
+              ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+              : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+          }
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+          cornerRadius={radius.pill}
+          style={styles.appleBtn}
+          onPress={onApple}
+        />
       )}
 
       <Pressable onPress={onGoogle} disabled={busy} style={({ pressed }) => [styles.googleBtn, pressed && styles.googlePressed]}>
@@ -229,6 +264,9 @@ const styles = StyleSheet.create({
   childTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk },
   childText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
 
+  // Apple requires its own button asset and sizing; 50pt is Apple's recommended
+  // height and it lines up with the Google button below it.
+  appleBtn: { height: 50, width: '100%', marginBottom: spacing.sm },
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
