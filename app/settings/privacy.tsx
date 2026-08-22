@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
-import { colors, spacing, font, fonts, radius } from '@/theme';
+import { colors, spacing, font, fonts } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { CONTACT_EMAIL } from '@/lib/contact';
 

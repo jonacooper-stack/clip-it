@@ -104,18 +104,17 @@ export interface BlockedUser {
   avatarUrl: string | null;
 }
 
-// Everyone I've blocked, for the "Blocked explorers" management screen. Their
-// profile rows are unreadable to me under RLS now (that's the point), so the
-// names come from the service-side view of nothing — we simply show what we can
-// and fall back to a placeholder.
+// Everyone I've blocked, for the "Blocked explorers" management screen. The 0006
+// profiles policy deliberately still lets a blocker read the profiles they
+// blocked, so this screen shows real names rather than a list of placeholders.
 export async function getBlockedUsers(): Promise<BlockedUser[]> {
   const uid = myId();
   if (!supabase || !uid) return [];
   const { data } = await supabase.from('user_blocks').select('blocked_id').eq('blocker_id', uid);
   const ids = (data ?? []).map((r: any) => r.blocked_id as string);
   if (!ids.length) return [];
-  // Best-effort name lookup; a blocked profile is hidden by policy, so this
-  // usually returns nothing and we show the placeholder instead.
+  // Falls back to a placeholder if 0006 hasn't been applied yet, or the account
+  // has since been deleted.
   const { data: profs } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', ids);
   const byId = new Map<string, any>((profs ?? []).map((p: any) => [p.id, p]));
   return ids.map((id) => ({

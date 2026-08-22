@@ -89,9 +89,23 @@ $$;
 comment on function public.is_blocked_pair(uuid) is
   'True when the current user and `other` have blocked each other in either direction. security definer so it can see block rows regardless of the caller''s own RLS view.';
 
+-- Profiles are the one exception to a flat block: you can still read the profile
+-- of someone YOU blocked, or the "Blocked explorers" screen would list anonymous
+-- placeholders and you couldn't tell who you were unblocking. Someone who blocked
+-- YOU stays hidden, and their posts and comments are hidden either way by the
+-- policies below.
 drop policy if exists profiles_read on public.profiles;
 create policy profiles_read on public.profiles
-  for select using (auth.uid() is not null and not public.is_blocked_pair(id));
+  for select using (
+    auth.uid() is not null
+    and (
+      not public.is_blocked_pair(id)
+      or exists (
+        select 1 from public.user_blocks b
+        where b.blocker_id = auth.uid() and b.blocked_id = profiles.id
+      )
+    )
+  );
 
 drop policy if exists feed_read on public.feed_posts;
 create policy feed_read on public.feed_posts
