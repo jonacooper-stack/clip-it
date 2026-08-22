@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,8 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl } from '@/lib/social';
+import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
+import { CONTACT_EMAIL } from '@/lib/contact';
 import type { AgeBracket } from '@/types';
 
 const BRACKET_LABEL: Record<AgeBracket, string> = {
@@ -36,6 +38,7 @@ export default function Profile() {
   const signOut = useAuthStore((s) => s.signOut);
   const email = session?.user?.email;
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
   const points = useMemo(() => totalPoints(sightings), [sightings]);
@@ -62,13 +65,18 @@ export default function Profile() {
     else if (error) Alert.alert('Couldn’t update photo', error);
   };
 
-  const soon = (label: string) => Alert.alert(label, 'Coming in a later phase.');
-
   const onSignOut = () =>
     Alert.alert('Sign out?', 'You can sign back in anytime.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
     ]);
+
+  const onContact = () => {
+    const subject = encodeURIComponent('ClipIt support');
+    Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${subject}`).catch(() =>
+      Alert.alert('Contact us', CONTACT_EMAIL),
+    );
+  };
 
   const onReset = () =>
     Alert.alert('Reset app data?', 'This clears your journal and onboarding (for testing).', [
@@ -138,23 +146,42 @@ export default function Profile() {
               <Divider />
             </>
           )}
-          <Row icon="lock-closed" label="Privacy & location" onPress={() => soon('Privacy & location')} />
+          <Row icon="lock-closed" label="Privacy & location" onPress={() => router.push('/settings/privacy')} />
           <Divider />
-          <Row icon="people" label="Manage child profile" onPress={() => soon('Child profiles')} />
+          <Row icon="document-text" label="Privacy policy" onPress={() => router.push('/legal/privacy')} />
           <Divider />
-          <Row icon="trash" label="Delete account" danger onPress={() => soon('Delete account')} />
+          <Row icon="mail" label="Contact support" onPress={onContact} />
           {isSupabaseConfigured && session && (
             <>
               <Divider />
               <Row icon="log-out" label="Sign out" onPress={onSignOut} />
+              <Divider />
+              <Row icon="trash" label="Delete account" danger onPress={() => setDeleting(true)} />
             </>
           )}
         </Card>
 
-        <Pressable onPress={onReset} style={styles.devReset}>
-          <Text style={styles.devResetText}>Reset app data (dev)</Text>
-        </Pressable>
+        {/* Testing affordance — not something a shipped build should offer. */}
+        {__DEV__ && (
+          <Pressable onPress={onReset} style={styles.devReset}>
+            <Text style={styles.devResetText}>Reset app data (dev)</Text>
+          </Pressable>
+        )}
       </ScrollView>
+
+      <DeleteAccountSheet
+        visible={deleting}
+        email={email}
+        onClose={() => setDeleting(false)}
+        onDeleted={() => {
+          // The server has removed the account and deleteMyAccount() signed us
+          // out; clear the on-device journal too so nothing of theirs is left.
+          setDeleting(false);
+          resetJournal();
+          resetApp();
+          router.replace('/onboarding/welcome');
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -3,17 +3,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
+import { CONTACT_EMAIL, POLICY_EFFECTIVE } from '@/lib/contact';
 
 // ClipIt's privacy policy. Deliberately a route (not a static file) so the same
 // document ships three ways from one source: reachable in-app from Profile, and
 // exported to the web build at /legal/privacy — the public URL App Store Connect
 // and Google Play require. It sits OUTSIDE (tabs), so it's readable without an
 // account, which is what the stores check for.
-
-// Swap for a dedicated support alias (e.g. privacy@) if you'd rather not publish
-// a personal address — it's referenced in the policy body and by Profile → Support.
-export const CONTACT_EMAIL = 'jon@getoveralls.com';
-export const POLICY_EFFECTIVE = 'August 22, 2026';
 
 export default function PrivacyPolicy() {
   const router = useRouter();
