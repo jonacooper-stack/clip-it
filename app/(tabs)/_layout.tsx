@@ -27,9 +27,15 @@ function CaptureButton() {
 export default function TabsLayout() {
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
   const session = useAuthStore((s) => s.session);
-  // Reserve the device's bottom safe area (home indicator / gesture bar) so the
-  // full tab bar sits above it instead of being clipped by the phone frame.
+  // Reserve the device's safe areas so the full tab bar sits inside the screen
+  // instead of being clipped by the home indicator or the rounded display corners.
   const insets = useSafeAreaInsets();
+  // Devices without a gesture bar report 0, which leaves the labels sitting on the
+  // very edge of the glass — keep a floor so there's always breathing room.
+  const bottomInset = Math.max(insets.bottom, 12);
+  // Rounded corners eat the outer tabs, so pull the row in from both edges (and
+  // clear the notch cutouts in landscape).
+  const sideInset = Math.max(insets.left, insets.right, 0) + 14;
   // When accounts are enabled, a session is required; otherwise the app is local-only.
   if (isSupabaseConfigured && !session) return <Redirect href="/onboarding/welcome" />;
   // A signed-in user who hasn't finished the intro (e.g. returning from the Google
@@ -50,17 +56,26 @@ export default function TabsLayout() {
           borderTopColor: colors.border,
           // Grow the bar by the bottom inset and pad the content up above it, so
           // the icons/labels keep their normal room and nothing is cut off.
-          height: 64 + insets.bottom,
-          paddingTop: 8,
-          paddingBottom: 10 + insets.bottom,
+          height: 70 + bottomInset,
+          paddingTop: 10,
+          paddingBottom: bottomInset,
+          paddingHorizontal: sideInset,
           shadowColor: colors.pine,
           shadowOpacity: 0.08,
           shadowRadius: 16,
           shadowOffset: { width: 0, height: -4 },
           elevation: 12,
         },
-        tabBarItemStyle: { paddingTop: 2 },
-        tabBarLabelStyle: { fontFamily: fonts.headingMd, fontSize: 11, letterSpacing: 0.4 },
+        tabBarItemStyle: { paddingTop: 2, paddingHorizontal: 0 },
+        // Tight tracking + a touch of slack on each side keeps the longest label
+        // ("Community") on one line inside its narrower slot.
+        tabBarLabelStyle: {
+          fontFamily: fonts.headingMd,
+          fontSize: 11,
+          letterSpacing: 0.1,
+          marginTop: 2,
+          includeFontPadding: false,
+        },
       }}
     >
       <Tabs.Screen
