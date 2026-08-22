@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
+import { ModerationSheet, type ModerationTarget } from '@/components/ModerationSheet';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
@@ -55,6 +56,7 @@ export default function Community() {
 function LeaderboardView() {
   const [scope, setScope] = useState<Scope>('everyone');
   const [rows, setRows] = useState<LeaderboardEntry[] | null>(null);
+  const [moderating, setModerating] = useState<ModerationTarget | null>(null);
 
   useEffect(() => {
     let on = true;
@@ -82,9 +84,26 @@ function LeaderboardView() {
               <Text style={styles.rowSub}>{r.speciesCount} species</Text>
             </View>
             <Text style={styles.rowPts}>{r.points}</Text>
+            {!r.isMe && (
+              <Pressable
+                onPress={() =>
+                  setModerating({ type: 'user', userId: r.id, displayName: r.displayName })
+                }
+                hitSlop={8}
+                style={styles.rowMore}
+                accessibilityLabel={`Report or block ${r.displayName}`}
+              >
+                <Ionicons name="ellipsis-vertical" size={16} color={colors.faint} />
+              </Pressable>
+            )}
           </Card>
         ))
       )}
+      <ModerationSheet
+        target={moderating}
+        onClose={() => setModerating(null)}
+        onBlocked={(userId) => setRows((rs) => (rs ? rs.filter((r) => r.id !== userId) : rs))}
+      />
     </ScrollView>
   );
 }
@@ -94,6 +113,7 @@ function FriendsView({ avatarUrl }: { avatarUrl: string | null }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<{ id: string; displayName: string; avatarUrl: string | null }[]>([]);
   const [sent, setSent] = useState<Record<string, boolean>>({});
+  const [moderating, setModerating] = useState<ModerationTarget | null>(null);
 
   const refresh = useCallback(() => {
     getFriends().then(setState);
@@ -138,6 +158,7 @@ function FriendsView({ avatarUrl }: { avatarUrl: string | null }) {
           <Pressable onPress={() => onAdd(r.id)} disabled={sent[r.id]} style={[styles.btn, sent[r.id] && styles.btnDone]}>
             <Text style={styles.btnText}>{sent[r.id] ? 'Sent' : 'Add'}</Text>
           </Pressable>
+          <UserMore name={r.displayName} onPress={() => setModerating({ type: 'user', userId: r.id, displayName: r.displayName })} />
         </Card>
       ))}
 
@@ -154,6 +175,7 @@ function FriendsView({ avatarUrl }: { avatarUrl: string | null }) {
                   <Pressable onPress={() => onAccept(f.id)} style={styles.btn}>
                     <Text style={styles.btnText}>Accept</Text>
                   </Pressable>
+                  <UserMore name={f.displayName} onPress={() => setModerating({ type: 'user', userId: f.userId, displayName: f.displayName })} />
                 </Card>
               ))}
             </Section>
@@ -167,6 +189,7 @@ function FriendsView({ avatarUrl }: { avatarUrl: string | null }) {
                 <Card key={f.id} style={styles.frow}>
                   <UserAvatar name={f.displayName} uri={f.avatarUrl} size={36} />
                   <Text style={styles.frowName} numberOfLines={1}>{f.displayName}</Text>
+                  <UserMore name={f.displayName} onPress={() => setModerating({ type: 'user', userId: f.userId, displayName: f.displayName })} />
                 </Card>
               ))
             )}
@@ -185,7 +208,23 @@ function FriendsView({ avatarUrl }: { avatarUrl: string | null }) {
           )}
         </>
       )}
+      <ModerationSheet
+        target={moderating}
+        onClose={() => setModerating(null)}
+        // A block removes the friendship/follow rows, so just reload the lists.
+        onBlocked={() => { setResults([]); refresh(); }}
+      />
     </ScrollView>
+  );
+}
+
+// The overflow control on a person row — same affordance everywhere someone
+// else's name appears.
+function UserMore({ name, onPress }: { name: string; onPress: () => void }) {
+  return (
+    <Pressable hitSlop={8} onPress={onPress} style={styles.rowMore} accessibilityLabel={`Report or block ${name}`}>
+      <Ionicons name="ellipsis-vertical" size={16} color={colors.faint} />
+    </Pressable>
   );
 }
 
@@ -210,6 +249,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 const styles = StyleSheet.create({
+  rowMore: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
   safe: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   title: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text },

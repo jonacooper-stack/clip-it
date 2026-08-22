@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
+import { ModerationSheet, type ModerationTarget } from '@/components/ModerationSheet';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -19,6 +20,7 @@ export function WallFeed() {
   const [scope, setScope] = useState<FeedScope>('everyone');
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [moderating, setModerating] = useState<ModerationTarget | null>(null);
 
   // Reload on scope change and whenever the screen regains focus, so a sighting
   // you just shared (or a like/comment) shows up without a manual refresh.
@@ -37,6 +39,10 @@ export function WallFeed() {
   );
 
   const onRemoved = (id: string) => setPosts((ps) => (ps ? ps.filter((p) => p.id !== id) : ps));
+  // Blocking takes effect immediately: everything by that author leaves the wall
+  // without waiting for a refetch.
+  const onBlocked = (userId: string) =>
+    setPosts((ps) => (ps ? ps.filter((p) => p.userId !== userId) : ps));
 
   return (
     <ScrollView contentContainerStyle={styles.feed} showsVerticalScrollIndicator={false}>
@@ -57,15 +63,30 @@ export function WallFeed() {
           text={scope === 'following' ? 'Follow people to fill your feed — tap Follow on any post, or find friends in Community.' : 'Nothing shared yet. Tap the camera to ClipIt your first sighting!'}
         />
       ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} onRemoved={onRemoved} />)
+        posts.map((p) => (
+          <PostCard key={p.id} post={p} onRemoved={onRemoved} onModerate={setModerating} />
+        ))
       )}
+      <ModerationSheet
+        target={moderating}
+        onClose={() => setModerating(null)}
+        onBlocked={onBlocked}
+      />
     </ScrollView>
   );
 }
 
 // One post: big image, like + comment + follow, caption, and (for your own
 // posts) an unshare control.
-function PostCard({ post, onRemoved }: { post: FeedPost; onRemoved: (id: string) => void }) {
+function PostCard({
+  post,
+  onRemoved,
+  onModerate,
+}: {
+  post: FeedPost;
+  onRemoved: (id: string) => void;
+  onModerate: (t: ModerationTarget) => void;
+}) {
   const router = useRouter();
   const [liked, setLiked] = useState(post.isLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount);
@@ -118,11 +139,28 @@ function PostCard({ post, onRemoved }: { post: FeedPost; onRemoved: (id: string)
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </Pressable>
         ) : (
-          <Pressable onPress={toggleFollow} style={[styles.followBtn, following && styles.followingBtn]}>
-            <Text style={[styles.followText, following && styles.followingText]}>
-              {following ? 'Following' : 'Follow'}
-            </Text>
-          </Pressable>
+          <>
+            <Pressable onPress={toggleFollow} style={[styles.followBtn, following && styles.followingBtn]}>
+              <Text style={[styles.followText, following && styles.followingText]}>
+                {following ? 'Following' : 'Follow'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                onModerate({
+                  type: 'post',
+                  postId: post.id,
+                  userId: post.userId,
+                  displayName: post.displayName,
+                })
+              }
+              hitSlop={10}
+              style={styles.moreBtn}
+              accessibilityLabel={`Report or block ${post.displayName}`}
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+            </Pressable>
+          </>
         )}
       </View>
 

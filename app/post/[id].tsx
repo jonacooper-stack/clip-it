@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
+import { ModerationSheet, type ModerationTarget } from '@/components/ModerationSheet';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -26,6 +27,7 @@ export default function PostDetail() {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [moderating, setModerating] = useState<ModerationTarget | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const goBack = () => {
@@ -85,6 +87,22 @@ export default function PostDetail() {
           <Pressable onPress={unshare} style={styles.iconBtn} hitSlop={8}>
             <Ionicons name="trash-outline" size={22} color={colors.danger} />
           </Pressable>
+        ) : post ? (
+          <Pressable
+            onPress={() =>
+              setModerating({
+                type: 'post',
+                postId: post.id,
+                userId: post.userId,
+                displayName: post.displayName,
+              })
+            }
+            style={styles.iconBtn}
+            hitSlop={8}
+            accessibilityLabel={`Report or block ${post.displayName}`}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.muted} />
+          </Pressable>
         ) : (
           <View style={styles.iconBtn} />
         )}
@@ -128,6 +146,24 @@ export default function PostDetail() {
                       </Text>
                       <Text style={styles.commentTime}>{timeAgo(c.createdAt)}</Text>
                     </View>
+                    {!c.isMine && (
+                      <Pressable
+                        onPress={() =>
+                          setModerating({
+                            type: 'comment',
+                            commentId: c.id,
+                            postId: post ? post.id : undefined,
+                            userId: c.userId,
+                            displayName: c.displayName,
+                          })
+                        }
+                        hitSlop={10}
+                        style={styles.commentMore}
+                        accessibilityLabel={`Report or block ${c.displayName}`}
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={16} color={colors.faint} />
+                      </Pressable>
+                    )}
                   </View>
                 ))
               )}
@@ -160,6 +196,18 @@ export default function PostDetail() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <ModerationSheet
+        target={moderating}
+        onClose={() => setModerating(null)}
+        onBlocked={(userId) => {
+          setModerating(null);
+          // Blocking the post's author means this screen's content is gone; drop
+          // just their comments if it was a commenter.
+          if (post && post.userId === userId) goBack();
+          else setComments((cs) => (cs ? cs.filter((c) => c.userId !== userId) : cs));
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -227,6 +275,7 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
 }
 
 const styles = StyleSheet.create({
+  commentMore: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   header: {

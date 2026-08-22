@@ -7,6 +7,7 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
+import { blockedIds } from './moderation';
 
 export type Scope = 'everyone' | 'friends';
 // The wall's own scope: everyone, or people I follow (+ accepted friends).
@@ -110,15 +111,17 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
     const ids = [uid, ...(await acceptedFriendIds())];
     q = q.in('id', ids);
   }
-  const { data } = await q;
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    displayName: r.display_name || 'Explorer',
-    avatarUrl: r.avatar_url ?? null,
-    points: r.points ?? 0,
-    speciesCount: r.species_count ?? 0,
-    isMe: r.id === uid,
-  }));
+  const [{ data }, blocked] = await Promise.all([q, blockedIds()]);
+  return (data ?? [])
+    .filter((r: any) => !blocked.has(r.id))
+    .map((r: any) => ({
+      id: r.id,
+      displayName: r.display_name || 'Explorer',
+      avatarUrl: r.avatar_url ?? null,
+      points: r.points ?? 0,
+      speciesCount: r.species_count ?? 0,
+      isMe: r.id === uid,
+    }));
 }
 
 // Scalar columns only — display names are fetched separately (see enrichPosts)
@@ -199,9 +202,12 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
   }
   // Surface the real error instead of swallowing it — otherwise a failed read
   // (RLS, schema, relationship) looks identical to an empty wall.
-  const { data, error } = await q;
+  const [{ data, error }, blocked] = await Promise.all([q, blockedIds()]);
   if (error) return { posts: [], error: error.message };
-  const posts = await enrichPosts((data ?? []) as any[], uid);
+  // The 0006 policies already hide blocked authors server-side; this keeps the
+  // wall correct even on a project where that migration hasn't been run yet.
+  const visible = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
+  const posts = await enrichPosts(visible, uid);
   return { posts };
 }
 
@@ -258,7 +264,8 @@ export async function getComments(postId: string): Promise<Comment[]> {
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
     .limit(200);
-  const rows = (data ?? []) as any[];
+  const blocked = await blockedIds();
+  const rows = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
   // Fetch commenter names/avatars separately (no embed) for the same resilience reason.
   const nameById = new Map<string, string>();
   const avatarById = new Map<string, string>();
@@ -420,9 +427,11 @@ export async function getFriends(): Promise<FriendsState> {
     .select('id, status, requester_id, addressee_id, requester:requester_id(display_name, avatar_url), addressee:addressee_id(display_name, avatar_url)')
     .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
   const state: FriendsState = { friends: [], incoming: [], outgoing: [] };
+  const blocked = await blockedIds();
   for (const r of (data ?? []) as any[]) {
     const iAmRequester = r.requester_id === uid;
     const otherId = iAmRequester ? r.addressee_id : r.requester_id;
+    if (blocked.has(otherId)) continue;
     const other = iAmRequester ? r.addressee : r.requester;
     const otherName = other?.display_name || 'Explorer';
     const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName, avatarUrl: other?.avatar_url ?? null };
@@ -437,13 +446,18 @@ export async function searchUsers(query: string): Promise<{ id: string; displayN
   const uid = myId();
   const q = query.trim();
   if (!supabase || !uid || q.length < 2) return [];
-  const { data } = await supabase
-    .from('profiles')
-    .select('id, display_name, avatar_url')
-    .ilike('display_name', `%${q}%`)
-    .neq('id', uid)
-    .limit(20);
-  return (data ?? []).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
+  const [{ data }, blocked] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url')
+      .ilike('display_name', `%${q}%`)
+      .neq('id', uid)
+      .limit(20),
+    blockedIds(),
+  ]);
+  return (data ?? [])
+    .filter((r: any) => !blocked.has(r.id))
+    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {
