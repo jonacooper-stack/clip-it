@@ -140,6 +140,20 @@ eas build -p android --profile preview    # direct APK install link, no review
 Send friends the link; they tap and install. Same OTA updates apply.
 
 ## 7. Before a public store launch (not needed for friends testing)
-- Privacy policy + terms (required by the store; extra-important with kids — see ROADMAP).
-- Store listing: screenshots, description, age rating.
-- Account deletion path (App Store requirement once you have accounts).
+
+The app-side work for the store-review blockers is done (see
+[APP_STORE.md](APP_STORE.md) for what changed and why). What's left is
+account/dashboard setup that only you can do:
+
+- **Set `SUPABASE_SERVICE_ROLE_KEY` in Vercel** — account deletion won't work
+  without it. Supabase → Project Settings → API → `service_role` key, then Vercel →
+  Project → Settings → Environment Variables. It's server-only; never put it in an
+  `EXPO_PUBLIC_*` var.
+- **Run `supabase/migrations/0006_moderation.sql`** in the Supabase SQL editor
+  (reporting + blocking tables and policies).
+- **Enable the Apple provider** in Supabase → Authentication → Providers, and add
+  the Sign in with Apple capability to the App ID in the Apple Developer portal.
+- **Privacy policy URL** for App Store Connect: `https://<your-domain>/legal/privacy`
+  (it ships with the web build).
+- Store listing: screenshots, description, age rating, support URL.
+- A **demo account** for the reviewer — the app is unusable without a login.
