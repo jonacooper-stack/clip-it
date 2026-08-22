@@ -35,8 +35,12 @@ export default function AgeGate() {
   // Numbers only, capped at four digits.
   const onChangeText = (t: string) => setText(t.replace(/[^0-9]/g, '').slice(0, 4));
 
+  // Under-13 sign-up is closed until the verifiable-parental-consent flow ships
+  // (ROADMAP Phase 1.5). Until then we collect nothing and don't create an
+  // account — COPPA requires verified consent from a parent first, and we can't
+  // verify it yet. The gate stops here rather than routing on.
   const onContinue = () => {
-    if (!bracket) return;
+    if (!bracket || isChild) return;
     setAge(bracket, isChild);
     // With accounts enabled, create/sign in next; otherwise go straight to ethos.
     router.push(isSupabaseConfigured ? '/onboarding/account' : '/onboarding/ethos');
@@ -84,22 +88,34 @@ export default function AgeGate() {
         <Card style={styles.childNote}>
           <View style={styles.childHead}>
             <Ionicons name="people" size={18} color={colors.accentInk} />
-            <Text style={styles.childTitle}>A grown-up should help</Text>
+            <Text style={styles.childTitle}>Come back with a grown-up</Text>
           </View>
           <Text style={styles.childText}>
-            Since you're under 13, a parent or guardian needs to set up and approve your profile, and
-            we keep extra-strict privacy protections on your account.
+            ClipIt isn't open to explorers under 13 just yet. We're building family accounts, where a
+            parent sets up and approves the profile and we keep extra-strict privacy protections on
+            it. Until that's ready we can't create an account for you — ask a parent to check back
+            soon.
           </Text>
         </Card>
       )}
 
-      <Button
-        label="Continue"
-        icon="arrow-forward"
-        onPress={onContinue}
-        disabled={!valid}
-        style={styles.cta}
-      />
+      {isChild ? (
+        <Button
+          label="Back"
+          icon="arrow-back"
+          variant="secondary"
+          onPress={() => router.replace('/onboarding/welcome')}
+          style={styles.cta}
+        />
+      ) : (
+        <Button
+          label="Continue"
+          icon="arrow-forward"
+          onPress={onContinue}
+          disabled={!valid}
+          style={styles.cta}
+        />
+      )}
     </ScreenContainer>
   );
 }
