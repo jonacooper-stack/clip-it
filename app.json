@@ -94,16 +94,24 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "ClipIt uses the camera so you can photograph the wildlife you spot."
+          "cameraPermission": "ClipIt uses the camera so you can photograph the wildlife you spot.",
+          "microphonePermission": false
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "ClipIt tags each sighting with where you saw the animal. Your precise location stays private to you."
+          "locationWhenInUsePermission": "ClipIt tags each sighting with where you saw the animal. Your precise location stays private to you.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       "expo-apple-authentication",
       "./plugins/withPodsDeploymentTarget"
     ]

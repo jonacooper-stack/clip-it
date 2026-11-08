@@ -80,10 +80,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   init: () => {
     if (!supabase || subscribed) return;
     subscribed = true;
-    supabase.auth.getSession().then(({ data }) => {
-      syncMetadata(data.session);
-      set({ session: data.session, initialized: true });
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        syncMetadata(data.session);
+        set({ session: data.session, initialized: true });
+      })
+      // Never leave the launch spinner up forever (e.g. a storage read error):
+      // fall through to signed-out and let the user sign in again.
+      .catch(() => set({ session: null, initialized: true }));
     supabase.auth.onAuthStateChange((_event, session) => {
       syncMetadata(session);
       set({ session });

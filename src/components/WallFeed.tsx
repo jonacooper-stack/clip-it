@@ -10,7 +10,7 @@ import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet'
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
-  getFeed, likePost, unlikePost, followUser, unfollowUser, deletePost,
+  getFeed, likePost, unlikePost, followUser, unfollowUser, deletePost, friendlyError,
   type FeedPost, type FeedScope,
 } from '@/lib/social';
 
@@ -31,6 +31,7 @@ export function WallFeed() {
       getFeed(scope).then((res) => {
         if (!on) return;
         setPosts(res.posts);
+        if (res.error) console.warn('[wall]', res.error);
         setError(res.error ?? null);
       });
       return () => { on = false; };
@@ -54,7 +55,7 @@ export function WallFeed() {
       {posts === null ? (
         <Loading />
       ) : error ? (
-        <Empty icon="cloud-offline-outline" text={`Couldn’t load the wall.\n${error}`} />
+        <Empty icon="cloud-offline-outline" text={'Couldn’t load the wall right now.\nCheck your connection and try again in a moment.'} />
       ) : posts.length === 0 ? (
         <Empty
           icon="images-outline"
@@ -115,7 +116,7 @@ function PostCard({
         onPress: async () => {
           onRemoved(post.id); // optimistic
           const res = await deletePost(post.id, post.photoUrl);
-          if (res.error) Alert.alert('Couldn’t unshare', res.error);
+          if (res.error) Alert.alert('Couldn’t unshare', friendlyError(res.error));
         },
       },
     ]);

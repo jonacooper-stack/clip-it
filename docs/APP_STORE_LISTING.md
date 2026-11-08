@@ -42,7 +42,7 @@ SNAP AND SCORE
 • Rarity and scene bonuses for young, in flight, courtship, herds and hunts
 • Upload photos you've already taken from your camera roll
 • No signal on the trail? Captures are saved and scored once you're back online
-• Think the AI got it wrong? Suggest the right ID and send it for review
+• Think the AI got it wrong? Record your own ID on the sighting
 
 BUILD YOUR FIELD JOURNAL
 • Every sighting is saved to your personal journal with the photo, date and place

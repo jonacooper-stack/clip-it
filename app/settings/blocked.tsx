@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Empty } from '@/components/social/parts';
 import { colors, spacing, font, fonts, radius } from '@/theme';
-import { getBlockedUsers, unblockUser, type BlockedUser } from '@/lib/social';
+import { getBlockedUsers, unblockUser, friendlyError, type BlockedUser } from '@/lib/social';
 
 // Profile → Blocked accounts: see who you've blocked and undo it.
 export default function BlockedAccounts() {
@@ -22,7 +22,7 @@ export default function BlockedAccounts() {
     setBusyId(u.id);
     const res = await unblockUser(u.id);
     setBusyId(null);
-    if (res.error) Alert.alert('Couldn’t unblock', res.error);
+    if (res.error) Alert.alert('Couldn’t unblock', friendlyError(res.error));
     else setUsers((us) => (us ? us.filter((x) => x.id !== u.id) : us));
   };
 

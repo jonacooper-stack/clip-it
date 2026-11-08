@@ -97,8 +97,15 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     try {
       return await identifyViaEndpoint(input);
     } catch (err: any) {
+      // In release builds on the phone, never invent a result: any failure
+      // (offline, server error, timeout) queues the capture, which is retried
+      // automatically and scored once the AI answers. Only dev builds and the
+      // web demo fall back to the mock identifier.
+      if (Platform.OS !== 'web' && !__DEV__) {
+        throw err instanceof OfflineError ? err : new OfflineError(String(err?.message ?? err));
+      }
       if (err instanceof OfflineError) {
-        // Native queues the capture and retries later; web just uses the demo identifier.
+        // Native dev builds queue the capture too; web just uses the demo identifier.
         if (Platform.OS !== 'web') throw err;
         note = 'You appear to be offline — used the demo identifier.';
       } else {

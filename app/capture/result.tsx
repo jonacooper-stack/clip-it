@@ -67,6 +67,16 @@ export default function Result() {
   if (!sighting) {
     return (
       <SafeAreaView style={styles.safe}>
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={() => router.replace('/')}
+            style={styles.closeBtn}
+            hitSlop={8}
+            accessibilityLabel="Close"
+          >
+            <Ionicons name="close" size={26} color={colors.text} />
+          </Pressable>
+        </View>
         <Text style={styles.missing}>Sighting not found.</Text>
       </SafeAreaView>
     );
@@ -151,7 +161,8 @@ export default function Result() {
           <Card style={styles.queuedCard}>
             <Text style={styles.queuedText}>
               We couldn’t reach the identifier just now, so it’s saved with the time and place you took
-              it — ClipIt will identify it and award points automatically as soon as it’s back online.
+              it. ClipIt will identify it and award points automatically in the background. No need to
+              do anything.
             </Text>
           </Card>
           <Button label="Got it" icon="checkmark" onPress={done} style={styles.doneBtn} />
@@ -259,8 +270,8 @@ export default function Result() {
               <Text style={styles.dangerTitle}>Keep your distance</Text>
             </View>
             <Text style={styles.dangerText}>
-              This animal can be dangerous. Never approach — a great photo is worth more than a close
-              one.
+              This animal can be dangerous. Never approach: use zoom and stay well back. Behavior bonuses
+              don’t apply to dangerous animals, so getting closer never earns more.
             </Text>
           </Card>
         )}

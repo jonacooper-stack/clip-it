@@ -226,7 +226,7 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'The AI got the animal wrong. What can I do?',
-    a: 'Open the sighting in your Journal and tap “Not right? Suggest an ID” to send it for review. Identifications are made by AI and can be wrong, especially with distant, blurry or look-alike animals.',
+    a: 'Open the sighting in your Journal and tap “Not right? Suggest an ID” to record the right species in your journal. Identifications are made by AI and can be wrong, especially with distant, blurry or look-alike animals.',
   },
   {
     q: 'I took a photo with no signal. Is it lost?',

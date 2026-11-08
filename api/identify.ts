@@ -14,6 +14,8 @@ export const config = { maxDuration: 30 };
 
 const MODEL = 'claude-opus-4-8';
 
+const TAXON_GROUPS = ['bird', 'mammal', 'reptile', 'amphibian', 'fish', 'insect', 'other'] as const;
+
 const SCENE_TAG_CODES = ['with_young', 'predation', 'in_flight', 'courtship', 'group_herd'] as const;
 
 const SYSTEM_PROMPT =
@@ -30,6 +32,7 @@ const SYSTEM_PROMPT =
   '  category (string): one of "wild_animal", "pet", "human", "other"\n' +
   '  commonName (string): what it is, e.g. "White-tailed deer", "Domestic dog", "Person" ("" only if present is false)\n' +
   '  scientificName (string): scientific name for any animal including pets (e.g. "Canis lupus familiaris"); "" for a human or when not applicable\n' +
+  '  taxonGroup (string): the animal\'s broad group, one of "bird", "mammal", "reptile", "amphibian", "fish", "insect", "other" ("other" for people, non-animals, and other invertebrates)\n' +
   '  confidence (number 0..1): how sure you are of the identification\n' +
   '  rarityScore (number 0..1): for wild animals only (0 = very common like a pigeon, 1 = very rare); 0 otherwise\n' +
   `  sceneTags (array of strings, each one of: ${SCENE_TAG_CODES.join(', ')})\n` +
@@ -184,6 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         scientificName: parsed.scientificName ?? '',
         commonName: parsed.commonName ?? '',
         confidence,
+        group: (TAXON_GROUPS as readonly string[]).includes(parsed.taxonGroup) ? parsed.taxonGroup : 'other',
       },
       rarityScore: eligible ? clamp01(Number(parsed.rarityScore)) : 0,
       sceneTags: eligible ? sceneTags : [],

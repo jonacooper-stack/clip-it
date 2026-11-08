@@ -19,11 +19,11 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
       <Card style={styles.done}>
         <View style={styles.doneHead}>
           <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
-          <Text style={styles.doneTitle}>Sent for review</Text>
+          <Text style={styles.doneTitle}>Marked as disputed</Text>
         </View>
         <Text style={styles.doneText}>
-          Thanks — a human reviewer will take a look
-          {sighting.proposedSpecies ? `. You suggested: ${sighting.proposedSpecies}` : ''}.
+          Saved in your journal
+          {sighting.proposedSpecies ? `. Your ID: ${sighting.proposedSpecies}` : ''}.
         </Text>
       </Card>
     );
@@ -52,7 +52,7 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
       />
       <View style={styles.actions}>
         <Button label="Cancel" variant="ghost" onPress={() => setOpen(false)} style={styles.action} />
-        <Button label="Send to review" onPress={submit} style={styles.action} />
+        <Button label="Save" onPress={submit} style={styles.action} />
       </View>
     </Card>
   );

@@ -8,6 +8,7 @@ import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
+import { checkText } from '@/lib/moderation';
 
 // react-native-web renders TextInput as an <input> with a default border + focus
 // outline; strip both on web only (no-ops on native).
@@ -44,6 +45,13 @@ export default function Account() {
 
   const submit = async () => {
     if (!valid || busy) return;
+    if (isSignup) {
+      const nameProblem = checkText(name);
+      if (nameProblem) {
+        setError('Please choose a different display name. ' + nameProblem.split('. ')[0] + '.');
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     const res = isSignup
@@ -134,8 +142,8 @@ export default function Account() {
       <Text style={styles.title}>{isSignup ? 'Create your account' : 'Welcome back'}</Text>
       <Text style={styles.subtitle}>
         {isSignup
-          ? 'Your account saves your journal and points across devices.'
-          : 'Sign in to pick up your journal where you left off.'}
+          ? 'Your account lets you share sightings, follow other explorers and join the leaderboard.'
+          : 'Sign in to get back to the wall, your friends and the leaderboard.'}
       </Text>
 
 
