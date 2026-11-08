@@ -1,0 +1,55 @@
+name: EAS Submit (TestFlight)
+
+# Upload an ALREADY-BUILT iOS build to App Store Connect / TestFlight, without
+# rebuilding. Use it when "EAS Build" succeeded but its submit step failed
+# (e.g. an Apple agreement needed accepting), or to resubmit a build.
+# Actions → "EAS Submit (TestFlight)" → Run workflow. Leave build_id empty to
+# submit the latest iOS build. Requires the EXPO_TOKEN repo secret; Apple
+# credentials come from the API key stored on Expo (same as EAS Build).
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: EAS build ID to submit (leave empty for the latest iOS build)
+        type: string
+        default: ''
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::Add an EXPO_TOKEN repo secret first (Expo dashboard → Account settings → Access tokens)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit to TestFlight
+        env:
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EXPO_APPLE_TEAM_TYPE: ${{ secrets.APPLE_TEAM_TYPE }}
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          if [ -n "$BUILD_ID" ]; then
+            eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive
+          else
+            eas submit --platform ios --profile production --latest --non-interactive
+          fi
