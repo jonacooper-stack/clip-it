@@ -42,7 +42,7 @@ export default function SightingDetail() {
   // back arrow always does something.
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/');
+    else router.replace('/feed');
   };
 
   const onRemove = () => {

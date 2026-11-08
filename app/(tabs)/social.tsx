@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
+import { RangerBadge } from '@/components/social/RangerBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
@@ -100,9 +101,12 @@ function LeaderboardView({ reloadKey, onMore }: { reloadKey: number; onMore: Mor
             <Text style={[styles.rank, i < 3 && styles.rankTop]}>{i + 1}</Text>
             <UserAvatar name={r.displayName} uri={r.avatarUrl} size={40} />
             <View style={styles.rowBody}>
-              <Text style={styles.rowName} numberOfLines={1}>
-                {r.displayName}{r.isMe ? ' (you)' : ''}
-              </Text>
+              <View style={styles.nameRow}>
+                <Text style={styles.rowName} numberOfLines={1}>
+                  {r.displayName}{r.isMe ? ' (you)' : ''}
+                </Text>
+                {r.isBot && <RangerBadge small />}
+              </View>
               <Text style={styles.rowSub}>{r.speciesCount} species</Text>
             </View>
             <Text style={styles.rowPts}>{r.points}</Text>
@@ -117,7 +121,7 @@ function LeaderboardView({ reloadKey, onMore }: { reloadKey: number; onMore: Mor
 function FriendsView({ reloadKey, onMore }: { avatarUrl: string | null; reloadKey: number; onMore: MoreFn }) {
   const [state, setState] = useState<FriendsState | null>(null);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{ id: string; displayName: string; avatarUrl: string | null }[]>([]);
+  const [results, setResults] = useState<{ id: string; displayName: string; avatarUrl: string | null; isBot: boolean }[]>([]);
   const [sent, setSent] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(() => {
@@ -165,9 +169,14 @@ function FriendsView({ reloadKey, onMore }: { avatarUrl: string | null; reloadKe
         <Card key={r.id} style={styles.frow}>
           <UserAvatar name={r.displayName} uri={r.avatarUrl} size={36} />
           <Text style={styles.frowName} numberOfLines={1}>{r.displayName}</Text>
-          <Pressable onPress={() => onAdd(r.id)} disabled={sent[r.id]} style={[styles.btn, sent[r.id] && styles.btnDone]}>
-            <Text style={styles.btnText}>{sent[r.id] ? 'Sent' : 'Add'}</Text>
-          </Pressable>
+          {r.isBot ? (
+            // Rangers are bots: follow them from the wall, but they can't be friends.
+            <RangerBadge />
+          ) : (
+            <Pressable onPress={() => onAdd(r.id)} disabled={sent[r.id]} style={[styles.btn, sent[r.id] && styles.btnDone]}>
+              <Text style={styles.btnText}>{sent[r.id] ? 'Sent' : 'Add'}</Text>
+            </Pressable>
+          )}
           <MoreButton onPress={() => onMore(r.id, r.displayName)} />
         </Card>
       ))}
@@ -265,7 +274,7 @@ const styles = StyleSheet.create({
   rank: { width: 20, textAlign: 'center', fontSize: font.body, fontFamily: fonts.display, color: colors.faint },
   rankTop: { color: colors.accent },
   rowBody: { flex: 1 },
-  rowName: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
+  rowName: { flexShrink: 1, fontSize: font.body, fontFamily: fonts.heading, color: colors.text },
   rowSub: { fontSize: font.tiny, color: colors.muted, marginTop: 1 },
   rowPts: { fontSize: font.heading, fontFamily: fonts.display, color: colors.primary },
 
@@ -281,6 +290,7 @@ const styles = StyleSheet.create({
   btnDone: { backgroundColor: colors.primarySoft },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm + 2 },
   btnGhostText: { color: colors.muted },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   more: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   btnText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.white },
 });

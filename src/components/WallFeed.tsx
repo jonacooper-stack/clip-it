@@ -7,6 +7,7 @@ import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
+import { RangerBadge } from '@/components/social/RangerBadge';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -129,7 +130,10 @@ function PostCard({
       <View style={styles.igHead}>
         <UserAvatar name={post.displayName} uri={post.avatarUrl} size={38} />
         <View style={styles.igHeadText}>
-          <Text style={styles.igName} numberOfLines={1}>{post.displayName}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.igName} numberOfLines={1}>{post.displayName}</Text>
+            {post.isBot && <RangerBadge small />}
+          </View>
           <Text style={styles.igTime} numberOfLines={1}>{timeAgo(post.createdAt)}</Text>
         </View>
         {post.isMine ? (
@@ -164,6 +168,8 @@ function PostCard({
           </View>
         )}
       </Pressable>
+
+      {!!post.photoCredit && <Text style={styles.credit} numberOfLines={1}>Photo: {post.photoCredit}</Text>}
 
       <View style={styles.igActions}>
         <Pressable onPress={toggleLike} hitSlop={8} style={styles.igAction}>
@@ -208,6 +214,8 @@ const styles = StyleSheet.create({
   igCard: { marginBottom: spacing.lg },
   igHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   igHeadText: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  credit: { fontSize: 10, color: colors.faint, paddingHorizontal: spacing.md, paddingTop: 6 },
   igName: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.text },
   igTime: { fontSize: font.tiny, color: colors.muted, marginTop: 1 },
   moreBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },

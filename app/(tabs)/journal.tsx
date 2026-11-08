@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Pressable, TextInput, useWindowDimensions, Platform,
+  View, Text, StyleSheet, FlatList, Pressable, TextInput, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useAppWidth } from '@/lib/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { SightingThumb } from '@/components/SightingThumb';
 import { Card } from '@/components/Card';
@@ -118,7 +119,7 @@ function buildRows(items: Sighting[], group: GroupKey): Row[] {
 
 export default function Journal() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const width = useAppWidth();
   const sightings = useJournalStore((s) => s.sightings);
   const [group, setGroup] = useState<GroupKey>('all');
   const [query, setQuery] = useState('');

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet, AppState } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -17,6 +17,7 @@ import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { processAnalysisQueue } from '@/lib/analysis';
+import { APP_MAX_WIDTH, isWideWeb } from '@/lib/layout';
 
 applyGlobalFont();
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -34,6 +35,8 @@ export default function RootLayout() {
   const journalHydrated = useJournalStore((s) => s.hasHydrated);
   const authInitialized = useAuthStore((s) => s.initialized);
   const ready = fontsLoaded && appHydrated && journalHydrated && authInitialized;
+  // Desktop browsers: keep the app in a centered phone-width column.
+  const wide = isWideWeb(useWindowDimensions().width);
 
   useEffect(() => {
     useAuthStore.getState().init();
@@ -62,23 +65,38 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      {ready ? (
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-            animation: 'slide_from_right',
-          }}
-        />
-      ) : (
-        <View style={styles.loading}>
-          <ActivityIndicator color={colors.primary} />
+      <View style={[styles.outer, wide && styles.outerWide]}>
+        <View style={[styles.column, wide && styles.columnWide]}>
+          {ready ? (
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.bg },
+                animation: 'slide_from_right',
+              }}
+            />
+          ) : (
+            <View style={styles.loading}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          )}
         </View>
-      )}
+      </View>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  outer: { flex: 1, backgroundColor: colors.bg },
+  outerWide: { backgroundColor: '#070B08', alignItems: 'center' },
+  column: { flex: 1, width: '100%' },
+  columnWide: {
+    maxWidth: APP_MAX_WIDTH,
+    backgroundColor: colors.bg,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
 });

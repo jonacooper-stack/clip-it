@@ -25,7 +25,7 @@ export default function Identifying() {
   const cancel = () => {
     cancelled.current = true;
     if (id) removeSighting(id);
-    router.replace('/');
+    router.replace('/feed');
   };
 
   // Don't wait on the AI — stash this shot in the queue (it gets scored in the

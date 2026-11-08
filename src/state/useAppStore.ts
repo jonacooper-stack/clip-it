@@ -20,6 +20,8 @@ interface AppState {
   streakCount: number;
   lastActiveDate: string | null;
   saveToCameraRoll: boolean;
+  /** Show the ClipIt Rangers (labeled bot accounts) on the wall and leaderboard. */
+  showRangers: boolean;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -27,6 +29,7 @@ interface AppState {
   setDisplayName: (name: string) => void;
   setAvatarUrl: (url: string | null) => void;
   setSaveToCameraRoll: (v: boolean) => void;
+  setShowRangers: (v: boolean) => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -43,6 +46,7 @@ export const useAppStore = create<AppState>()(
       streakCount: 0,
       lastActiveDate: null,
       saveToCameraRoll: true,
+      showRangers: true,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -50,6 +54,7 @@ export const useAppStore = create<AppState>()(
       setDisplayName: (displayName) => set({ displayName }),
       setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
+      setShowRangers: (showRangers) => set({ showRangers }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -70,6 +75,7 @@ export const useAppStore = create<AppState>()(
           streakCount: 0,
           lastActiveDate: null,
           saveToCameraRoll: true,
+          showRangers: true,
         }),
     }),
     {

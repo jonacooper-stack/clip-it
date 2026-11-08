@@ -249,6 +249,10 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
     a: 'In the app, go to Profile → Delete account. This permanently deletes your account, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
   },
   {
+    q: 'Who are the ClipIt Rangers?',
+    a: 'Rangers are bot accounts run by the ClipIt team, and they always show a “BOT” badge. They post real wildlife photos (credited to the photographers) and set the pace on the leaderboard so there’s always someone to chase. They stop gaining points when they get close to the top real player, so you can always pass them. Hide them any time with Profile → Show ClipIt Rangers.',
+  },
+  {
     q: 'Who can use ClipIt?',
     a: 'ClipIt is for people aged 13 and over.',
   },

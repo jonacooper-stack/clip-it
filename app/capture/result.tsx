@@ -31,10 +31,10 @@ export default function Result() {
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5 }).start();
   }, [scale]);
 
-  const done = () => router.replace('/');
+  const done = () => router.replace('/feed');
   const discard = () => {
     if (id) removeSighting(id);
-    router.replace('/');
+    router.replace('/feed');
   };
   // Rejected / ineligible sightings aren't kept in the journal, so drop the record
   // on the way out instead of letting photos pile up in storage.
@@ -69,7 +69,7 @@ export default function Result() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.topBar}>
           <Pressable
-            onPress={() => router.replace('/')}
+            onPress={() => router.replace('/feed')}
             style={styles.closeBtn}
             hitSlop={8}
             accessibilityLabel="Close"

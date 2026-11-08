@@ -15,7 +15,7 @@ export default function Quests() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)');
+    else router.replace('/feed');
   };
 
   return (
