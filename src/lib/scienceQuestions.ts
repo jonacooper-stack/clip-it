@@ -20,7 +20,7 @@ export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
     id: 'count',
     field: 'individualCount',
     prompt: 'How many did you see?',
-    why: 'Counts help scientists track whether a species is growing or declining.',
+    why: 'Wildlife surveys use counts like this to see whether a species is growing or declining.',
     options: [
       { value: '1', label: 'Just 1' },
       { value: '2-5', label: '2–5' },
@@ -61,7 +61,7 @@ export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
     id: 'lifeStage',
     field: 'lifeStage',
     prompt: 'Adult or young?',
-    why: 'The mix of ages tells researchers whether animals are breeding well.',
+    why: 'The mix of ages is a clue to whether animals are breeding well.',
     options: [
       { value: 'adult', label: 'Adult' },
       { value: 'juvenile', label: 'Young' },

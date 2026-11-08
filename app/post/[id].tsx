@@ -13,7 +13,7 @@ import { timeAgo } from '@/lib/timeAgo';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
-  getPost, getComments, addComment, likePost, unlikePost, deletePost,
+  getPost, getComments, addComment, likePost, unlikePost, deletePost, friendlyError,
   type FeedPost, type Comment,
 } from '@/lib/social';
 
@@ -44,7 +44,7 @@ export default function PostDetail() {
         style: 'destructive',
         onPress: async () => {
           const res = await deletePost(post.id, post.photoUrl);
-          if (res.error) Alert.alert('Couldn’t unshare', res.error);
+          if (res.error) Alert.alert('Couldn’t unshare', friendlyError(res.error));
           else goBack();
         },
       },
@@ -74,7 +74,7 @@ export default function PostDetail() {
       setPost((p) => (p ? { ...p, commentCount: p.commentCount + 1 } : p));
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     } else {
-      Alert.alert('Couldn’t post comment', res.error);
+      Alert.alert('Couldn’t post comment', friendlyError(res.error));
     }
   };
 

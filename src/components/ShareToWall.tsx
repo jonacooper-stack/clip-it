@@ -6,7 +6,7 @@ import { Button } from './Button';
 import { colors, spacing, font, fonts } from '@/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuthStore } from '@/state/useAuthStore';
-import { shareToWall } from '@/lib/social';
+import { shareToWall, friendlyError } from '@/lib/social';
 import type { Sighting } from '@/types';
 
 // Lets a user post an identified sighting to the community wall. De-identified —
@@ -42,7 +42,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       photoUri: sighting.photoUri,
     });
     if (res.error) {
-      setErrorMsg(res.error);
+      setErrorMsg(friendlyError(res.error, 'Couldn’t share right now. Please try again in a moment.'));
       setState('error');
     } else {
       setState('done');

@@ -15,6 +15,7 @@ import { CameraView, useCameraPermissions, type CameraType, type FlashMode } fro
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
+import { Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
@@ -198,7 +199,12 @@ export default function CameraScreen() {
           <Text style={styles.permText}>
             ClipIt captures the animals you spot in-app, so every sighting is genuinely yours.
           </Text>
-          <Button label="Enable camera" onPress={requestPermission} />
+          {permission.canAskAgain ? (
+            <Button label="Enable camera" onPress={requestPermission} />
+          ) : (
+            // iOS won't show the prompt again once denied — send them to Settings.
+            <Button label="Open Settings" icon="settings-outline" onPress={() => Linking.openSettings()} />
+          )}
           <Button
             label="Upload from camera roll"
             variant="secondary"

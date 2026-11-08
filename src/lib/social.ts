@@ -68,6 +68,17 @@ export interface FriendRow {
   avatarUrl: string | null;
 }
 
+// Turn a raw backend error into something a player can read. Our own
+// user-facing messages (moderation, validation) pass through unchanged; the
+// technical detail goes to the console.
+const FRIENDLY_PREFIXES = ['That contains', 'Names need', 'Say something', 'You can’t', 'Accounts are not', 'You’re not signed'];
+export function friendlyError(message: string | undefined, fallback = 'Something went wrong. Please try again in a moment.'): string {
+  if (!message) return fallback;
+  if (FRIENDLY_PREFIXES.some((p) => message.startsWith(p))) return message;
+  console.warn('[social]', message);
+  return fallback;
+}
+
 function myId(): string | null {
   return useAuthStore.getState().session?.user?.id ?? null;
 }
@@ -99,13 +110,45 @@ export async function getBlockedIds(): Promise<Set<string>> {
 }
 
 // Upsert the signed-in user's leaderboard row (display name + aggregate points).
+//
+// The journal lives on the device, so a fresh install (or a second phone)
+// starts at zero locally. Never let that overwrite a higher score already on
+// the board: only ever raise the stored totals.
 export async function syncMyProfile(displayName: string, points: number, speciesCount: number) {
   const uid = myId();
   if (!supabase || !uid) return;
+  const { data: current } = await supabase
+    .from('profiles')
+    .select('points, species_count')
+    .eq('id', uid)
+    .maybeSingle();
+  const name = checkText(displayName) ? 'Explorer' : displayName;
   await supabase.from('profiles').upsert(
-    { id: uid, display_name: displayName, points, species_count: speciesCount, updated_at: new Date().toISOString() },
+    {
+      id: uid,
+      display_name: name,
+      points: Math.max(points, (current as any)?.points ?? 0),
+      species_count: Math.max(speciesCount, (current as any)?.species_count ?? 0),
+      updated_at: new Date().toISOString(),
+    },
     { onConflict: 'id' },
   );
+}
+
+// Change my public display name (Profile → Display name). Filtered like
+// comments; updates both the account metadata and the leaderboard profile.
+export async function updateDisplayName(name: string): Promise<{ error?: string }> {
+  const uid = myId();
+  const clean = name.trim().replace(/\s+/g, ' ');
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  if (clean.length < 2 || clean.length > 30) return { error: 'Names need 2–30 characters.' };
+  const blocked = checkText(clean);
+  if (blocked) return { error: blocked };
+  const { error } = await supabase.auth.updateUser({ data: { displayName: clean } });
+  if (error) return { error: error.message };
+  await supabase.from('profiles').upsert({ id: uid, display_name: clean }, { onConflict: 'id' });
+  useAppStore.getState().setDisplayName(clean);
+  return {};
 }
 
 // Ids of accepted friends (both directions), used to scope the leaderboard/wall.
@@ -451,9 +494,11 @@ export async function getFriends(): Promise<FriendsState> {
     .select('id, status, requester_id, addressee_id, requester:requester_id(display_name, avatar_url), addressee:addressee_id(display_name, avatar_url)')
     .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
   const state: FriendsState = { friends: [], incoming: [], outgoing: [] };
+  const blocked = await getBlockedIds();
   for (const r of (data ?? []) as any[]) {
     const iAmRequester = r.requester_id === uid;
     const otherId = iAmRequester ? r.addressee_id : r.requester_id;
+    if (blocked.has(otherId)) continue;
     const other = iAmRequester ? r.addressee : r.requester;
     const otherName = other?.display_name || 'Explorer';
     const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName, avatarUrl: other?.avatar_url ?? null };

@@ -7,7 +7,7 @@ import { View, Text, StyleSheet, Modal, Pressable, TextInput, ActivityIndicator,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
-import { blockUser, reportContent, REPORT_REASONS, type ReportTarget } from '@/lib/social';
+import { blockUser, reportContent, friendlyError, REPORT_REASONS, type ReportTarget } from '@/lib/social';
 
 export interface SafetyTarget {
   type: ReportTarget;
@@ -64,7 +64,7 @@ export function SafetySheet({
     setBusy(true);
     const res = await blockUser(target.userId);
     setBusy(false);
-    if (res.error) return notify('Couldn’t block', res.error);
+    if (res.error) return notify('Couldn’t block', friendlyError(res.error));
     onBlocked?.(target.userId);
     onClose();
     notify('Blocked', `You won’t see ${target.displayName}’s posts or comments anymore. You can undo this in Profile → Blocked accounts.`);
@@ -82,7 +82,7 @@ export function SafetySheet({
     });
     if (res.error) {
       setBusy(false);
-      return notify('Couldn’t send report', res.error);
+      return notify('Couldn’t send report', friendlyError(res.error));
     }
     if (alsoBlock) {
       const b = await blockUser(target.userId);

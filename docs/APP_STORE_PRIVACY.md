@@ -5,7 +5,7 @@ the app actually does today and the in-app Privacy Policy
 (`src/lib/legal.ts`). If you add analytics, crash reporting, ads, or start
 syncing sightings/locations to the server, update both.
 
-**Privacy Policy URL:** `https://clip-it-rose.vercel.app/legal/privacy`
+**Privacy Policy URL:** `https://clipitwildlife.app/legal/privacy`
 (the same screen as Profile → Privacy policy in the app). Deploy this branch to
 Vercel first so the page is live.
 

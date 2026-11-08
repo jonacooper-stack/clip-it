@@ -31,6 +31,8 @@ export interface SpeciesGuess {
   scientificName: string;
   commonName: string;
   confidence: number; // 0..1
+  /** Broad animal group from the AI: bird, mammal, reptile, amphibian, fish, insect, other. */
+  group?: string;
 }
 
 /** Where an identification came from, so the UI can be honest about demo guesses. */

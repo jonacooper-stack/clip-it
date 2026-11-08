@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,8 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
+import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
+import { playerPoints } from '@/lib/quests';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -57,7 +58,7 @@ export default function Profile() {
   const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
-  const points = useMemo(() => totalPoints(sightings), [sightings]);
+  const points = useMemo(() => playerPoints(sightings), [sightings]);
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
 
   // Restore my saved avatar on this device (e.g. after a fresh install / sign-in).
@@ -99,8 +100,9 @@ export default function Profile() {
             setDeleting(true);
             const res = await deleteMyAccount();
             if (res.error) {
+              console.warn('[delete account]', res.error);
               setDeleting(false);
-              notify('Couldn’t delete your account', `${res.error}\n\nPlease try again, or email ${CONTACT_EMAIL} and we’ll delete it for you.`);
+              notify('Couldn’t delete your account', `Please try again, or email ${CONTACT_EMAIL} and we’ll delete it for you.`);
               return;
             }
             await signOut();
@@ -185,9 +187,11 @@ export default function Profile() {
           <Divider />
           <Row icon="document-text" label="Terms of use" onPress={() => router.push('/legal/terms')} />
           <Divider />
-          <Row icon="mail" label="Contact support" onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}`)} />
+          <Row icon="help-circle" label="Help & support" onPress={() => router.push('/support')} />
           {isSupabaseConfigured && session && (
             <>
+              <Divider />
+              <Row icon="person-circle" label="Display name" onPress={() => router.push('/settings/name')} />
               <Divider />
               <Row icon="ban" label="Blocked accounts" onPress={() => router.push('/settings/blocked')} />
               <Divider />

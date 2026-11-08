@@ -20,7 +20,7 @@ export function ScienceQuestions({
       <View style={styles.head}>
         <View style={styles.titleRow}>
           <Ionicons name="flask" size={16} color={colors.accent} />
-          <Text style={styles.title}>Help science</Text>
+          <Text style={styles.title}>Field notes</Text>
         </View>
         <Text style={styles.bonus}>{answered > 0 ? `+${answered}` : 'optional'}</Text>
       </View>

@@ -5,10 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
+import { checkText } from '@/lib/moderation';
 
 // react-native-web renders TextInput as an <input> with a default border + focus
 // outline; strip both on web only (no-ops on native).
@@ -19,7 +19,6 @@ export default function Account() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string }>();
   const ageBracket = useAppStore((s) => s.ageBracket);
-  const isChild = useAppStore((s) => s.isChild);
   const setOnboarded = useAppStore((s) => s.setOnboarded);
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
@@ -46,10 +45,17 @@ export default function Account() {
 
   const submit = async () => {
     if (!valid || busy) return;
+    if (isSignup) {
+      const nameProblem = checkText(name);
+      if (nameProblem) {
+        setError('Please choose a different display name. ' + nameProblem.split('. ')[0] + '.');
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     const res = isSignup
-      ? await signUp({ email, password, displayName: name, ageBracket, isChild })
+      ? await signUp({ email, password, displayName: name, ageBracket, isChild: false })
       : await signIn(email, password);
     setBusy(false);
 
@@ -136,22 +142,10 @@ export default function Account() {
       <Text style={styles.title}>{isSignup ? 'Create your account' : 'Welcome back'}</Text>
       <Text style={styles.subtitle}>
         {isSignup
-          ? 'Your account saves your journal and points across devices.'
-          : 'Sign in to pick up your journal where you left off.'}
+          ? 'Your account lets you share sightings, follow other explorers and join the leaderboard.'
+          : 'Sign in to get back to the wall, your friends and the leaderboard.'}
       </Text>
 
-      {isChild && isSignup && (
-        <Card style={styles.childNote}>
-          <View style={styles.childHead}>
-            <Ionicons name="people" size={18} color={colors.accentInk} />
-            <Text style={styles.childTitle}>A grown-up should set this up</Text>
-          </View>
-          <Text style={styles.childText}>
-            Since you're under 13, a parent or guardian should create the account with their own email
-            and stay involved.
-          </Text>
-        </Card>
-      )}
 
       {appleAvailable && (
         <AppleAuthentication.AppleAuthenticationButton

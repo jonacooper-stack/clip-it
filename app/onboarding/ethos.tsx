@@ -1,7 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-import { useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
@@ -33,17 +31,9 @@ const ETHOS: { icon: keyof typeof Ionicons.glyphMap; color: string; title: strin
 export default function Ethos() {
   const router = useRouter();
   const setOnboarded = useAppStore((s) => s.setOnboarded);
-  const [, requestCamera] = useCameraPermissions();
-
-  const finish = async (requestPerms: boolean) => {
-    if (requestPerms) {
-      try {
-        await requestCamera();
-        await Location.requestForegroundPermissionsAsync();
-      } catch {
-        // Permissions can be granted later from the OS settings.
-      }
-    }
+  // Camera and location are requested in context, the first time you open the
+  // camera, not up front (App Store Guideline 5.1.1).
+  const finish = () => {
     setOnboarded(true);
     router.replace('/');
   };
@@ -67,13 +57,13 @@ export default function Ethos() {
 
       <View style={styles.perms}>
         <Text style={styles.permsText}>
-          ClipIt needs your <Text style={styles.bold}>camera</Text> to photograph animals and your{' '}
-          <Text style={styles.bold}>location</Text> to tag where you saw them — kept private to you.
+          When you take your first photo, ClipIt will ask to use your <Text style={styles.bold}>camera</Text>{' '}
+          and, if you like, your <Text style={styles.bold}>location</Text> to tag where you saw the animal.
+          Your location stays private to you.
         </Text>
       </View>
 
-      <Button label="Allow camera & location" icon="checkmark-circle" onPress={() => finish(true)} />
-      <Button label="Maybe later" variant="ghost" onPress={() => finish(false)} style={styles.later} />
+      <Button label="Let’s go" icon="arrow-forward" onPress={finish} />
     </ScreenContainer>
   );
 }

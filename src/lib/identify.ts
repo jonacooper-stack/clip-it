@@ -97,8 +97,15 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
     try {
       return await identifyViaEndpoint(input);
     } catch (err: any) {
+      // In release builds on the phone, never invent a result: any failure
+      // (offline, server error, timeout) queues the capture, which is retried
+      // automatically and scored once the AI answers. Only dev builds and the
+      // web demo fall back to the mock identifier.
+      if (Platform.OS !== 'web' && !__DEV__) {
+        throw err instanceof OfflineError ? err : new OfflineError(String(err?.message ?? err));
+      }
       if (err instanceof OfflineError) {
-        // Native queues the capture and retries later; web just uses the demo identifier.
+        // Native dev builds queue the capture too; web just uses the demo identifier.
         if (Platform.OS !== 'web') throw err;
         note = 'You appear to be offline — used the demo identifier.';
       } else {
@@ -140,9 +147,17 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), IDENTIFY_TIMEOUT_MS);
   try {
+    // The endpoint only serves signed-in players: send the Supabase access token
+    // (getSession refreshes it if it has expired, e.g. for a queued capture).
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
     resp = await fetch(IDENTIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
       signal: controller.signal,
     });

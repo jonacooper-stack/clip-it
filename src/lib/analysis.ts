@@ -73,7 +73,10 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
     const duplicatePhoto = photoHash != null && priors.some((s) => s.photoHash === photoHash);
     score = scoreSighting({
       rarityScore: outcome.rarityScore,
-      sceneTags: outcome.sceneTags,
+      // No behavior multipliers for animals that could hurt someone: a bear with
+      // cubs or a hunting predator must never be worth more for getting close
+      // (App Store Guideline 1.4.1). Rarity still counts.
+      sceneTags: outcome.dangerous ? [] : outcome.sceneTags,
       firstOfSpecies: priorSameSpecies === 0,
       priorSameSpecies,
       duplicatePhoto,
