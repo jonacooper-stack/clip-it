@@ -40,3 +40,21 @@ export function seededRandom(seed: string): () => number {
     return ((x >>> 0) % 1_000_000) / 1_000_000;
   };
 }
+
+export function startOfDay(t: number): number {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Midnight (local) of a YYYY-MM-DD date.
+export function localDateStart(date: string): number {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+export function addDays(t: number, n: number): number {
+  const d = new Date(t);
+  d.setDate(d.getDate() + n);
+  return d.getTime();
+}

@@ -4,7 +4,7 @@
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useJournalStore } from '@/state/useJournalStore';
-import { useCrewStore, type Forecast } from '@/state/useCrewStore';
+import { useCrewStore, type Forecast, type TodayPick } from '@/state/useCrewStore';
 import type { CrewNotes, Sighting } from '@/types';
 import { weekOf, type RegionKey } from '../../../shared/crew';
 
@@ -88,6 +88,23 @@ export async function loadForecast(region: RegionKey): Promise<Forecast | null> 
   const f = await crewFetch<Forecast>(`/api/crew/forecast?region=${encodeURIComponent(region)}`);
   if (f?.items?.length) useCrewStore.getState().saveForecast(f);
   return f;
+}
+
+// The player's local date as YYYY-MM-DD (species of the day follows the
+// player's day, not UTC).
+export function localDate(t = Date.now()): string {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Dr. Hoot's species of the day, from the device cache or the server.
+export async function loadToday(region: RegionKey): Promise<TodayPick | null> {
+  const date = localDate();
+  const cached = useCrewStore.getState().today[`${region}:${date}`];
+  if (cached) return cached;
+  const t = await crewFetch<TodayPick>(`/api/crew/today?region=${encodeURIComponent(region)}&date=${date}`);
+  if (t?.facts?.length && t.photo) useCrewStore.getState().saveToday({ ...t, region, date });
+  return t;
 }
 
 export function cachedForecast(region: RegionKey | null): Forecast | null {
