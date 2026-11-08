@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ClipIt · Hunt with a camera</title>
+  <meta name="description" content="ClipIt is a wildlife photography game. Spot a real wild animal, snap it, and AI identifies it in seconds. Rarer animals and wilder moments score more." />
+  <meta name="theme-color" content="#0e1411" />
+  <link rel="canonical" href="https://clipitwildlife.app/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ClipIt · Hunt with a camera" />
+  <meta property="og:description" content="Spot real wildlife, snap a photo, and score points. Rarer animals and wilder moments are worth more." />
+  <meta property="og:url" content="https://clipitwildlife.app/" />
+  <meta property="og:image" content="https://clipitwildlife.app/img/og.jpg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+  <link rel="preload" as="image" href="/img/hero-1920.jpg" imagesrcset="/img/hero-1200.jpg 1200w, /img/hero-1920.jpg 1920w" imagesizes="100vw" />
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="nav">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="ClipIt home">
+        <img src="/img/icon-256.png" alt="" width="34" height="34" />
+        <span>Clip<b>It</b></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#scoring">Scoring</a>
+        <a href="#features">Features</a>
+        <a href="/support">Support</a>
+        <a class="btn btn-blaze btn-sm" href="#get">Get ClipIt</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-photo" style="--focus: 70% 45%">
+        <img src="/img/hero-1920.jpg" srcset="/img/hero-1200.jpg 1200w, /img/hero-1920.jpg 1920w" sizes="100vw" alt="A red fox drinking from a lake, its reflection in the water" fetchpriority="high" />
+      </div>
+      <div class="wrap">
+        <div>
+          <span class="kicker">Field guide to the wild</span>
+          <h1 id="hero-title">Hunt with<br />a <em>camera.</em></h1>
+          <p class="lede">Spot a real wild animal, snap it, and ClipIt’s AI names it in seconds. The rarer the animal and the wilder the moment, the bigger the points.</p>
+          <div class="cta-row" id="get">
+            <!-- When the app is live, turn this into a link to
+                 https://apps.apple.com/app/id6785170741 and change the text to
+                 "Download on the App Store". -->
+            <span class="soon" role="img" aria-label="Coming soon to iPhone"><small>Coming soon</small><span>ClipIt for iPhone</span></span>
+            <a class="btn btn-ghost" href="/journal">Try it in your browser <span aria-hidden="true">→</span></a>
+          </div>
+          <p class="hero-note">Free · Ages 13+ · No ads</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ FACTS ============ -->
+    <div class="facts">
+      <div class="wrap">
+        <div class="fact reveal"><b>Seconds<em>.</em></b><span>From snap to species, with a fun fact about what you found.</span></div>
+        <div class="fact reveal"><b>Up to ×<em>8</em></b><span>Behavior multipliers for parents with young, hunts, courtship and flight.</span></div>
+        <div class="fact reveal"><b><em>0</em> spots shared</b><span>Your locations stay on your phone. Shared posts never say where you were.</span></div>
+      </div>
+    </div>
+
+    <!-- ============ THE APP ============ -->
+    <section class="section showcase" aria-labelledby="app-title">
+      <div class="wrap">
+        <div class="showcase-copy reveal">
+          <span class="kicker">The moment it clicks</span>
+          <h2 id="app-title">A fox, a vole, and <em>17 points.</em></h2>
+          <p>Snap it and ClipIt does the rest: species, scientific name, a fun fact, and a score built from how rare the animal is and what it was doing.</p>
+          <ul class="callouts">
+            <li><b>Identified in seconds</b><span>Even blurry, distant or mid-pounce.</span></li>
+            <li><b>Behavior counts</b><span>The pounce turned a 4-point fox into a 12-point moment.</span></li>
+            <li><b>Firsts pay extra</b><span>+5 the first time you log a species.</span></li>
+          </ul>
+        </div>
+        <div class="phone-col reveal" aria-hidden="true">
+          <div class="phone">
+            <div class="screen">
+              <div class="island"></div>
+              <div class="screen-photo" style="--pfocus: 50% 45%"><img src="/img/fox-vole-1200.jpg" alt="" /></div>
+              <div class="screen-body">
+                <span class="id-chip">✓ Identified · 96%</span>
+                <div>
+                  <div class="species">Red fox</div>
+                  <div class="sci">Vulpes vulpes</div>
+                </div>
+                <div class="points-card">
+                  <div class="pts">+17<small>pts</small></div>
+                  <div class="lbl">First of species<br />+5 bonus</div>
+                </div>
+                <div class="chips">
+                  <span class="chip blaze">⚡ Predation ×3</span>
+                  <span class="chip">Uncommon</span>
+                </div>
+                <div class="conf">Confidence <i></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="section" id="how" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="kicker">How it works</span>
+          <h2 id="how-title">Spot. Snap. Score.</h2>
+          <p>Every walk becomes a hunt: catch and release, with a camera. Backyards, trails, parks and coastlines are full of wildlife once you start looking.</p>
+        </div>
+        <div class="steps">
+          <article class="step reveal">
+            <span class="n">01</span>
+            <div class="ic" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="15" r="3.5"/><circle cx="17.5" cy="15" r="3.5"/><path d="M10 15h4M5 11.5 7 5h3l1 6M19 11.5 17 5h-3l-1 6"/></svg>
+            </div>
+            <h3>Spot</h3>
+            <p>Head outside and look closer. A heron in the creek, a hawk on a post, a fox at the edge of the field: it all counts.</p>
+          </article>
+          <article class="step reveal">
+            <span class="n">02</span>
+            <div class="ic" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+            <h3>Snap</h3>
+            <p>Shoot in the app, or upload a photo from your camera roll. No signal on the trail? It’s saved and scored when you’re back online.</p>
+          </article>
+          <article class="step reveal">
+            <span class="n">03</span>
+            <div class="ic" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>
+            </div>
+            <h3>Score</h3>
+            <p>AI names the species and scores it by rarity and behavior. Repeat species earn less, so there’s always a reason to explore somewhere new.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCORING ============ -->
+    <section class="section" id="scoring" aria-labelledby="scoring-title" style="padding-top: 0">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="kicker">Scoring</span>
+          <h2 id="scoring-title">Not every sighting is worth the same.</h2>
+          <p>Rarity sets the base. The moment multiplies it. A chipmunk on a stump is a good start; a hunt in progress is a story.</p>
+        </div>
+        <div class="score-grid">
+          <article class="score-card reveal">
+            <img src="/img/chipmunk-1200.jpg" srcset="/img/chipmunk-600.jpg 600w, /img/chipmunk-1200.jpg 1200w" sizes="(max-width: 920px) 100vw, 400px" alt="An eastern chipmunk sitting up on the forest floor" style="object-position: 55% 50%" loading="lazy" />
+            <div class="big-pts"><b>6</b><span>points</span></div>
+            <div class="body">
+              <span class="tier common">Common</span>
+              <h3>Eastern chipmunk</h3>
+              <p class="math">1 base · +5 first of species</p>
+            </div>
+          </article>
+          <article class="score-card reveal">
+            <img src="/img/lynx-1200.jpg" srcset="/img/lynx-600.jpg 600w, /img/lynx-1200.jpg 1200w" sizes="(max-width: 920px) 100vw, 400px" alt="A Eurasian lynx in profile among pine trees" style="object-position: 30% 50%" loading="lazy" />
+            <div class="big-pts"><b>22</b><span>points</span></div>
+            <div class="body">
+              <span class="tier uncommon">Rare</span>
+              <h3>Eurasian lynx</h3>
+              <p class="math">17 base · +5 first of species</p>
+            </div>
+          </article>
+          <article class="score-card reveal">
+            <img src="/img/osprey-1200.jpg" srcset="/img/osprey-600.jpg 600w, /img/osprey-1200.jpg 1200w" sizes="(max-width: 920px) 100vw, 400px" alt="An osprey lifting off the water with a fish in its talons" style="object-position: 55% 45%" loading="lazy" />
+            <div class="big-pts"><b>23</b><span>points</span></div>
+            <div class="body">
+              <span class="tier rare">Wild moment</span>
+              <h3>Osprey with a catch</h3>
+              <p class="math">6 base × 3 predation · +5 first</p>
+            </div>
+          </article>
+        </div>
+        <div class="bonus-row reveal">
+          <span class="lead">Behavior bonuses</span>
+          <span class="bonus">With young <b>×3</b></span>
+          <span class="bonus">Predation <b>×3</b></span>
+          <span class="bonus">Courtship <b>×2</b></span>
+          <span class="bonus">In flight <b>×1.5</b></span>
+          <span class="bonus">Group or herd <b>×1.5</b></span>
+        </div>
+        <p class="safety-note reveal">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/></svg>
+          <span>Animals that could hurt you never earn behavior bonuses. Points are for the photo, never for how close you got. Example scores shown; the AI estimates rarity for each sighting.</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section class="section" id="features" aria-labelledby="features-title" style="padding-top: 0">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="kicker">Built for explorers</span>
+          <h2 id="features-title">Your field journal, quests and crew.</h2>
+        </div>
+        <div class="bento">
+          <article class="tile t-journal reveal">
+            <h3>A field journal that fills itself</h3>
+            <p>Every sighting is saved with the photo, species, date and place. Browse by species, search your finds, and add your own field notes.</p>
+            <div class="mini-grid">
+              <figure><img src="/img/kingfisher-600.jpg" alt="Kingfisher" loading="lazy" /><figcaption>Kingfisher</figcaption></figure>
+              <figure><img src="/img/hummingbird-600.jpg" alt="Hummingbird" loading="lazy" /><figcaption>Hummingbird</figcaption></figure>
+              <figure><img src="/img/heron-600.jpg" alt="Great blue heron" loading="lazy" /><figcaption>Great blue heron</figcaption></figure>
+              <figure><img src="/img/chipmunk-600.jpg" alt="Chipmunk" loading="lazy" /><figcaption>Chipmunk</figcaption></figure>
+            </div>
+          </article>
+          <article class="tile t-quests reveal">
+            <h3>Quests &amp; streaks</h3>
+            <p>Small goals that get you out the door.</p>
+            <div class="quest"><div class="quest-top">Birdwatcher <span>2 / 3</span></div><div class="bar"><i style="width: 66%"></i></div></div>
+            <div class="quest"><div class="quest-top">Mammal Tracker <span>1 / 3</span></div><div class="bar"><i style="width: 33%"></i></div></div>
+            <div class="quest"><div class="quest-top">Naturalist <span>5 / 5</span></div><div class="bar"><i style="width: 100%"></i></div></div>
+            <span class="streak">🔥 12-day streak</span>
+          </article>
+          <article class="tile t-wall reveal">
+            <h3>Share the good ones</h3>
+            <p>Post your best sightings to the wall. Like, comment, follow friends and climb the leaderboard.</p>
+            <div class="post">
+              <img src="/img/eagle-600.jpg" alt="A bald eagle" loading="lazy" />
+              <div>
+                <div class="who"><span class="av">M</span> trail_mara</div>
+                <p>spotted a <b style="color: var(--green)">Bald eagle</b>. Sat on the same branch for an hour.</p>
+                <div class="acts"><span>♥ 24</span><span>💬 6</span><span style="color: var(--blaze)">+12 pts</span></div>
+              </div>
+            </div>
+          </article>
+          <article class="tile t-private reveal">
+            <h3>Your spots stay secret</h3>
+            <p>Locations are saved on your phone, never shared with other players and never included in posts. Nests and dens stay safe.</p>
+            <div class="lock"><span>No location sharing</span><span>No ads</span><span>No data sold</span><span>Report &amp; block</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GALLERY ============ -->
+    <section class="section" aria-labelledby="gallery-title" style="padding-top: 0">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="kicker">A few of the locals</span>
+          <h2 id="gallery-title">Who will you find first?</h2>
+        </div>
+        <div class="gallery">
+          <figure class="g1 reveal"><img src="/img/moose-1200.jpg" srcset="/img/moose-600.jpg 600w, /img/moose-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="A moose cow drinking from a pond" style="object-position: 50% 50%" loading="lazy" /><figcaption>Moose<i>Alces alces</i></figcaption></figure>
+          <figure class="g2 reveal"><img src="/img/otters-1200.jpg" srcset="/img/otters-600.jpg 600w, /img/otters-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="Two river otters nuzzling" style="object-position: 50% 40%" loading="lazy" /><figcaption>River otters<i>Lontra canadensis</i></figcaption></figure>
+          <figure class="g3 reveal"><img src="/img/snowy-owl-1200.jpg" srcset="/img/snowy-owl-600.jpg 600w, /img/snowy-owl-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="Close-up of a snowy owl’s face" style="object-position: 50% 45%" loading="lazy" /><figcaption>Snowy owl<i>Bubo scandiacus</i></figcaption></figure>
+          <figure class="g4 reveal"><img src="/img/raccoon-1200.jpg" srcset="/img/raccoon-600.jpg 600w, /img/raccoon-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="A raccoon on a rocky slope" style="object-position: 55% 50%" loading="lazy" /><figcaption>Raccoon<i>Procyon lotor</i></figcaption></figure>
+          <figure class="g5 reveal"><img src="/img/wolf-1200.jpg" srcset="/img/wolf-600.jpg 600w, /img/wolf-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="A gray wolf resting, looking at the camera" style="object-position: 50% 30%" loading="lazy" /><figcaption>Gray wolf<i>Canis lupus</i></figcaption></figure>
+          <figure class="g6 reveal"><img src="/img/barn-owl-1200.jpg" srcset="/img/barn-owl-600.jpg 600w, /img/barn-owl-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="A barn owl flying over a green valley" style="object-position: 55% 50%" loading="lazy" /><figcaption>Barn owl<i>Tyto alba</i></figcaption></figure>
+          <figure class="g7 reveal"><img src="/img/bison-1200.jpg" srcset="/img/bison-600.jpg 600w, /img/bison-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="An American bison grazing in a meadow" style="object-position: 55% 50%" loading="lazy" /><figcaption>American bison<i>Bison bison</i></figcaption></figure>
+          <figure class="g8 reveal"><img src="/img/kingfisher-wings-1200.jpg" srcset="/img/kingfisher-wings-600.jpg 600w, /img/kingfisher-wings-1200.jpg 1200w" sizes="(max-width: 820px) 50vw, 480px" alt="A kingfisher spreading its wings on a branch" style="object-position: 60% 40%" loading="lazy" /><figcaption>Kingfisher<i>Alcedo atthis</i></figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ETHOS ============ -->
+    <section class="section ethos" aria-labelledby="ethos-title">
+      <div class="topo" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="reveal">
+          <span class="kicker">Our one rule</span>
+          <h2 id="ethos-title" style="margin-top: 18px">Observe,<br /><em>don’t disturb.</em></h2>
+        </div>
+        <div class="principles">
+          <div class="principle reveal">
+            <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21c8 0 14-6 14-14V3h-4C7 3 3 9 3 15c0 2 .5 4 2 6"/><path d="M5 21c2-5 5-8 10-11"/></svg></div>
+            <div><h3>Respect wildlife</h3><p>Never bait, chase, call in or corner an animal for a photo. Leave nests and dens alone.</p></div>
+          </div>
+          <div class="principle reveal">
+            <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+            <div><h3>Keep your distance</h3><p>Use zoom, stay back and give animals space. The best shots come from patience, not getting close.</p></div>
+          </div>
+          <div class="principle reveal">
+            <div class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
+            <div><h3>Leave no trace</h3><p>Stay on trails, follow local rules, and take only photos. Let wildlife stay wild.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FINAL CTA ============ -->
+    <section class="section final" aria-labelledby="final-title">
+      <div class="glow" aria-hidden="true"></div>
+      <div class="wrap reveal">
+        <span class="kicker">Ready when you are</span>
+        <h2 id="final-title">Get outside. <em>Start your journal.</em></h2>
+        <p>ClipIt is free, made for ages 13 and up, and launching on the App Store soon.</p>
+        <div class="cta-row">
+          <span class="soon" role="img" aria-label="Coming soon to iPhone"><small>Coming soon</small><span>ClipIt for iPhone</span></span>
+          <a class="btn btn-ghost" href="/journal">Try it in your browser <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="ClipIt home"><img src="/img/icon-256.png" alt="" width="34" height="34" /><span>Clip<b>It</b></span></a>
+      <nav aria-label="Footer">
+        <a href="/support">Help &amp; support</a>
+        <a href="/legal/privacy">Privacy policy</a>
+        <a href="/legal/terms">Terms of use</a>
+        <a href="/credits.html">Photo credits</a>
+        <a href="mailto:support@clipitwildlife.app">support@clipitwildlife.app</a>
+      </nav>
+      <p class="fine">© 2026 ClipIt. Wildlife photos by the photographers credited on our <a href="/credits.html">photo credits</a> page, used under their licenses.</p>
+    </div>
+  </footer>
+
+  <script>
+    // Solid nav after scrolling past the top of the hero.
+    const nav = document.getElementById('nav');
+    const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // Fade sections in as they enter the viewport.
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, { rootMargin: '0px 0px -8% 0px' });
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+    } else {
+      document.querySelectorAll('.reveal').forEach((el) => el.classList.add('in'));
+    }
+  </script>
+</body>
+</html>

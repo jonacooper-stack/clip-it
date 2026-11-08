@@ -121,7 +121,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     // Web: full-page redirect back to the origin, where detectSessionInUrl picks
     // up the session on reload.
     if (Platform.OS === 'web') {
-      const redirectTo = typeof window !== 'undefined' ? (window as any).location?.origin : undefined;
+      // Return to an app route, not "/" (the marketing landing page). The
+      // Supabase Redirect URLs list must allow it (e.g. https://clipitwildlife.app/**).
+      const redirectTo = typeof window !== 'undefined' ? `${(window as any).location?.origin}/journal` : undefined;
       const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
       return error ? { error: error.message } : {};
     }
