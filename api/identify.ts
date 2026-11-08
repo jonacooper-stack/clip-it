@@ -80,18 +80,32 @@ const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   'sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY';
 
-// Returns the user id for a valid access token, or null.
+// One JSON line per failure, so problems show up in Vercel → Logs (filter on
+// "identify_failure") instead of on the player's screen. Never logs tokens or
+// image data.
+function logFailure(reason: string, extra: Record<string, unknown> = {}) {
+  console.warn(JSON.stringify({ event: 'identify_failure', reason, ...extra }));
+}
+
+// Returns the user id for a valid access token, or null (with the reason logged).
 async function verifyUser(authHeader: string | undefined): Promise<string | null> {
   const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) return null;
+  if (!token) {
+    logFailure('auth_missing_token');
+    return null;
+  }
   try {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      logFailure('auth_rejected', { status: r.status });
+      return null;
+    }
     const user = (await r.json()) as { id?: string };
     return user?.id ?? null;
-  } catch {
+  } catch (err: any) {
+    logFailure('auth_check_error', { detail: String(err?.message ?? err).slice(0, 200) });
     return null;
   }
 }
@@ -115,11 +129,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const userId = await verifyUser(req.headers.authorization as string | undefined);
   if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
   if (rateLimited(userId)) {
+    logFailure('rate_limited', { userId });
     return res.status(429).json({ error: 'too many requests', detail: 'Slow down a little — try again in a minute.' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set' });
+  if (!apiKey) {
+    logFailure('missing_api_key');
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set' });
+  }
 
   const body = (req.body ?? {}) as { imageBase64?: string; mediaType?: string };
   let imageBase64 = body.imageBase64;
@@ -202,7 +220,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // the app can show it instead of a generic message.
     const status = err?.status ? `${err.status} ` : '';
     const detail = `${status}${String(err?.message ?? err)}`.slice(0, 300);
-    console.error('identify error', err);
+    logFailure('model_error', { userId, detail });
     return res.status(502).json({ error: 'identification failed', detail });
   }
 }
