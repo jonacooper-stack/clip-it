@@ -170,7 +170,7 @@ use (in the app and on the web). What's left is setup in your accounts:
 - Name, subtitle, description, keywords, screenshots plan, categories and the
   **reviewer notes**: copy from [APP_STORE_LISTING.md](APP_STORE_LISTING.md).
 - Screenshots: **6.9" iPhone only** (the app is iPhone-only, `supportsTablet: false`).
-- Support URL: `https://clip-it-rose.vercel.app/support`.
+- Support URL: `https://clipitwildlife.app/support`.
 - **App Review Information:** a demo email/password login with some content on the wall.
 - Version 1.0 → select the build → **Submit for Review**.
 
@@ -182,7 +182,18 @@ workflow** (channel `production`) so installed TestFlight builds pick up the new
 client code. Otherwise identification falls back to the demo identifier on
 those builds until they update.
 
-### e. Before submitting
+### e. Domain and email (clipitwildlife.app)
+- The domain must be attached to the Vercel project (Project → Settings →
+  Domains) so `https://clipitwildlife.app/legal/privacy` and `/support` load.
+- Supabase → Authentication → URL Configuration: set the **Site URL** to
+  `https://clipitwildlife.app` and keep the old vercel.app URL and
+  `clipit://auth/callback` in **Redirect URLs**, so Google sign-in on the
+  website works on both addresses.
+- `support@clipitwildlife.app` must receive mail. It's forwarded with ImprovMX:
+  MX `mx1.improvmx.com` (10) and `mx2.improvmx.com` (20), plus TXT
+  `v=spf1 include:spf.improvmx.com ~all`, in Vercel → Domains → DNS records.
+
+### f. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
   support address and company name, and make sure that inbox exists.
 - Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.

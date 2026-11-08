@@ -1,7 +1,7 @@
 // Privacy policy + terms of use content. Rendered in-app at /legal/privacy and
 // /legal/terms, which are ALSO public web pages on the Vercel deployment (the
 // same expo-router routes) — use that URL as the Privacy Policy URL in App
-// Store Connect: https://clip-it-rose.vercel.app/legal/privacy
+// Store Connect: https://clipitwildlife.app/legal/privacy
 //
 // Keep this in sync with what the app actually does, and with the App Store
 // privacy label answers in docs/APP_STORE_PRIVACY.md.
@@ -11,7 +11,7 @@ export const LEGAL_ENTITY = 'ClipIt';
 export const CONTACT_EMAIL = 'support@clipitwildlife.app';
 export const EFFECTIVE_DATE = 'November 8, 2026';
 
-export const WEB_BASE = 'https://clip-it-rose.vercel.app';
+export const WEB_BASE = 'https://clipitwildlife.app';
 export const PRIVACY_URL = `${WEB_BASE}/legal/privacy`;
 export const TERMS_URL = `${WEB_BASE}/legal/terms`;
 export const SUPPORT_URL = `${WEB_BASE}/support`;

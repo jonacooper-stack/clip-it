@@ -14,13 +14,14 @@ file). Only claim features the app actually has; update this if features change.
 | **Primary category** | Games → Adventure |
 | **Secondary category** | Education |
 | **Age rating** | Answer the questionnaire honestly. The key answer is **User-Generated Content: Yes** (people can post photos and comments). Everything else is None/No. Expect **13+**, which matches the in-app age gate. |
-| **Privacy Policy URL** | `https://clip-it-rose.vercel.app/legal/privacy` |
-| **Support URL** | `https://clip-it-rose.vercel.app/support` |
+| **Privacy Policy URL** | `https://clipitwildlife.app/legal/privacy` |
+| **Support URL** | `https://clipitwildlife.app/support` |
 | **Marketing URL** (optional) | leave blank for now |
 | **Copyright** | `2026 <your name or company>` |
 
-> If you buy a custom domain (see the chat), swap `clip-it-rose.vercel.app` for
-> it in the two URLs above and in `src/lib/legal.ts`.
+> These use the custom domain `clipitwildlife.app` (bought on Vercel). The old
+> `clip-it-rose.vercel.app` address serves the same pages if the domain isn't
+> connected yet.
 
 ---
 
@@ -64,8 +65,8 @@ ClipIt rewards the photo, never the proximity. Keep your distance, never feed or
 
 ClipIt is for ages 13 and up.
 
-Privacy Policy: https://clip-it-rose.vercel.app/legal/privacy
-Terms of Use: https://clip-it-rose.vercel.app/legal/terms
+Privacy Policy: https://clipitwildlife.app/legal/privacy
+Terms of Use: https://clipitwildlife.app/legal/terms
 ```
 
 ### Keywords (100, comma-separated, no spaces; don't repeat words already in the name/subtitle)
