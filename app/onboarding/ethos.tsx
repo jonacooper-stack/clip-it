@@ -35,7 +35,7 @@ export default function Ethos() {
   // camera, not up front (App Store Guideline 5.1.1).
   const finish = () => {
     setOnboarded(true);
-    router.replace('/');
+    router.replace('/feed');
   };
 
   return (

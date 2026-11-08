@@ -188,7 +188,7 @@ those builds until they update.
 - Supabase → Authentication → URL Configuration: set the **Site URL** to
   `https://clipitwildlife.app`, and under **Redirect URLs** have
   `https://clipitwildlife.app/**`, `https://clip-it-rose.vercel.app/**` and
-  `clipit://auth/callback`. Web Google sign-in returns to `/journal` (the
+  `clipit://auth/callback`. Web Google sign-in returns to `/feed` (the
   site's `/` is now the marketing page), so the `/**` wildcard is required.
 - Website layout: `site/` is the static marketing site (served at `/`, plus
   `/credits.html`); every other path is the Expo web app. `scripts/build-web.mjs`

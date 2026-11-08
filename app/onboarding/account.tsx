@@ -78,7 +78,7 @@ export default function Account() {
     } else {
       // Returning user — their profile already exists, skip straight in.
       setOnboarded(true);
-      router.replace('/');
+      router.replace('/feed');
     }
   };
 

@@ -2,7 +2,7 @@
 // public web pages on the Vercel deployment, so they work signed-out and when
 // opened directly from a link (no back stack).
 import type { ReactNode } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,10 @@ export function LegalDoc({
   const router = useRouter();
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/');
+    // Opened directly on the website (e.g. from the landing page footer): back
+    // goes to the landing page, not into the app.
+    else if (Platform.OS === 'web') (globalThis as any).location?.assign('/');
+    else router.replace('/feed');
   };
 
   return (

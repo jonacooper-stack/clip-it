@@ -20,6 +20,20 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
   <link rel="preload" as="image" href="/img/hero-1920.jpg" imagesrcset="/img/hero-1200.jpg 1200w, /img/hero-1920.jpg 1920w" imagesizes="100vw" />
   <link rel="stylesheet" href="/site.css" />
+  <script>
+    // Signed in to the web app already? Skip the marketing page and go
+    // straight to the feed (add ?home to the URL to see this page anyway).
+    try {
+      if (!/[?&]home\b/.test(location.search) &&
+          Object.keys(localStorage).some((k) => {
+            if (!/^sb-.+-auth-token$/.test(k)) return false;
+            const v = JSON.parse(localStorage.getItem(k) || 'null');
+            return Boolean(v && v.refresh_token);
+          })) {
+        location.replace('/feed');
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -56,7 +70,7 @@
                  https://apps.apple.com/app/id6785170741 and change the text to
                  "Download on the App Store". -->
             <span class="soon" role="img" aria-label="Coming soon to iPhone"><small>Coming soon</small><span>ClipIt for iPhone</span></span>
-            <a class="btn btn-ghost" href="/journal">Try it in your browser <span aria-hidden="true">→</span></a>
+            <a class="btn btn-ghost" href="/feed">Try it in your browser <span aria-hidden="true">→</span></a>
           </div>
           <p class="hero-note">Free · Ages 13+ · No ads</p>
         </div>
@@ -303,7 +317,7 @@
         <p>ClipIt is free, made for ages 13 and up, and launching on the App Store soon.</p>
         <div class="cta-row">
           <span class="soon" role="img" aria-label="Coming soon to iPhone"><small>Coming soon</small><span>ClipIt for iPhone</span></span>
-          <a class="btn btn-ghost" href="/journal">Try it in your browser <span aria-hidden="true">→</span></a>
+          <a class="btn btn-ghost" href="/feed">Try it in your browser <span aria-hidden="true">→</span></a>
         </div>
       </div>
     </section>

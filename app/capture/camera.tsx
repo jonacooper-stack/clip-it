@@ -417,7 +417,7 @@ export default function CameraScreen() {
   // Finish a burst: start identifying the queued shots and go watch them resolve.
   const finishBurst = () => {
     processAnalysisQueue();
-    router.replace('/');
+    router.replace('/feed');
   };
 
   // Leaving the camera: if a burst is pending, start analyzing it on the way out.

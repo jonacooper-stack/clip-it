@@ -33,7 +33,7 @@ export default function PostDetail() {
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)');
+    else router.replace('/feed');
   };
 
   const unshare = () => {
