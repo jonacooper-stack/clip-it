@@ -8,7 +8,7 @@ import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { checkText } from '@/lib/moderation';
+import { checkText, reservedName } from '@/lib/moderation';
 
 // react-native-web renders TextInput as an <input> with a default border + focus
 // outline; strip both on web only (no-ops on native).
@@ -49,6 +49,11 @@ export default function Account() {
       const nameProblem = checkText(name);
       if (nameProblem) {
         setError('Please choose a different display name. ' + nameProblem.split('. ')[0] + '.');
+        return;
+      }
+      const reserved = reservedName(name);
+      if (reserved) {
+        setError(reserved);
         return;
       }
     }

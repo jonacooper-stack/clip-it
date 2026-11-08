@@ -11,6 +11,7 @@ import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { timeAgo } from '@/lib/timeAgo';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
+import { RangerBadge } from '@/components/social/RangerBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
   getPost, getComments, addComment, likePost, unlikePost, deletePost, friendlyError,
@@ -135,10 +136,11 @@ export default function PostDetail() {
                   <View key={c.id} style={styles.commentRow}>
                     <UserAvatar name={c.displayName} uri={c.avatarUrl} size={34} />
                     <View style={styles.commentBody}>
-                      <Text style={styles.commentText}>
+                      <View style={styles.commentHead}>
                         <Text style={styles.commentName}>{c.displayName}</Text>
-                        <Text>  {c.body}</Text>
-                      </Text>
+                        {c.isBot && <RangerBadge small />}
+                      </View>
+                      <Text style={styles.commentText}>{c.body}</Text>
                       <Text style={styles.commentTime}>{timeAgo(c.createdAt)}</Text>
                     </View>
                     {!c.isMine && (
@@ -225,7 +227,10 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
       <View style={styles.postHead}>
         <UserAvatar name={post.displayName} uri={post.avatarUrl} size={40} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.postName} numberOfLines={1}>{post.displayName}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.postName} numberOfLines={1}>{post.displayName}</Text>
+            {post.isBot && <RangerBadge small />}
+          </View>
           <Text style={styles.postTime}>{timeAgo(post.createdAt)}</Text>
         </View>
       </View>
@@ -237,6 +242,8 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
           <SpeciesAvatar scientificName={post.scientificName ?? undefined} size={96} />
         </View>
       )}
+
+      {!!post.photoCredit && <Text style={styles.credit}>Photo: {post.photoCredit}</Text>}
 
       <View style={styles.actions}>
         <Pressable onPress={toggleLike} hitSlop={8} style={styles.action}>
@@ -298,8 +305,11 @@ const styles = StyleSheet.create({
   commentRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   commentBody: { flex: 1 },
   commentText: { fontSize: font.small, color: colors.text, lineHeight: 20 },
-  commentName: { fontFamily: fonts.bodyBold, color: colors.text },
+  commentName: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.text },
   commentMore: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  commentHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  credit: { fontSize: 11, color: colors.faint, paddingHorizontal: spacing.md, paddingTop: 6 },
   commentTime: { fontSize: font.tiny, color: colors.faint, marginTop: 2 },
 
   composer: {

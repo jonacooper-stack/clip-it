@@ -48,6 +48,8 @@ export default function Profile() {
   const streak = useAppStore((s) => s.streakCount);
   const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
   const setSaveToCameraRoll = useAppStore((s) => s.setSaveToCameraRoll);
+  const showRangers = useAppStore((s) => s.showRangers);
+  const setShowRangers = useAppStore((s) => s.setShowRangers);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
   const resetJournal = useJournalStore((s) => s.reset);
@@ -179,6 +181,17 @@ export default function Profile() {
                 label="Save photos to camera roll"
                 value={saveToCameraRoll}
                 onValueChange={setSaveToCameraRoll}
+              />
+              <Divider />
+            </>
+          )}
+          {isSupabaseConfigured && session && (
+            <>
+              <ToggleRow
+                icon="hardware-chip"
+                label="Show ClipIt Rangers (bots)"
+                value={showRangers}
+                onValueChange={setShowRangers}
               />
               <Divider />
             </>

@@ -1,5 +1,6 @@
 {
   "buildCommand": "npx expo export -p web && node scripts/build-web.mjs",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/app.html" }]
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/app.html" }],
+  "crons": [{ "path": "/api/rangers", "schedule": "23 15 * * *" }]
 }

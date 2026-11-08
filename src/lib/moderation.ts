@@ -42,3 +42,12 @@ export function checkText(text: string): string | null {
     ? 'That contains language that isn’t allowed on ClipIt. Please keep it friendly — see our community rules in the Terms of Use.'
     : null;
 }
+
+// Names reserved for the ClipIt team's labeled bot accounts (the Rangers), so
+// players can't pass themselves off as one (or as staff).
+export function reservedName(name: string): string | null {
+  const n = name.trim().toLowerCase();
+  return /^ranger\b/.test(n) || n.includes('clipit') || n.includes('clip it')
+    ? 'That name is reserved. Please choose a different display name.'
+    : null;
+}

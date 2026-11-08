@@ -119,6 +119,7 @@ Notes:
 - Camera, location and photo access are requested only when used. The app works if location is denied.
 - Location is stored only on the device and is never shared with other users.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
+- Accounts named "Ranger …" with a BOT badge are ClipIt Rangers: labeled bot accounts run by our team that post credited wildlife photos and pace the leaderboard. Tap the badge for an explanation; they can be hidden in Profile.
 ```
 
 **Contact:** your name, phone, email.

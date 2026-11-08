@@ -201,7 +201,32 @@ those builds until they update.
   MX `mx1.improvmx.com` (10) and `mx2.improvmx.com` (20), plus TXT
   `v=spf1 include:spf.improvmx.com ~all`, in Vercel → Domains → DNS records.
 
-### f. Before submitting
+### f. ClipIt Rangers (labeled bot accounts)
+Four Rangers (Pip, Wren, Ash, Kestrel) post credited wildlife photos and pace
+the leaderboard. Every Ranger shows a **BOT** badge (tap it for an
+explanation), players can hide them in Profile, and they can't be friended.
+How they score is in `api/_lib/rangers.ts`; in short, each has a steady pace,
+tracks a slice of the real community once there are 10+ active players, and
+stops gaining at a share of the top real player's score (Pip 55%, Wren 75%,
+Ash 88%, Kestrel 95%), so the leader is always a real player.
+
+One-time setup:
+1. Supabase SQL editor: run `supabase/migrations/0007_rangers.sql`.
+2. Vercel → Project → Settings → Environment Variables (Production):
+   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase → Project Settings → API Keys →
+     the **secret** (service_role) key. Server-only; never put it in the app.
+   - `CRON_SECRET`: any long random string (e.g. from a password manager).
+   Then redeploy so the function sees them.
+3. The job runs daily from Vercel Cron (`vercel.json`). To start the Rangers
+   right away, run it once by hand (it creates the four accounts):
+   `curl -H "Authorization: Bearer <CRON_SECRET>" https://clipitwildlife.app/api/rangers`
+   Add `?dry=1` to preview without changing anything.
+4. Logs: Vercel → Logs, search `rangers_`.
+
+To retire the Rangers: delete the four users in Supabase → Authentication →
+Users (their posts and likes go with them) and remove the `crons` entry.
+
+### g. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
   support address and company name, and make sure that inbox exists.
 - Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.

@@ -7,7 +7,7 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
-import { checkText } from './moderation';
+import { checkText, reservedName } from './moderation';
 
 export type Scope = 'everyone' | 'friends';
 // The wall's own scope: everyone, or people I follow (+ accepted friends).
@@ -31,6 +31,7 @@ export interface LeaderboardEntry {
   points: number;
   speciesCount: number;
   isMe: boolean;
+  isBot: boolean; // a ClipIt Ranger (labeled bot account)
 }
 
 export interface FeedPost {
@@ -49,6 +50,8 @@ export interface FeedPost {
   commentCount: number;
   isLiked: boolean; // did I like this post
   isFollowing: boolean; // am I following the author (always false for my own posts)
+  isBot: boolean; // posted by a ClipIt Ranger (labeled bot account)
+  photoCredit: string | null; // attribution for licensed photos (Rangers' posts)
 }
 
 export interface Comment {
@@ -59,6 +62,7 @@ export interface Comment {
   body: string;
   createdAt: string;
   isMine: boolean;
+  isBot: boolean;
 }
 
 export interface FriendRow {
@@ -71,7 +75,7 @@ export interface FriendRow {
 // Turn a raw backend error into something a player can read. Our own
 // user-facing messages (moderation, validation) pass through unchanged; the
 // technical detail goes to the console.
-const FRIENDLY_PREFIXES = ['That contains', 'Names need', 'Say something', 'You can’t', 'Accounts are not', 'You’re not signed'];
+const FRIENDLY_PREFIXES = ['That contains', 'That name is reserved', 'Names need', 'Say something', 'You can’t', 'Accounts are not', 'You’re not signed'];
 export function friendlyError(message: string | undefined, fallback = 'Something went wrong. Please try again in a moment.'): string {
   if (!message) return fallback;
   if (FRIENDLY_PREFIXES.some((p) => message.startsWith(p))) return message;
@@ -122,7 +126,7 @@ export async function syncMyProfile(displayName: string, points: number, species
     .select('points, species_count')
     .eq('id', uid)
     .maybeSingle();
-  const name = checkText(displayName) ? 'Explorer' : displayName;
+  const name = checkText(displayName) || reservedName(displayName) ? 'Explorer' : displayName;
   await supabase.from('profiles').upsert(
     {
       id: uid,
@@ -142,13 +146,49 @@ export async function updateDisplayName(name: string): Promise<{ error?: string 
   const clean = name.trim().replace(/\s+/g, ' ');
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
   if (clean.length < 2 || clean.length > 30) return { error: 'Names need 2–30 characters.' };
-  const blocked = checkText(clean);
+  const blocked = checkText(clean) ?? reservedName(clean);
   if (blocked) return { error: blocked };
   const { error } = await supabase.auth.updateUser({ data: { displayName: clean } });
   if (error) return { error: error.message };
   await supabase.from('profiles').upsert({ id: uid, display_name: clean }, { onConflict: 'id' });
   useAppStore.getState().setDisplayName(clean);
   return {};
+}
+
+// --- ClipIt Rangers (labeled bot accounts) ---
+
+// Columns added by migration 0007 (profiles.is_bot, feed_posts.photo_credit).
+// Until it has been run, queries that name them fail, so every read that uses
+// them retries without, and the app keeps working (no badges).
+function missingColumn(error: any): boolean {
+  const msg = String(error?.message ?? '');
+  return error?.code === '42703' || error?.code === 'PGRST204' || /is_bot|photo_credit/.test(msg);
+}
+
+async function selectWithFallback(build: (cols: string) => any, cols: string, fallbackCols: string): Promise<{ data: any[] | null; error: any }> {
+  const first = await build(cols);
+  if (first.error && missingColumn(first.error)) return build(fallbackCols);
+  return first;
+}
+
+// Profiles (name, avatar, bot flag) for a set of user ids.
+async function profilesFor(ids: string[]): Promise<Map<string, { name: string; avatar: string | null; isBot: boolean }>> {
+  const out = new Map<string, { name: string; avatar: string | null; isBot: boolean }>();
+  if (!supabase || !ids.length) return out;
+  const { data } = await selectWithFallback(
+    (cols) => supabase!.from('profiles').select(cols).in('id', ids),
+    'id, display_name, avatar_url, is_bot',
+    'id, display_name, avatar_url',
+  );
+  for (const p of (data ?? []) as any[]) {
+    out.set(p.id, { name: p.display_name || 'Explorer', avatar: p.avatar_url ?? null, isBot: Boolean(p.is_bot) });
+  }
+  return out;
+}
+
+// Players can hide Rangers (Profile → Show ClipIt Rangers).
+function rangersHidden(): boolean {
+  return !useAppStore.getState().showRangers;
 }
 
 // Ids of accepted friends (both directions), used to scope the leaderboard/wall.
@@ -175,26 +215,35 @@ async function followingIds(): Promise<string[]> {
 export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> {
   const uid = myId();
   if (!supabase || !uid) return [];
-  let q = supabase.from('profiles').select('id, display_name, avatar_url, points, species_count').order('points', { ascending: false }).limit(100);
-  if (scope === 'friends') {
-    const ids = [uid, ...(await acceptedFriendIds())];
-    q = q.in('id', ids);
-  }
-  const [{ data }, blocked] = await Promise.all([q, getBlockedIds()]);
-  return (data ?? []).filter((r: any) => !blocked.has(r.id)).map((r: any) => ({
-    id: r.id,
-    displayName: r.display_name || 'Explorer',
-    avatarUrl: r.avatar_url ?? null,
-    points: r.points ?? 0,
-    speciesCount: r.species_count ?? 0,
-    isMe: r.id === uid,
-  }));
+  const friendIds = scope === 'friends' ? [uid, ...(await acceptedFriendIds())] : null;
+  const build = (cols: string) => {
+    let q = supabase!.from('profiles').select(cols).order('points', { ascending: false }).limit(100);
+    if (friendIds) q = q.in('id', friendIds);
+    return q;
+  };
+  const [{ data }, blocked] = await Promise.all([
+    selectWithFallback(build, 'id, display_name, avatar_url, points, species_count, is_bot', 'id, display_name, avatar_url, points, species_count'),
+    getBlockedIds(),
+  ]);
+  const hideBots = rangersHidden();
+  return (data ?? [])
+    .filter((r: any) => !blocked.has(r.id) && !(hideBots && r.is_bot))
+    .map((r: any) => ({
+      id: r.id,
+      displayName: r.display_name || 'Explorer',
+      avatarUrl: r.avatar_url ?? null,
+      points: r.points ?? 0,
+      speciesCount: r.species_count ?? 0,
+      isMe: r.id === uid,
+      isBot: Boolean(r.is_bot),
+    }));
 }
 
 // Scalar columns only — display names are fetched separately (see enrichPosts)
 // rather than via a `profiles(display_name)` embed, so a flaky PostgREST
 // relationship/schema-cache can't blank the whole wall.
-const POST_COLUMNS = 'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at';
+const POST_COLUMNS_BASE = 'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at';
+const POST_COLUMNS = `${POST_COLUMNS_BASE}, photo_credit`;
 
 // Turn raw feed_posts rows into FeedPosts, batching the author-name, like,
 // comment and follow lookups into a handful of queries (not per-post).
@@ -204,8 +253,7 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   const ids = rows.map((r) => r.id);
   const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
 
-  const nameById = new Map<string, string>();
-  const avatarById = new Map<string, string>();
+  let people = new Map<string, { name: string; avatar: string | null; isBot: boolean }>();
   const likeCount = new Map<string, number>();
   const likedByMe = new Set<string>();
   const commentCount = new Map<string, number>();
@@ -213,15 +261,12 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
 
   if (supabase && ids.length) {
     const [profiles, likes, comments, follows] = await Promise.all([
-      supabase.from('profiles').select('id, display_name, avatar_url').in('id', authorIds),
+      profilesFor(authorIds),
       supabase.from('post_likes').select('post_id, user_id').in('post_id', ids),
       supabase.from('post_comments').select('post_id').in('post_id', ids),
       supabase.from('follows').select('following_id').eq('follower_id', uid).in('following_id', authorIds),
     ]);
-    for (const p of (profiles.data ?? []) as any[]) {
-      nameById.set(p.id, p.display_name || 'Explorer');
-      if (p.avatar_url) avatarById.set(p.id, p.avatar_url);
-    }
+    people = profiles;
     for (const l of (likes.data ?? []) as any[]) {
       likeCount.set(l.post_id, (likeCount.get(l.post_id) ?? 0) + 1);
       if (l.user_id === uid) likedByMe.add(l.post_id);
@@ -235,8 +280,8 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
   return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
-    displayName: nameById.get(r.user_id) || 'Explorer',
-    avatarUrl: avatarById.get(r.user_id) ?? null,
+    displayName: people.get(r.user_id)?.name || 'Explorer',
+    avatarUrl: people.get(r.user_id)?.avatar ?? null,
     commonName: r.common_name,
     scientificName: r.scientific_name,
     points: r.points ?? 0,
@@ -248,6 +293,8 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
     commentCount: commentCount.get(r.id) ?? 0,
     isLiked: likedByMe.has(r.id),
     isFollowing: r.user_id !== uid && followingSet.has(r.user_id),
+    isBot: Boolean(people.get(r.user_id)?.isBot),
+    photoCredit: r.photo_credit ?? null,
   }));
 }
 
@@ -260,19 +307,23 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
   const uid = myId();
   if (!supabase) return { posts: [], error: 'The community backend isn’t configured in this build.' };
   if (!uid) return { posts: [], error: 'Sign in to see the wall.' };
-  let q = supabase.from('feed_posts').select(POST_COLUMNS).order('created_at', { ascending: false }).limit(100);
-  if (scope === 'following') {
-    // My own posts + people I follow + accepted friends (friends are implicitly
-    // followed so existing friendships still surface).
-    const ids = Array.from(new Set([uid, ...(await followingIds()), ...(await acceptedFriendIds())]));
-    q = q.in('user_id', ids);
-  }
+  // My own posts + people I follow + accepted friends (friends are implicitly
+  // followed so existing friendships still surface).
+  const ids = scope === 'following'
+    ? Array.from(new Set([uid, ...(await followingIds()), ...(await acceptedFriendIds())]))
+    : null;
+  const build = (cols: string) => {
+    let q = supabase!.from('feed_posts').select(cols).order('created_at', { ascending: false }).limit(100);
+    if (ids) q = q.in('user_id', ids);
+    return q;
+  };
   // Surface the real error instead of swallowing it — otherwise a failed read
   // (RLS, schema, relationship) looks identical to an empty wall.
-  const [{ data, error }, blocked] = await Promise.all([q, getBlockedIds()]);
+  const [{ data, error }, blocked] = await Promise.all([selectWithFallback(build, POST_COLUMNS, POST_COLUMNS_BASE), getBlockedIds()]);
   if (error) return { posts: [], error: error.message };
   const visible = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
-  const posts = await enrichPosts(visible, uid);
+  let posts = await enrichPosts(visible, uid);
+  if (rangersHidden()) posts = posts.filter((p) => !p.isBot);
   return { posts };
 }
 
@@ -280,7 +331,12 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
 export async function getPost(postId: string): Promise<FeedPost | null> {
   const uid = myId();
   if (!supabase || !uid) return null;
-  const { data } = await supabase.from('feed_posts').select(POST_COLUMNS).eq('id', postId).maybeSingle();
+  const { data: rows } = await selectWithFallback(
+    (cols) => supabase!.from('feed_posts').select(cols).eq('id', postId).limit(1),
+    POST_COLUMNS,
+    POST_COLUMNS_BASE,
+  );
+  const data = rows?.[0];
   if (!data) return null;
   if ((await getBlockedIds()).has((data as any).user_id)) return null;
   const [post] = await enrichPosts([data], uid);
@@ -333,25 +389,20 @@ export async function getComments(postId: string): Promise<Comment[]> {
   const blocked = await getBlockedIds();
   const rows = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
   // Fetch commenter names/avatars separately (no embed) for the same resilience reason.
-  const nameById = new Map<string, string>();
-  const avatarById = new Map<string, string>();
-  const authorIds = Array.from(new Set(rows.map((r) => r.user_id)));
-  if (authorIds.length) {
-    const { data: profs } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', authorIds);
-    for (const p of (profs ?? []) as any[]) {
-      nameById.set(p.id, p.display_name || 'Explorer');
-      if (p.avatar_url) avatarById.set(p.id, p.avatar_url);
-    }
-  }
-  return rows.map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    displayName: nameById.get(r.user_id) || 'Explorer',
-    avatarUrl: avatarById.get(r.user_id) ?? null,
-    body: r.body,
-    createdAt: r.created_at,
-    isMine: r.user_id === uid,
-  }));
+  const people = await profilesFor(Array.from(new Set(rows.map((r) => r.user_id))));
+  const hideBots = rangersHidden();
+  return rows
+    .filter((r) => !(hideBots && people.get(r.user_id)?.isBot))
+    .map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      displayName: people.get(r.user_id)?.name || 'Explorer',
+      avatarUrl: people.get(r.user_id)?.avatar ?? null,
+      body: r.body,
+      createdAt: r.created_at,
+      isMine: r.user_id === uid,
+      isBot: Boolean(people.get(r.user_id)?.isBot),
+    }));
 }
 
 export async function addComment(postId: string, body: string): Promise<{ error?: string }> {
@@ -509,18 +560,20 @@ export async function getFriends(): Promise<FriendsState> {
   return state;
 }
 
-export async function searchUsers(query: string): Promise<{ id: string; displayName: string; avatarUrl: string | null }[]> {
+export async function searchUsers(query: string): Promise<{ id: string; displayName: string; avatarUrl: string | null; isBot: boolean }[]> {
   const uid = myId();
   const q = query.trim();
   if (!supabase || !uid || q.length < 2) return [];
-  const { data } = await supabase
-    .from('profiles')
-    .select('id, display_name, avatar_url')
-    .ilike('display_name', `%${q}%`)
-    .neq('id', uid)
-    .limit(20);
+  const { data } = await selectWithFallback(
+    (cols) => supabase!.from('profiles').select(cols).ilike('display_name', `%${q}%`).neq('id', uid).limit(20),
+    'id, display_name, avatar_url, is_bot',
+    'id, display_name, avatar_url',
+  );
   const blocked = await getBlockedIds();
-  return (data ?? []).filter((r: any) => !blocked.has(r.id)).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
+  const hideBots = rangersHidden();
+  return (data ?? [])
+    .filter((r: any) => !blocked.has(r.id) && !(hideBots && r.is_bot))
+    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null, isBot: Boolean(r.is_bot) }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {
