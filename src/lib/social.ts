@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
-import { resizedBase64 } from './prepareImage';
+import { resizedBase64, WALL_PHOTO, AVATAR_PHOTO } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { checkText, reservedName } from './moderation';
 
@@ -443,7 +443,7 @@ export async function shareToWall(input: {
   let photoUrl: string | null = null;
   if (input.photoUri) {
     try {
-      const b64 = await resizedBase64(resolvePhoto(input.photoUri) ?? input.photoUri);
+      const b64 = await resizedBase64(resolvePhoto(input.photoUri) ?? input.photoUri, WALL_PHOTO);
       if (b64) {
         const path = `${uid}/${Date.now()}.jpg`;
         // Pass the ArrayBuffer (not the view) — React Native's fetch uploads an
@@ -504,7 +504,7 @@ const AVATAR_BUCKET = 'avatars';
 export async function uploadAvatar(localUri: string): Promise<{ url?: string; error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
-  const b64 = await resizedBase64(resolvePhoto(localUri) ?? localUri);
+  const b64 = await resizedBase64(resolvePhoto(localUri) ?? localUri, AVATAR_PHOTO);
   if (!b64) return { error: 'Couldn’t read that image.' };
   // A fresh filename each time sidesteps any CDN caching of a replaced avatar.
   const path = `${uid}/avatar_${Date.now()}.jpg`;

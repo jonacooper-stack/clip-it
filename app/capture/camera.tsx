@@ -15,6 +15,7 @@ import { CameraView, useCameraPermissions, type CameraType, type FlashMode } fro
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
+import { CAPTURE_QUALITY } from '@/lib/prepareImage';
 import { Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
@@ -236,7 +237,7 @@ export default function CameraScreen() {
         // from the file so the AI payload stays under the request-size limit.
         photo = await camRef.current.takePictureAsync({
           base64: Platform.OS === 'web',
-          quality: 0.6,
+          quality: CAPTURE_QUALITY,
         });
       } catch {
         // Some browsers can't capture; continue without a photo so the demo loop still completes.
@@ -299,7 +300,7 @@ export default function CameraScreen() {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await ImagePicker.launchCameraAsync({ quality: 0.6, exif: true });
+      const res = await ImagePicker.launchCameraAsync({ quality: CAPTURE_QUALITY, exif: true });
       if (res.canceled || !res.assets?.length) return;
       const a = res.assets[0];
 
@@ -352,7 +353,7 @@ export default function CameraScreen() {
     try {
       let photo: { uri?: string } | undefined;
       try {
-        photo = await camRef.current.takePictureAsync({ quality: 0.6 });
+        photo = await camRef.current.takePictureAsync({ quality: CAPTURE_QUALITY });
       } catch {
         photo = undefined;
       }
