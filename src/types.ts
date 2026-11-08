@@ -64,6 +64,30 @@ export interface Sighting {
   /** Optional citizen-science answers (questionId -> selected values). Some
    * questions allow more than one. Legacy data may hold a single string. */
   science?: Record<string, string[]>;
+  /** The Field Crew's notes on this sighting (Dr. Hoot's facts, Magpie's finds). */
+  crew?: CrewNotes;
+}
+
+export interface CrewOtherPost {
+  postId: string;
+  photoUrl: string;
+  name: string;
+  likes: number;
+  createdAt: string;
+}
+
+export interface CrewPhoto {
+  url: string;
+  credit: string;
+  species: string;
+}
+
+export interface CrewNotes {
+  facts: string[];
+  tip: string;
+  others: CrewOtherPost[];
+  photo: CrewPhoto | null;
+  fetchedAt: number;
 }
 
 export interface Quest {

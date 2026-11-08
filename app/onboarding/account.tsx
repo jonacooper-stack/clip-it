@@ -15,6 +15,12 @@ import { checkText, reservedName } from '@/lib/moderation';
 const webInputReset: any =
   Platform.OS === 'web' ? { outlineStyle: 'none', borderWidth: 0, backgroundColor: 'transparent' } : null;
 
+// After creating an account (or signing in with Apple/Google), ask for the
+// home region unless we already know it, then the ethos screen.
+function afterAuth(): string {
+  return useAppStore.getState().homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos';
+}
+
 export default function Account() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string }>();
@@ -74,7 +80,7 @@ export default function Account() {
     }
     if (isSignup) {
       // Continue onboarding; ethos marks the user onboarded.
-      router.replace('/onboarding/ethos');
+      router.replace(afterAuth());
     } else {
       // Returning user — their profile already exists, skip straight in.
       setOnboarded(true);
@@ -96,7 +102,7 @@ export default function Account() {
     // so continue onboarding ourselves (ethos marks the user onboarded).
     if (Platform.OS !== 'web') {
       setBusy(false);
-      router.replace('/onboarding/ethos');
+      router.replace(afterAuth());
     }
   };
 
@@ -112,7 +118,7 @@ export default function Account() {
       return;
     }
     // Same as Google: continue onboarding (ethos marks the user onboarded).
-    router.replace('/onboarding/ethos');
+    router.replace(afterAuth());
   };
 
   if (sent) {

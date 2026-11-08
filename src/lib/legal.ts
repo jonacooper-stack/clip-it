@@ -35,7 +35,7 @@ export const PRIVACY_GLANCE: { collected: GlanceRow[]; never: string[] } = {
     { icon: 'mail-outline', title: 'Contact info', detail: 'Your email address and display name, to run your account.' },
     { icon: 'image-outline', title: 'Photos', detail: 'Photos you take are sent to our AI to identify the animal. Photos you share to the wall, and your profile picture, are stored so others can see them.' },
     { icon: 'chatbubble-outline', title: 'Your posts', detail: 'Captions, comments, likes, follows and reports you make.' },
-    { icon: 'person-outline', title: 'Account ID & age range', detail: 'An account ID, and your age range (13–17 or adult) from sign-up. We never store your birth date.' },
+    { icon: 'person-outline', title: 'Account ID, age range & home region', detail: 'An account ID, your age range (13–17 or adult) from sign-up, and the home region you pick for wildlife forecasts. We never store your birth date.' },
   ],
   never: [
     'We never share your location with other players, and wall posts never include where you were.',
@@ -57,6 +57,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       'Account details: your email address, a password (stored only in hashed form by our authentication provider), your display name, and the age range you choose. If you sign in with Apple or Google, we receive your name and email (or Apple’s private relay email if you choose to hide it) from them.',
       'Profile picture: if you add one, it is visible to other signed-in players.',
       'Things you share: sightings you post to the wall (photo, species, points and caption), comments, likes, follows, friend requests, and reports or blocks you make.',
+      'Home region: the region you choose (for example “Northeast”), so the Field Crew can send forecasts for where you explore. If you tap “use my current location”, your phone suggests a region on the device; your location is not sent to us.',
     ],
   },
   {
@@ -64,6 +65,12 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     paragraphs: [
       'When you capture or upload a photo, a downscaled copy is sent to our server, which asks an AI service (Anthropic’s Claude) to identify the animal. The copy is sent only to produce the identification; we don’t keep it on our server, and our AI provider processes it under commercial terms that don’t allow it to use your photos to train its models.',
       'Downscaling removes the photo’s embedded metadata (such as GPS coordinates) before anything leaves your device. Photos you share to the wall have the same metadata removed.',
+    ],
+  },
+  {
+    heading: 'The Field Crew',
+    paragraphs: [
+      'The Field Crew (Dr. Hoot, Scout, Moss, Magpie and Kestrel) are bots made by the ClipIt team and are always labeled as bots. When you log a sighting, the species name (never your photo or location) is sent to our server so Dr. Hoot can share facts about it and Magpie can show other players’ wall posts of the same species. Facts and weekly forecasts are written by our AI provider and stored per species or per region, not per person. Weekly challenges and duels are worked out on your phone from your journal.',
     ],
   },
   {
@@ -249,8 +256,8 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
     a: 'In the app, go to Profile → Delete account. This permanently deletes your account, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
   },
   {
-    q: 'Who are the ClipIt Rangers?',
-    a: 'Rangers are bot accounts run by the ClipIt team, and they always show a “BOT” badge. They post real wildlife photos (credited to the photographers) and set the pace on the leaderboard so there’s always someone to chase. They stop gaining points when they get close to the top real player, so you can always pass them. Hide them any time with Profile → Show ClipIt Rangers.',
+    q: 'Who are the Field Crew?',
+    a: 'Five friendly bots made by the ClipIt team, always marked with a “BOT” badge: Dr. Hoot shares facts about what you find, Scout sends a weekly wildlife forecast for your home region, Moss sets your weekly challenges, Magpie collects the best sightings, and Kestrel challenges you to a weekly duel. Kestrel is the only one on the leaderboard and stops climbing just below the top real player, so you can always pass it. Find them under the bell on the Feed; hide them from the wall in Profile.',
   },
   {
     q: 'Who can use ClipIt?',

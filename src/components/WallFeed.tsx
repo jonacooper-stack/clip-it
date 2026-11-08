@@ -7,7 +7,9 @@ import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
-import { RangerBadge } from '@/components/social/RangerBadge';
+import { CrewBadge } from '@/components/social/CrewBadge';
+import { CrewStrip } from '@/components/crew/CrewStrip';
+import { useAppStore } from '@/state/useAppStore';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -40,12 +42,14 @@ export function WallFeed() {
   );
 
   const [safety, setSafety] = useState<SafetyTarget | null>(null);
+  const showCrew = useAppStore((s) => s.showCrew);
 
   const onRemoved = (id: string) => setPosts((ps) => (ps ? ps.filter((p) => p.id !== id) : ps));
   const onBlocked = (userId: string) => setPosts((ps) => (ps ? ps.filter((p) => p.userId !== userId) : ps));
 
   return (
     <ScrollView contentContainerStyle={styles.feed} showsVerticalScrollIndicator={false}>
+      {showCrew && <CrewStrip posts={posts ?? []} />}
       <View style={styles.feedToggle}>
         <Segmented
           value={scope}
@@ -132,7 +136,7 @@ function PostCard({
         <View style={styles.igHeadText}>
           <View style={styles.nameRow}>
             <Text style={styles.igName} numberOfLines={1}>{post.displayName}</Text>
-            {post.isBot && <RangerBadge small />}
+            {post.isBot && <CrewBadge small />}
           </View>
           <Text style={styles.igTime} numberOfLines={1}>{timeAgo(post.createdAt)}</Text>
         </View>
@@ -168,8 +172,6 @@ function PostCard({
           </View>
         )}
       </Pressable>
-
-      {!!post.photoCredit && <Text style={styles.credit} numberOfLines={1}>Photo: {post.photoCredit}</Text>}
 
       <View style={styles.igActions}>
         <Pressable onPress={toggleLike} hitSlop={8} style={styles.igAction}>

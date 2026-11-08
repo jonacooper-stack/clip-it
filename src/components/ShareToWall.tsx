@@ -7,6 +7,7 @@ import { colors, spacing, font, fonts } from '@/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuthStore } from '@/state/useAuthStore';
 import { shareToWall, friendlyError } from '@/lib/social';
+import { fetchCrewNotes } from '@/lib/crew/api';
 import type { Sighting } from '@/types';
 
 // Lets a user post an identified sighting to the community wall. De-identified —
@@ -46,6 +47,8 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       setState('error');
     } else {
       setState('done');
+      // Dr. Hoot drops a fact on the new post (and the crew's notes refresh).
+      if (res.postId) fetchCrewNotes(sighting.id, { postId: res.postId });
     }
   };
 

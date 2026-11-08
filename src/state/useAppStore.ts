@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AgeBracket } from '@/types';
+import type { RegionKey } from '../../shared/crew';
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
@@ -20,8 +21,12 @@ interface AppState {
   streakCount: number;
   lastActiveDate: string | null;
   saveToCameraRoll: boolean;
-  /** Show the ClipIt Rangers (labeled bot accounts) on the wall and leaderboard. */
-  showRangers: boolean;
+  /** Show the Field Crew (labeled bots) on the wall, comments and leaderboard. */
+  showCrew: boolean;
+  /** Where the player usually explores; drives Scout's forecasts. */
+  homeRegion: RegionKey | null;
+  /** When the player last opened the Field Crew inbox (epoch ms). */
+  crewSeenAt: number;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -29,7 +34,9 @@ interface AppState {
   setDisplayName: (name: string) => void;
   setAvatarUrl: (url: string | null) => void;
   setSaveToCameraRoll: (v: boolean) => void;
-  setShowRangers: (v: boolean) => void;
+  setShowCrew: (v: boolean) => void;
+  setHomeRegion: (r: RegionKey | null) => void;
+  markCrewSeen: () => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -46,7 +53,9 @@ export const useAppStore = create<AppState>()(
       streakCount: 0,
       lastActiveDate: null,
       saveToCameraRoll: true,
-      showRangers: true,
+      showCrew: true,
+      homeRegion: null,
+      crewSeenAt: 0,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -54,7 +63,9 @@ export const useAppStore = create<AppState>()(
       setDisplayName: (displayName) => set({ displayName }),
       setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
-      setShowRangers: (showRangers) => set({ showRangers }),
+      setShowCrew: (showCrew) => set({ showCrew }),
+      setHomeRegion: (homeRegion) => set({ homeRegion }),
+      markCrewSeen: () => set({ crewSeenAt: Date.now() }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -75,7 +86,9 @@ export const useAppStore = create<AppState>()(
           streakCount: 0,
           lastActiveDate: null,
           saveToCameraRoll: true,
-          showRangers: true,
+          showCrew: true,
+          homeRegion: null,
+          crewSeenAt: 0,
         }),
     }),
     {
