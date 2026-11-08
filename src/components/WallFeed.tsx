@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
@@ -8,8 +8,12 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { CrewBadge } from '@/components/social/CrewBadge';
-import { CrewStrip } from '@/components/crew/CrewStrip';
+import { InboxCard } from '@/components/crew/InboxCard';
+import { YourWeekCard } from '@/components/crew/YourWeekCard';
 import { useAppStore } from '@/state/useAppStore';
+import { useCrewInbox } from '@/lib/crew/useCrewInbox';
+import { FEED_KINDS, type InboxItem } from '@/lib/crew/inbox';
+import { addDays, startOfDay } from '@/lib/crew/time';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -17,8 +21,35 @@ import {
   type FeedPost, type FeedScope,
 } from '@/lib/social';
 
-// The Instagram-style wall feed — scope toggle + a column of big-image posts.
-// Used as the app's home Feed and reusable anywhere.
+type FeedEntry = { key: string; at: number } & ({ type: 'post'; post: FeedPost } | { type: 'crew'; item: InboxItem });
+
+const CREW_WINDOW_MS = 14 * 86_400_000;
+
+// Magpie's weekly picks: the most-liked posts of the past week, on Sunday evening.
+function magpiePicks(posts: FeedPost[], now: number): InboxItem | null {
+  const today = startOfDay(now);
+  const back = (new Date(today).getDay() + 7) % 7; // days since Sunday
+  let at = addDays(today, -back) + 17 * 3600_000;
+  if (at > now) at = addDays(at, -7);
+  const top = posts
+    .filter((p) => !p.isBot && p.photoUrl && p.likeCount > 0 && Date.parse(p.createdAt) <= at && Date.parse(p.createdAt) > at - 7 * 86_400_000)
+    .sort((a, b) => b.likeCount - a.likeCount)
+    .slice(0, 3);
+  if (top.length < 2) return null;
+  return {
+    id: `magpie_picks:${at}`,
+    crew: 'magpie',
+    kind: 'magpie',
+    at,
+    title: 'Magpie’s picks of the week',
+    body: 'The shiniest sightings from the wall this week. Into the collection they go!',
+    others: top.map((p) => ({ postId: p.id, photoUrl: p.photoUrl!, name: p.displayName, likes: p.likeCount, createdAt: p.createdAt })),
+  };
+}
+
+// The home feed: one timeline of wall posts and Field Crew moments (facts,
+// forecasts, challenges, duel updates), newest first, with the week's
+// challenges and duel pinned on top.
 export function WallFeed() {
   const [scope, setScope] = useState<FeedScope>('everyone');
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
@@ -43,13 +74,49 @@ export function WallFeed() {
 
   const [safety, setSafety] = useState<SafetyTarget | null>(null);
   const showCrew = useAppStore((s) => s.showCrew);
+  const markCrewSeen = useAppStore((s) => s.markCrewSeen);
+  const { items: crewItems } = useCrewInbox();
+
+  // New crew cards are highlighted while you look; leaving the feed marks
+  // them seen (so the bell only counts what you haven't seen anywhere).
+  const seenAtOpen = useRef(useAppStore.getState().crewSeenAt);
+  useFocusEffect(
+    useCallback(() => {
+      seenAtOpen.current = useAppStore.getState().crewSeenAt;
+      return () => markCrewSeen();
+    }, [markCrewSeen]),
+  );
+
+  const now = Date.now();
+  const pinnedRegion = showCrew ? crewItems.find((i) => i.kind === 'region') : undefined;
+  const week = crewItems.find((i) => i.kind === 'challenges');
+  const duel = crewItems.find((i) => i.kind === 'duel')?.duel;
+  const intro = crewItems.find((i) => i.kind === 'intro');
+  const timeline = useMemo<FeedEntry[]>(() => {
+    const out: FeedEntry[] = (posts ?? []).map((p) => ({ key: `post:${p.id}`, at: Date.parse(p.createdAt), type: 'post', post: p }));
+    if (showCrew) {
+      for (const it of crewItems) {
+        if (FEED_KINDS.has(it.kind) && now - it.at < CREW_WINDOW_MS) out.push({ key: `crew:${it.id}`, at: it.at, type: 'crew', item: it });
+      }
+      const picks = magpiePicks(posts ?? [], now);
+      if (picks && now - picks.at < CREW_WINDOW_MS) out.push({ key: `crew:${picks.id}`, at: picks.at, type: 'crew', item: picks });
+    }
+    return out.sort((a, b) => b.at - a.at);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts, crewItems, showCrew]);
+  const crewCount = timeline.filter((e) => e.type === 'crew').length;
 
   const onRemoved = (id: string) => setPosts((ps) => (ps ? ps.filter((p) => p.id !== id) : ps));
   const onBlocked = (userId: string) => setPosts((ps) => (ps ? ps.filter((p) => p.userId !== userId) : ps));
 
   return (
     <ScrollView contentContainerStyle={styles.feed} showsVerticalScrollIndicator={false}>
-      {showCrew && <CrewStrip posts={posts ?? []} />}
+      {pinnedRegion && (
+        <View style={styles.crewWrap}>
+          <InboxCard item={pinnedRegion} />
+        </View>
+      )}
+      {showCrew && week?.challenges && duel && <YourWeekCard challenges={week.challenges} duel={duel} />}
       <View style={styles.feedToggle}>
         <Segmented
           value={scope}
@@ -57,17 +124,38 @@ export function WallFeed() {
           options={[{ value: 'everyone', label: 'Everyone' }, { value: 'following', label: 'Following' }]}
         />
       </View>
-      {posts === null ? (
+      {posts === null && crewCount === 0 ? (
         <Loading />
-      ) : error ? (
-        <Empty icon="cloud-offline-outline" text={'Couldn’t load the wall right now.\nCheck your connection and try again in a moment.'} />
-      ) : posts.length === 0 ? (
-        <Empty
-          icon="images-outline"
-          text={scope === 'following' ? 'Follow people to fill your feed — tap Follow on any post, or find friends in Community.' : 'Nothing shared yet. Tap the camera to ClipIt your first sighting!'}
-        />
       ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} onRemoved={onRemoved} onMore={setSafety} />)
+        <>
+          {error && (
+            <Text style={styles.inlineNote}>Couldn’t load posts from the wall right now. Check your connection and try again in a moment.</Text>
+          )}
+          {!error && posts?.length === 0 && (
+            <Text style={styles.inlineNote}>
+              {scope === 'following'
+                ? 'Follow people to see their posts here: tap Follow on any post, or find friends in Community.'
+                : 'No posts on the wall yet. Tap the camera to ClipIt your first sighting!'}
+            </Text>
+          )}
+          {timeline.map((e) =>
+            e.type === 'post' ? (
+              <PostCard key={e.key} post={e.post} onRemoved={onRemoved} onMore={setSafety} />
+            ) : (
+              <View key={e.key} style={styles.crewWrap}>
+                <InboxCard item={e.item} unread={e.item.at > seenAtOpen.current} />
+              </View>
+            ),
+          )}
+          {showCrew && intro && crewCount < 8 && (
+            <View style={styles.crewWrap}>
+              <InboxCard item={intro} />
+            </View>
+          )}
+          {timeline.length === 0 && !showCrew && !error && posts?.length === 0 && (
+            <Empty icon="images-outline" text="Nothing here yet. Tap the camera to ClipIt your first sighting!" />
+          )}
+        </>
       )}
       <SafetySheet
         target={safety}
@@ -212,6 +300,8 @@ function PostCard({
 
 const styles = StyleSheet.create({
   feed: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  crewWrap: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  inlineNote: { fontSize: font.small, color: colors.muted, textAlign: 'center', paddingHorizontal: spacing.xl, marginBottom: spacing.lg, lineHeight: 20 },
   feedToggle: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   igCard: { marginBottom: spacing.lg },
   igHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },

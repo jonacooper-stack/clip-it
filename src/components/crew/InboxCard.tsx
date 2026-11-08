@@ -7,6 +7,7 @@ import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { CREW } from '../../../shared/crew';
 import type { InboxItem } from '@/lib/crew/inbox';
+import { resolvePhoto } from '@/lib/photoStore';
 
 const GROUP_ICON: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   bird: 'bird',
@@ -101,7 +102,7 @@ export function InboxCard({ item, unread }: { item: InboxItem; unread?: boolean 
         </View>
       )}
 
-      {item.duel && item.kind === 'duel' && (
+      {item.duel && (item.kind === 'duel' || item.kind === 'kestrel_daily') && (
         <View style={styles.duel}>
           <View style={styles.duelSide}>
             <Text style={styles.duelLabel}>You</Text>
@@ -132,7 +133,7 @@ export function InboxCard({ item, unread }: { item: InboxItem; unread?: boolean 
 
       {!!item.photoUri && (
         <View style={styles.block}>
-          <Image source={{ uri: item.photoUri }} style={styles.photo} contentFit="cover" transition={150} />
+          <Image source={{ uri: resolvePhoto(item.photoUri) ?? item.photoUri }} style={styles.photo} contentFit="cover" transition={150} />
           {!!item.photoCredit && <Text style={styles.credit}>Photo: {item.photoCredit}</Text>}
         </View>
       )}

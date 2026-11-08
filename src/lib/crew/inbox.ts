@@ -2,11 +2,11 @@
 // from the journal, this week's challenges and duel, and Scout's forecast.
 // Nothing here is stored; it's recomputed, so it's always in sync.
 import type { CrewOtherPost, Sighting } from '@/types';
-import type { Forecast, ForecastItem } from '@/state/useCrewStore';
+import type { Forecast, ForecastItem, TodayPick } from '@/state/useCrewStore';
 import { regionByKey, withArticle, type CrewKey, type RegionKey } from '../../../shared/crew';
 import { challengeStatus, SWEEP_BONUS, type ChallengeStatus, type GroupOf } from './challenges';
-import { DUEL_WIN_BONUS, duelState, type DuelState } from './duel';
-import { addWeeks, DAY_MS, hash, startOfWeek } from './time';
+import { DUEL_WIN_BONUS, duelState, kestrelSoFar, weekPoints, type DuelState } from './duel';
+import { addDays, addWeeks, DAY_MS, hash, localDateStart, startOfDay, startOfWeek } from './time';
 
 export type InboxKind =
   | 'intro'
@@ -18,7 +18,12 @@ export type InboxKind =
   | 'duel_result'
   | 'milestone'
   | 'hoot'
-  | 'magpie';
+  | 'magpie'
+  | 'species_of_day'
+  | 'spotlight'
+  | 'kestrel_daily'
+  | 'nudge'
+  | 'on_this_day';
 
 export interface InboxItem {
   id: string;
@@ -66,6 +71,7 @@ export function buildInbox(opts: {
   forecast: Forecast | null;
   seed: string;
   groupOf: GroupOf;
+  today?: TodayPick[]; // Dr. Hoot's species of the day, recent days
 }): InboxItem[] {
   const now = opts.now ?? Date.now();
   const { sightings, seed, groupOf } = opts;
@@ -193,8 +199,148 @@ export function buildInbox(opts: {
     }
   }
 
+  // ---------- daily crew moments (something new every day) ----------
+  const today0 = startOfDay(now);
+  const hour = (day: number, h: number) => day + h * 3600_000;
+
+  // Dr. Hoot: species of the day (from the server, cached per local date)
+  for (const t of opts.today ?? []) {
+    const at = hour(localDateStart(t.date), 8);
+    if (at > now || now - at > 14 * DAY_MS || !t.facts.length) continue;
+    const fact = t.facts[hash(t.date) % t.facts.length];
+    items.push({
+      id: `sod:${t.region}:${t.date}`,
+      crew: 'hoot',
+      kind: 'species_of_day',
+      at,
+      title: `Species of the day: ${t.species}`,
+      body: t.tip ? `${fact}\n\nField tip: ${t.tip}` : fact,
+      photoUri: t.photo.url,
+      photoCredit: t.photo.credit,
+    });
+  }
+
+  // Scout: one pick from this week's forecast each day after Monday
+  if (opts.region && opts.forecast?.items.length) {
+    const p = personaliseForecast(opts.forecast, sightings, groupOf, opts.region);
+    for (let d = 1; d < 7; d++) {
+      const day = addDays(week, d);
+      const at = hour(day, 9);
+      if (at > now) break;
+      const it = p.items[(d - 1) % p.items.length];
+      items.push({
+        id: `spotlight:${opts.forecast.weekOf}:${d}`,
+        crew: 'scout',
+        kind: 'spotlight',
+        at,
+        title: `Scout’s pick today: ${it.title}`,
+        body: it.where ? `${it.body} Where: ${it.where}.` : it.body,
+        photoUri: it.photo?.url,
+        photoCredit: it.photo?.credit,
+        href: '/crew',
+        cta: 'See the whole forecast',
+      });
+    }
+  }
+
+  // Kestrel: an evening duel update every day of the week
+  {
+    const target = duel.target;
+    for (let d = 0; d < 7; d++) {
+      const at = hour(addDays(week, d), 18);
+      if (at > now) break;
+      const you = weekPoints(sightings.filter((s) => s.observedAt < at), week);
+      const k = kestrelSoFar(target, week, at, seed);
+      const lead = you - k;
+      const daysLeft = 6 - d;
+      const say = (xs: string[]) => pick(xs, `${seed}:${week}:${d}:${Math.sign(lead)}`);
+      items.push({
+        id: `kestrel_daily:${week}:${d}`,
+        crew: 'kestrel',
+        kind: 'kestrel_daily',
+        at,
+        title:
+          d === 6
+            ? lead > 0
+              ? `Final day. You lead ${you}–${k}.`
+              : `Final day. I lead ${k}–${you}.`
+            : lead > 0
+              ? `You’re ahead ${you}–${k}. For now.`
+              : lead < 0
+                ? `I’m up ${k}–${you}.`
+                : `Tied at ${you}.`,
+        body:
+          lead > 0
+            ? say(['I’ve been circling. Don’t get comfortable.', 'Enjoy the view from up there.', 'Lucky streak. It won’t last.'])
+            : lead < 0
+              ? `${say(['Another good day in the sky for me.', 'Catch me if you can.', 'Tick tock.'])} ${daysLeft ? `${plural(daysLeft, 'day')} left.` : 'Last chance tonight.'}`
+              : say(['Dead even. Your move.', 'Neck and neck. I like it.']),
+        duel: { weekStart: week, you, kestrel: k, target, finished: false, daysLeft },
+      });
+    }
+  }
+
+  // Moss: a nudge when you're one sighting from finishing a challenge
+  {
+    const nudged = new Set<string>();
+    for (let d = 0; d < 7; d++) {
+      const at = hour(addDays(week, d), 12);
+      if (at > now) break;
+      const sofar = challengeStatus(week, sightings.filter((s) => s.observedAt < at), seed, groupOf);
+      const close = sofar.find((c) => !c.done && c.def.goal > 1 && c.progress === c.def.goal - 1 && !nudged.has(c.def.id));
+      if (!close) continue;
+      nudged.add(close.def.id);
+      items.push({
+        id: `nudge:${week}:${close.def.id}`,
+        crew: 'moss',
+        kind: 'nudge',
+        at,
+        title: `One more for “${close.def.title}”`,
+        body: `${close.def.description}. You’re one away. +${close.def.reward} when you finish it.`,
+      });
+    }
+  }
+
+  // "One year ago today" from the journal
+  for (let d = 0; d < 14; d++) {
+    const day = addDays(today0, -d);
+    const yearAgo = addDays(day, -365);
+    const memory = counted.find((s) => s.observedAt >= yearAgo && s.observedAt < addDays(yearAgo, 1) && s.species?.commonName);
+    if (!memory) continue;
+    const at = hour(day, 7);
+    if (at > now) continue;
+    items.push({
+      id: `otd:${memory.id}`,
+      crew: 'hoot',
+      kind: 'on_this_day',
+      at,
+      title: `One year ago today: ${withArticle(memory.species!.commonName)}`,
+      body: 'Hoo! Remember this one? Same time of year, so it might be around again.',
+      photoUri: memory.photoUri,
+      href: `/sighting/${memory.id}`,
+      cta: 'Open the sighting',
+    });
+  }
+
   return items.sort((a, b) => b.at - a.at);
 }
+
+// Which inbox items belong in the feed timeline. "Live" cards (this week's
+// challenges and duel) are summarised in the pinned Your Week card instead,
+// and the intro only shows when there's little else.
+export const FEED_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
+  'forecast',
+  'challenge_done',
+  'duel_result',
+  'milestone',
+  'hoot',
+  'magpie',
+  'species_of_day',
+  'spotlight',
+  'kestrel_daily',
+  'nudge',
+  'on_this_day',
+]);
 
 export function unreadCount(items: InboxItem[], seenAt: number): number {
   return items.filter((i) => i.at > seenAt && i.kind !== 'intro').length;

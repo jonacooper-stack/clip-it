@@ -214,12 +214,18 @@ Five playful animal-bots, each with a job, always shown with a **BOT** badge:
   recent weeks (+15 for a win), and the only crew member on the leaderboard
   (pacing in `api/_lib/kestrel.ts`; never passes the top real player).
 
-Where: the bell on the Feed opens the crew inbox; a crew strip sits at the top
-of the feed; notes appear on each sighting. Players pick a home region after
+Where: the Feed is one timeline of wall posts and crew moments (species of
+the day, Scout's daily pick, Kestrel's evening duel update, Moss's nudges and
+completions, Dr. Hoot's notes on your firsts, Magpie's finds and weekly picks,
+"one year ago today"), with this week's challenges + duel pinned on top as
+"Your week". The bell opens the full crew inbox; notes also appear on each
+sighting. "Show Field Crew on the wall" (Profile) turns the crew cards off. Players pick a home region after
 sign-up (or in Profile); "use my current location" only suggests one on-device.
 
 How it runs:
-- `POST /api/crew/notes` and `GET /api/crew/forecast` (signed-in only) call
+- `GET /api/crew/today` (species of the day: a regional library photo, cycling
+  without repeats, plus cached facts),
+  `POST /api/crew/notes` and `GET /api/crew/forecast` (signed-in only) call
   Claude (`claude-opus-5-5`, low effort, cached per species / per region-week).
   They work with just `ANTHROPIC_API_KEY`; caching across instances and
   Dr. Hoot's comments need the service role key below.
