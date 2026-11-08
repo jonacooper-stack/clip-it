@@ -139,7 +139,40 @@ eas build -p android --profile preview    # direct APK install link, no review
 ```
 Send friends the link; they tap and install. Same OTA updates apply.
 
-## 7. Before a public store launch (not needed for friends testing)
-- Privacy policy + terms (required by the store; extra-important with kids — see ROADMAP).
-- Store listing: screenshots, description, age rating.
-- Account deletion path (App Store requirement once you have accounts).
+## 7. App Store launch checklist
+
+The app-side requirements are built in: in-app account deletion, Sign in with
+Apple, report + block, a profanity filter, and the privacy policy and terms of
+use (in the app and on the web). What's left is setup in your accounts:
+
+### a. Supabase (one time)
+1. **SQL editor:** run `supabase/migrations/0006_safety_and_account_deletion.sql`.
+   This adds blocks, reports and the `delete_my_account()` function. Until it
+   runs, Report/Block/Delete show an error and nothing else breaks.
+2. **Authentication → Providers → Apple:** enable it, and under **Client IDs**
+   add `com.clipitwildlife.app`. For native iOS sign-in this is all you need;
+   the secret key fields are only for web sign-in.
+3. **Moderation:** check **Table editor → content_reports** daily (Apple expects
+   reports to be acted on within 24h). To take content down, delete the row in
+   `feed_posts` / `post_comments`. To ban someone, delete the user under
+   **Authentication → Users**. Mark the report `actioned` or `dismissed`.
+   Tip: Database → Webhooks can email or Slack you on each new report.
+
+### b. Apple
+- No manual step for Sign in with Apple: `ios.usesAppleSignIn` in `app.json`
+  makes EAS turn on the capability for the App ID at the next build.
+- A **new EAS build is required** (native change: Apple sign-in + iPhone-only).
+  An OTA update won't deliver it.
+
+### c. App Store Connect listing
+- **Privacy Policy URL**, **App Privacy** answers, and age rating: see
+  [APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md).
+- Screenshots: **6.9" iPhone only** (the app is iPhone-only, `supportsTablet: false`).
+- Description, keywords, support URL, category (Education or Games → Family).
+- **App Review Information:** a demo email/password login.
+- Version 1.0 → select the build → **Submit for Review**.
+
+### d. Before submitting
+- Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
+  support address and company name, and make sure that inbox exists.
+- Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.

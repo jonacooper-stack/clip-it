@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { timeAgo } from '@/lib/timeAgo';
+import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
   getPost, getComments, addComment, likePost, unlikePost, deletePost,
@@ -26,6 +27,7 @@ export default function PostDetail() {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [safety, setSafety] = useState<SafetyTarget | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const goBack = () => {
@@ -71,6 +73,8 @@ export default function PostDetail() {
       loadComments();
       setPost((p) => (p ? { ...p, commentCount: p.commentCount + 1 } : p));
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    } else {
+      Alert.alert('Couldn’t post comment', res.error);
     }
   };
 
@@ -84,6 +88,15 @@ export default function PostDetail() {
         {post && post.isMine ? (
           <Pressable onPress={unshare} style={styles.iconBtn} hitSlop={8}>
             <Ionicons name="trash-outline" size={22} color={colors.danger} />
+          </Pressable>
+        ) : post ? (
+          <Pressable
+            onPress={() => setSafety({ type: 'post', id: post.id, userId: post.userId, displayName: post.displayName })}
+            style={styles.iconBtn}
+            hitSlop={8}
+            accessibilityLabel="Report or block"
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
           </Pressable>
         ) : (
           <View style={styles.iconBtn} />
@@ -128,6 +141,16 @@ export default function PostDetail() {
                       </Text>
                       <Text style={styles.commentTime}>{timeAgo(c.createdAt)}</Text>
                     </View>
+                    {!c.isMine && (
+                      <Pressable
+                        onPress={() => setSafety({ type: 'comment', id: c.id, userId: c.userId, displayName: c.displayName })}
+                        hitSlop={10}
+                        style={styles.commentMore}
+                        accessibilityLabel="Report or block"
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={16} color={colors.faint} />
+                      </Pressable>
+                    )}
                   </View>
                 ))
               )}
@@ -160,6 +183,19 @@ export default function PostDetail() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <SafetySheet
+        target={safety}
+        onClose={() => setSafety(null)}
+        onReported={(t) => {
+          if (t.type === 'comment') setComments((cs) => (cs ? cs.filter((c) => c.id !== t.id) : cs));
+          else goBack();
+        }}
+        onBlocked={(userId) => {
+          if (post && post.userId === userId) goBack();
+          else setComments((cs) => (cs ? cs.filter((c) => c.userId !== userId) : cs));
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -263,6 +299,7 @@ const styles = StyleSheet.create({
   commentBody: { flex: 1 },
   commentText: { fontSize: font.small, color: colors.text, lineHeight: 20 },
   commentName: { fontFamily: fonts.bodyBold, color: colors.text },
+  commentMore: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   commentTime: { fontSize: font.tiny, color: colors.faint, marginTop: 2 },
 
   composer: {

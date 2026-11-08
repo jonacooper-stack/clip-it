@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
+import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -36,7 +37,10 @@ export function WallFeed() {
     }, [scope]),
   );
 
+  const [safety, setSafety] = useState<SafetyTarget | null>(null);
+
   const onRemoved = (id: string) => setPosts((ps) => (ps ? ps.filter((p) => p.id !== id) : ps));
+  const onBlocked = (userId: string) => setPosts((ps) => (ps ? ps.filter((p) => p.userId !== userId) : ps));
 
   return (
     <ScrollView contentContainerStyle={styles.feed} showsVerticalScrollIndicator={false}>
@@ -57,15 +61,29 @@ export function WallFeed() {
           text={scope === 'following' ? 'Follow people to fill your feed — tap Follow on any post, or find friends in Community.' : 'Nothing shared yet. Tap the camera to ClipIt your first sighting!'}
         />
       ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} onRemoved={onRemoved} />)
+        posts.map((p) => <PostCard key={p.id} post={p} onRemoved={onRemoved} onMore={setSafety} />)
       )}
+      <SafetySheet
+        target={safety}
+        onClose={() => setSafety(null)}
+        onBlocked={onBlocked}
+        onReported={(t) => onRemoved(t.id)}
+      />
     </ScrollView>
   );
 }
 
 // One post: big image, like + comment + follow, caption, and (for your own
 // posts) an unshare control.
-function PostCard({ post, onRemoved }: { post: FeedPost; onRemoved: (id: string) => void }) {
+function PostCard({
+  post,
+  onRemoved,
+  onMore,
+}: {
+  post: FeedPost;
+  onRemoved: (id: string) => void;
+  onMore: (t: SafetyTarget) => void;
+}) {
   const router = useRouter();
   const [liked, setLiked] = useState(post.isLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount);
@@ -118,11 +136,21 @@ function PostCard({ post, onRemoved }: { post: FeedPost; onRemoved: (id: string)
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </Pressable>
         ) : (
-          <Pressable onPress={toggleFollow} style={[styles.followBtn, following && styles.followingBtn]}>
-            <Text style={[styles.followText, following && styles.followingText]}>
-              {following ? 'Following' : 'Follow'}
-            </Text>
-          </Pressable>
+          <>
+            <Pressable onPress={toggleFollow} style={[styles.followBtn, following && styles.followingBtn]}>
+              <Text style={[styles.followText, following && styles.followingText]}>
+                {following ? 'Following' : 'Follow'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onMore({ type: 'post', id: post.id, userId: post.userId, displayName: post.displayName })}
+              hitSlop={10}
+              style={styles.moreBtn}
+              accessibilityLabel="Report or block"
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+            </Pressable>
+          </>
         )}
       </View>
 
