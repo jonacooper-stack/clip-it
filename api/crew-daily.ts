@@ -118,9 +118,14 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean; fo
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const secret = process.env.CRON_SECRET;
+  // Tolerate stray whitespace around the secret (easy to paste into Vercel or a terminal).
+  const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return res.status(500).json({ error: 'CRON_SECRET is not set' });
-  if (req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
+  const sent = String(req.headers.authorization ?? '').trim().replace(/^Bearer\s+/i, '').trim();
+  if (sent !== secret) {
+    log('crew_daily_unauthorized', { sentLength: sent.length, expectedLength: secret.length });
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   const db = adminClient();
   if (!db) return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not set' });
   try {
