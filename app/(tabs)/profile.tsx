@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -185,7 +185,7 @@ export default function Profile() {
           <Divider />
           <Row icon="document-text" label="Terms of use" onPress={() => router.push('/legal/terms')} />
           <Divider />
-          <Row icon="mail" label="Contact support" onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}`)} />
+          <Row icon="help-circle" label="Help & support" onPress={() => router.push('/support')} />
           {isSupabaseConfigured && session && (
             <>
               <Divider />

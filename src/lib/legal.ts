@@ -14,6 +14,7 @@ export const EFFECTIVE_DATE = 'November 8, 2026';
 export const WEB_BASE = 'https://clip-it-rose.vercel.app';
 export const PRIVACY_URL = `${WEB_BASE}/legal/privacy`;
 export const TERMS_URL = `${WEB_BASE}/legal/terms`;
+export const SUPPORT_URL = `${WEB_BASE}/support`;
 
 export interface LegalSection {
   heading: string;
@@ -34,7 +35,7 @@ export const PRIVACY_GLANCE: { collected: GlanceRow[]; never: string[] } = {
     { icon: 'mail-outline', title: 'Contact info', detail: 'Your email address and display name, to run your account.' },
     { icon: 'image-outline', title: 'Photos', detail: 'Photos you take are sent to our AI to identify the animal. Photos you share to the wall, and your profile picture, are stored so others can see them.' },
     { icon: 'chatbubble-outline', title: 'Your posts', detail: 'Captions, comments, likes, follows and reports you make.' },
-    { icon: 'person-outline', title: 'Account ID & age range', detail: 'An account ID, and the age range you pick at sign-up so we can apply the right protections.' },
+    { icon: 'person-outline', title: 'Account ID & age range', detail: 'An account ID, and your age range (13–17 or adult) from sign-up. We never store your birth date.' },
   ],
   never: [
     'We never share your location with other players, and wall posts never include where you were.',
@@ -106,7 +107,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Children',
     paragraphs: [
-      'ClipIt asks for an age range when you sign up. Players under 13 must have a parent or guardian create and manage the account using the parent’s own email, and we apply stricter protections to those accounts. We don’t knowingly collect personal information from a child under 13 without a parent’s involvement. If you’re a parent and believe your child has given us information without your consent, contact us and we will delete it.',
+      'ClipIt is for people aged 13 and over. We ask for your birth year at sign-up (and keep only an age range) and don’t let anyone under 13 create an account. We don’t knowingly collect personal information from children under 13. If you’re a parent and believe your child has given us information, contact us and we will delete it.',
     ],
   },
   {
@@ -147,7 +148,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   {
     heading: 'Welcome to ClipIt',
     paragraphs: [
-      `These terms are an agreement between you and ${LEGAL_ENTITY}. By creating an account or using ClipIt, you agree to them and to our Privacy Policy. If you’re under 18, a parent or guardian must agree on your behalf; players under 13 must have a parent or guardian set up and manage their account.`,
+      `These terms are an agreement between you and ${LEGAL_ENTITY}. By creating an account or using ClipIt, you agree to them and to our Privacy Policy. You must be at least 13 years old to use ClipIt. If you’re under 18, you need a parent or guardian’s permission, and they agree to these terms on your behalf.`,
     ],
   },
   {
@@ -214,5 +215,41 @@ export const TERMS_SECTIONS: LegalSection[] = [
   {
     heading: 'Contact',
     paragraphs: [`Questions: ${CONTACT_EMAIL}`],
+  },
+];
+
+// Support page FAQ (/support — the App Store "Support URL").
+export const SUPPORT_FAQ: { q: string; a: string }[] = [
+  {
+    q: 'How do I score points?',
+    a: 'Tap the camera button, photograph a wild animal (or upload a photo you took), and ClipIt identifies it in a few seconds. Rarer animals and more dramatic moments (a parent with young, an animal in flight, a hunt) score more. Pets and people don’t score.',
+  },
+  {
+    q: 'The AI got the animal wrong. What can I do?',
+    a: 'Open the sighting in your Journal and tap “Not right? Suggest an ID” to send it for review. Identifications are made by AI and can be wrong, especially with distant, blurry or look-alike animals.',
+  },
+  {
+    q: 'I took a photo with no signal. Is it lost?',
+    a: 'No. ClipIt saves the capture and identifies it automatically when you’re back online.',
+  },
+  {
+    q: 'Who can see my location?',
+    a: 'Only you. Locations are saved in your journal on your device and are never shown to other players or included in wall posts.',
+  },
+  {
+    q: 'How do I report a post, comment or person?',
+    a: 'Tap the “•••” next to the post or comment and choose Report or Block. We review every report within 24 hours. Blocked people can’t appear in your feed, comments, search or leaderboard; manage them in Profile → Blocked accounts.',
+  },
+  {
+    q: 'How do I remove something I shared?',
+    a: 'Tap the “•••” on your post and choose Unshare. It’s removed from the wall for everyone; the sighting stays in your journal.',
+  },
+  {
+    q: 'How do I delete my account?',
+    a: 'In the app, go to Profile → Delete account. This permanently deletes your account, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
+  },
+  {
+    q: 'Who can use ClipIt?',
+    a: 'ClipIt is for people aged 13 and over.',
   },
 ];

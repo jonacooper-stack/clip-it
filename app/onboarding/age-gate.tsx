@@ -11,7 +11,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import type { AgeBracket } from '@/types';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const MAX_YEAR = CURRENT_YEAR - 4; // youngest we let through the gate
+const MAX_YEAR = CURRENT_YEAR - 4; // youngest year accepted as input (under-13s are then turned away)
 const MIN_YEAR = CURRENT_YEAR - 100;
 
 function bracketFor(age: number): AgeBracket {
@@ -30,14 +30,18 @@ export default function AgeGate() {
   const outOfRange = year != null && !valid; // four digits entered, but not a viable year
   const age = valid ? CURRENT_YEAR - year! : null;
   const bracket = age != null ? bracketFor(age) : null;
-  const isChild = bracket === 'under_13';
+  const tooYoung = bracket === 'under_13';
+  // ClipIt is 13+. Once an under-13 year is entered, keep the gate closed for
+  // this visit rather than inviting a retry with a different year.
+  const [blocked, setBlocked] = useState(false);
+  if (tooYoung && !blocked) setBlocked(true);
 
   // Numbers only, capped at four digits.
   const onChangeText = (t: string) => setText(t.replace(/[^0-9]/g, '').slice(0, 4));
 
   const onContinue = () => {
-    if (!bracket) return;
-    setAge(bracket, isChild);
+    if (!bracket || blocked) return;
+    setAge(bracket, false);
     // With accounts enabled, create/sign in next; otherwise go straight to ethos.
     router.push(isSupabaseConfigured ? '/onboarding/account' : '/onboarding/ethos');
   };
@@ -71,7 +75,7 @@ export default function AgeGate() {
           onSubmitEditing={onContinue}
           accessibilityLabel="Birth year, four digits"
         />
-        {age != null && (
+        {age != null && !blocked && (
           <Text style={styles.readoutAge}>{`You're ${age} · ${bracketLabel(bracket!)}`}</Text>
         )}
       </View>
@@ -80,15 +84,15 @@ export default function AgeGate() {
         <Text style={styles.error}>{`Enter a year between ${MIN_YEAR} and ${MAX_YEAR}.`}</Text>
       )}
 
-      {isChild && (
+      {blocked && (
         <Card style={styles.childNote}>
           <View style={styles.childHead}>
-            <Ionicons name="people" size={18} color={colors.accentInk} />
-            <Text style={styles.childTitle}>A grown-up should help</Text>
+            <Ionicons name="leaf" size={18} color={colors.accentInk} />
+            <Text style={styles.childTitle}>ClipIt is for ages 13 and up</Text>
           </View>
           <Text style={styles.childText}>
-            Since you're under 13, a parent or guardian needs to set up and approve your profile, and
-            we keep extra-strict privacy protections on your account.
+            Sorry, you need to be at least 13 to create a ClipIt account. In the meantime, keep exploring
+            outside, and come back when you’re 13!
           </Text>
         </Card>
       )}
@@ -97,7 +101,7 @@ export default function AgeGate() {
         label="Continue"
         icon="arrow-forward"
         onPress={onContinue}
-        disabled={!valid}
+        disabled={!valid || blocked}
         style={styles.cta}
       />
     </ScreenContainer>
@@ -105,7 +109,6 @@ export default function AgeGate() {
 }
 
 function bracketLabel(b: AgeBracket): string {
-  if (b === 'under_13') return 'Junior explorer';
   if (b === '13_17') return 'Teen explorer';
   return 'Explorer';
 }

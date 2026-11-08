@@ -140,9 +140,17 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), IDENTIFY_TIMEOUT_MS);
   try {
+    // The endpoint only serves signed-in players: send the Supabase access token
+    // (getSession refreshes it if it has expired, e.g. for a queued capture).
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
     resp = await fetch(IDENTIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
       signal: controller.signal,
     });

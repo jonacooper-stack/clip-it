@@ -14,8 +14,10 @@ export function LegalDoc({
   intro,
   sections,
   children,
+  showDate = true,
 }: {
   title: string;
+  showDate?: boolean;
   intro?: string;
   sections: LegalSection[];
   children?: ReactNode; // extra content rendered above the sections
@@ -38,7 +40,7 @@ export function LegalDoc({
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator>
         <View style={styles.inner}>
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.date}>Effective {EFFECTIVE_DATE}</Text>
+          {showDate ? <Text style={styles.date}>Effective {EFFECTIVE_DATE}</Text> : <View style={{ height: spacing.sm }} />}
           {!!intro && <Text style={styles.p}>{intro}</Text>}
           {children}
           {sections.map((s) => (

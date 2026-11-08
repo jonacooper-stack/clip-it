@@ -66,8 +66,54 @@ function parseModelJson(text: string): any {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+// Only signed-in ClipIt players may call this endpoint (it spends Anthropic
+// credit per request). The app sends its Supabase access token; we verify it
+// with Supabase Auth. These are the app's public project URL + publishable key
+// (also in eas.json), overridable via Vercel env vars.
+const SUPABASE_URL =
+  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://oybkykeoatfgcfqgaqpl.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  'sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY';
+
+// Returns the user id for a valid access token, or null.
+async function verifyUser(authHeader: string | undefined): Promise<string | null> {
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return null;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    const user = (await r.json()) as { id?: string };
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Simple per-user burst limit (per warm serverless instance — a speed bump
+// against a runaway client or script, not a hard quota).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 20;
+const recent = new Map<string, number[]>();
+function rateLimited(userId: string): boolean {
+  const now = Date.now();
+  const hits = (recent.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  hits.push(now);
+  recent.set(userId, hits);
+  return hits.length > RATE_MAX;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+
+  const userId = await verifyUser(req.headers.authorization as string | undefined);
+  if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
+  if (rateLimited(userId)) {
+    return res.status(429).json({ error: 'too many requests', detail: 'Slow down a little — try again in a minute.' });
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set' });
