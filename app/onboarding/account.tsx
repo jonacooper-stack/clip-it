@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { View, Text, StyleSheet, TextInput, Platform, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -23,6 +24,13 @@ export default function Account() {
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
+  const signInWithApple = useAuthStore((s) => s.signInWithApple);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
+  }, []);
 
   const [mode, setMode] = useState<'signup' | 'signin'>(params.mode === 'signin' ? 'signin' : 'signup');
   const [name, setName] = useState('');
@@ -81,6 +89,21 @@ export default function Account() {
     }
   };
 
+  const onApple = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await signInWithApple();
+    setBusy(false);
+    if (res.cancelled) return;
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    // Same as Google: continue onboarding (ethos marks the user onboarded).
+    router.replace('/onboarding/ethos');
+  };
+
   if (sent) {
     return (
       <ScreenContainer scroll>
@@ -130,6 +153,19 @@ export default function Account() {
         </Card>
       )}
 
+      {appleAvailable && (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={
+            isSignup
+              ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+              : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+          }
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+          cornerRadius={radius.lg}
+          style={styles.appleBtn}
+          onPress={onApple}
+        />
+      )}
       <Pressable onPress={onGoogle} disabled={busy} style={({ pressed }) => [styles.googleBtn, pressed && styles.googlePressed]}>
         <Ionicons name="logo-google" size={18} color={colors.text} />
         <Text style={styles.googleText}>Continue with Google</Text>
@@ -197,6 +233,13 @@ export default function Account() {
         {isSignup ? 'Already have an account? ' : 'New here? '}
         <Text style={styles.toggleLink}>{isSignup ? 'Sign in' : 'Create one'}</Text>
       </Text>
+
+      <Text style={styles.legal}>
+        By continuing, you agree to our{' '}
+        <Text style={styles.legalLink} onPress={() => router.push('/legal/terms')}>Terms of Use</Text>
+        {', including our zero-tolerance policy for abusive content, and our '}
+        <Text style={styles.legalLink} onPress={() => router.push('/legal/privacy')}>Privacy Policy</Text>.
+      </Text>
     </ScreenContainer>
   );
 }
@@ -229,6 +272,9 @@ const styles = StyleSheet.create({
   childTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk },
   childText: { fontSize: font.small, color: colors.accentInk, lineHeight: 20 },
 
+  appleBtn: { height: 54, width: '100%', marginBottom: spacing.sm },
+  legal: { fontSize: font.tiny, color: colors.faint, textAlign: 'center', marginTop: spacing.lg, lineHeight: 18 },
+  legalLink: { color: colors.muted, textDecorationLine: 'underline' },
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',

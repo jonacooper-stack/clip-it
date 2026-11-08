@@ -7,6 +7,7 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
+import { checkText } from './moderation';
 
 export type Scope = 'everyone' | 'friends';
 // The wall's own scope: everyone, or people I follow (+ accepted friends).
@@ -71,6 +72,32 @@ function myId(): string | null {
   return useAuthStore.getState().session?.user?.id ?? null;
 }
 
+// Most social tables reference profiles(id), and a fresh account has no profile
+// row until it first syncs. Create a minimal one (never overwriting) so inserts
+// like blocks, reports and posts can't fail on a foreign key.
+async function ensureProfile(uid: string) {
+  if (!supabase) return;
+  await supabase
+    .from('profiles')
+    .upsert({ id: uid, display_name: useAppStore.getState().displayName }, { onConflict: 'id', ignoreDuplicates: true });
+}
+
+// --- blocking (cached so every list can filter cheaply) ---
+
+let blockedCache: { uid: string; ids: Set<string> } | null = null;
+
+// Ids of people I've blocked. Degrades to an empty set if the user_blocks table
+// isn't set up yet (migration 0006), so nothing else breaks.
+export async function getBlockedIds(): Promise<Set<string>> {
+  const uid = myId();
+  if (!supabase || !uid) return new Set();
+  if (blockedCache?.uid === uid) return blockedCache.ids;
+  const { data, error } = await supabase.from('user_blocks').select('blocked_id').eq('blocker_id', uid);
+  const ids = new Set<string>(error ? [] : (data ?? []).map((r: any) => r.blocked_id));
+  blockedCache = { uid, ids };
+  return ids;
+}
+
 // Upsert the signed-in user's leaderboard row (display name + aggregate points).
 export async function syncMyProfile(displayName: string, points: number, speciesCount: number) {
   const uid = myId();
@@ -110,8 +137,8 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
     const ids = [uid, ...(await acceptedFriendIds())];
     q = q.in('id', ids);
   }
-  const { data } = await q;
-  return (data ?? []).map((r: any) => ({
+  const [{ data }, blocked] = await Promise.all([q, getBlockedIds()]);
+  return (data ?? []).filter((r: any) => !blocked.has(r.id)).map((r: any) => ({
     id: r.id,
     displayName: r.display_name || 'Explorer',
     avatarUrl: r.avatar_url ?? null,
@@ -199,9 +226,10 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
   }
   // Surface the real error instead of swallowing it — otherwise a failed read
   // (RLS, schema, relationship) looks identical to an empty wall.
-  const { data, error } = await q;
+  const [{ data, error }, blocked] = await Promise.all([q, getBlockedIds()]);
   if (error) return { posts: [], error: error.message };
-  const posts = await enrichPosts((data ?? []) as any[], uid);
+  const visible = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
+  const posts = await enrichPosts(visible, uid);
   return { posts };
 }
 
@@ -211,6 +239,7 @@ export async function getPost(postId: string): Promise<FeedPost | null> {
   if (!supabase || !uid) return null;
   const { data } = await supabase.from('feed_posts').select(POST_COLUMNS).eq('id', postId).maybeSingle();
   if (!data) return null;
+  if ((await getBlockedIds()).has((data as any).user_id)) return null;
   const [post] = await enrichPosts([data], uid);
   return post ?? null;
 }
@@ -258,7 +287,8 @@ export async function getComments(postId: string): Promise<Comment[]> {
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
     .limit(200);
-  const rows = (data ?? []) as any[];
+  const blocked = await getBlockedIds();
+  const rows = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
   // Fetch commenter names/avatars separately (no embed) for the same resilience reason.
   const nameById = new Map<string, string>();
   const avatarById = new Map<string, string>();
@@ -286,6 +316,8 @@ export async function addComment(postId: string, body: string): Promise<{ error?
   const text = body.trim();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
   if (!text) return { error: 'Say something first.' };
+  const blocked = checkText(text);
+  if (blocked) return { error: blocked };
   const { error } = await supabase.from('post_comments').insert({ post_id: postId, user_id: uid, body: text });
   return error ? { error: error.message } : {};
 }
@@ -301,16 +333,15 @@ export async function shareToWall(input: {
 }): Promise<{ error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  if (input.caption) {
+    const blocked = checkText(input.caption);
+    if (blocked) return { error: blocked };
+  }
 
   // feed_posts.user_id references profiles(id); a fresh account that shared
   // before ever opening the Community tab has no profile row yet, which would
   // fail the insert with a foreign-key violation. Ensure it exists first.
-  await supabase
-    .from('profiles')
-    .upsert(
-      { id: uid, display_name: useAppStore.getState().displayName },
-      { onConflict: 'id', ignoreDuplicates: true },
-    );
+  await ensureProfile(uid);
 
   // Best-effort photo upload to the public wall bucket. Resizing strips EXIF
   // (including any GPS), and if the bucket/policy isn't set up we simply share
@@ -443,7 +474,8 @@ export async function searchUsers(query: string): Promise<{ id: string; displayN
     .ilike('display_name', `%${q}%`)
     .neq('id', uid)
     .limit(20);
-  return (data ?? []).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
+  const blocked = await getBlockedIds();
+  return (data ?? []).filter((r: any) => !blocked.has(r.id)).map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {
@@ -462,4 +494,123 @@ export async function acceptFriendRequest(friendshipId: string): Promise<{ error
 export async function removeFriendship(friendshipId: string): Promise<void> {
   if (!supabase) return;
   await supabase.from('friendships').delete().eq('id', friendshipId);
+}
+
+// --- safety: block + report (App Store Guideline 1.2) ---
+
+export async function blockUser(userId: string): Promise<{ error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  if (userId === uid) return { error: 'You can’t block yourself.' };
+  await ensureProfile(uid);
+  const { error } = await supabase.from('user_blocks').upsert(
+    { blocker_id: uid, blocked_id: userId },
+    { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true },
+  );
+  if (error) return { error: error.message };
+  // Remove any follow/friendship in both directions (best-effort).
+  try {
+    await supabase.rpc('sever_ties_with', { other: userId });
+  } catch {
+    // the block itself is what matters
+  }
+  (await getBlockedIds()).add(userId);
+  return {};
+}
+
+export async function unblockUser(userId: string): Promise<{ error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  const { error } = await supabase.from('user_blocks').delete().eq('blocker_id', uid).eq('blocked_id', userId);
+  if (error) return { error: error.message };
+  (await getBlockedIds()).delete(userId);
+  return {};
+}
+
+export interface BlockedUser {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export async function getBlockedUsers(): Promise<BlockedUser[]> {
+  const uid = myId();
+  if (!supabase || !uid) return [];
+  blockedCache = null; // this screen always reads fresh
+  const ids = Array.from(await getBlockedIds());
+  if (!ids.length) return [];
+  const { data } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', ids);
+  const byId = new Map(((data ?? []) as any[]).map((p) => [p.id, p]));
+  return ids.map((id) => ({
+    id,
+    displayName: byId.get(id)?.display_name || 'Explorer',
+    avatarUrl: byId.get(id)?.avatar_url ?? null,
+  }));
+}
+
+export type ReportTarget = 'post' | 'comment' | 'user';
+
+export const REPORT_REASONS = [
+  'Harassment or bullying',
+  'Hate or abusive language',
+  'Nudity or sexual content',
+  'Harm to animals or people',
+  'Spam or scam',
+  'Shares someone’s location or private info',
+  'Something else',
+] as const;
+
+export async function reportContent(input: {
+  targetType: ReportTarget;
+  targetId: string;
+  targetUserId: string;
+  reason: string;
+  details?: string;
+}): Promise<{ error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
+  await ensureProfile(uid);
+  const { error } = await supabase.from('content_reports').insert({
+    reporter_id: uid,
+    target_type: input.targetType,
+    target_id: input.targetId,
+    target_user_id: input.targetUserId,
+    reason: input.reason,
+    details: input.details?.trim() || null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+// --- account deletion (App Store Guideline 5.1.1(v)) ---
+
+// Remove every file under "<uid>/" in a bucket. Missing buckets are ignored.
+async function emptyMyFolder(bucket: string, uid: string) {
+  if (!supabase) return;
+  for (let round = 0; round < 20; round++) {
+    const { data, error } = await supabase.storage.from(bucket).list(uid, { limit: 1000 });
+    if (error || !data?.length) return;
+    const paths = data.filter((f) => f.name).map((f) => `${uid}/${f.name}`);
+    if (!paths.length) return;
+    const { error: rmErr } = await supabase.storage.from(bucket).remove(paths);
+    if (rmErr) return;
+  }
+}
+
+// Permanently delete the signed-in account: photos + avatar from Storage, then
+// the account row (which cascades to every table). The caller signs out and
+// clears local data afterwards.
+export async function deleteMyAccount(): Promise<{ error?: string }> {
+  const uid = myId();
+  if (!supabase || !uid) return { error: 'You’re not signed in.' };
+  for (const bucket of [WALL_BUCKET, AVATAR_BUCKET, 'sightings']) {
+    try {
+      await emptyMyFolder(bucket, uid);
+    } catch {
+      // keep going — the account delete below is the essential part
+    }
+  }
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) return { error: error.message };
+  blockedCache = null;
+  return {};
 }

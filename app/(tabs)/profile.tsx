@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +11,26 @@ import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { useJournalStore, totalPoints, distinctSpecies } from '@/state/useJournalStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { uploadAvatar, getMyAvatarUrl } from '@/lib/social';
+import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
+import { CONTACT_EMAIL } from '@/lib/legal';
 import type { AgeBracket } from '@/types';
+
+// Alert with buttons is a no-op on react-native-web; fall back to confirm().
+function confirmAction(title: string, message: string, actionLabel: string, onConfirm: () => void) {
+  if (Platform.OS === 'web') {
+    if ((globalThis as any).confirm?.(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: actionLabel, style: 'destructive', onPress: onConfirm },
+  ]);
+}
+
+function notify(title: string, message: string) {
+  if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${message}`);
+  else Alert.alert(title, message);
+}
 
 const BRACKET_LABEL: Record<AgeBracket, string> = {
   under_13: 'Kid (under 13)',
@@ -36,6 +54,7 @@ export default function Profile() {
   const signOut = useAuthStore((s) => s.signOut);
   const email = session?.user?.email;
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
   const points = useMemo(() => totalPoints(sightings), [sightings]);
@@ -62,13 +81,37 @@ export default function Profile() {
     else if (error) Alert.alert('Couldn’t update photo', error);
   };
 
-  const soon = (label: string) => Alert.alert(label, 'Coming in a later phase.');
+  const onSignOut = () => confirmAction('Sign out?', 'You can sign back in anytime.', 'Sign out', () => signOut());
 
-  const onSignOut = () =>
-    Alert.alert('Sign out?', 'You can sign back in anytime.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
-    ]);
+  // App Store Guideline 5.1.1(v): full account deletion from inside the app.
+  // Two confirmations, then: delete server data → sign out → wipe local data.
+  const onDeleteAccount = () =>
+    confirmAction(
+      'Delete your account?',
+      'This permanently deletes your account, profile, shared posts, photos, comments, likes, follows and friends. It can’t be undone.',
+      'Continue',
+      () =>
+        confirmAction(
+          'Are you absolutely sure?',
+          'Your account and everything linked to it will be erased now. Your field journal on this device will also be cleared.',
+          'Delete forever',
+          async () => {
+            setDeleting(true);
+            const res = await deleteMyAccount();
+            if (res.error) {
+              setDeleting(false);
+              notify('Couldn’t delete your account', `${res.error}\n\nPlease try again, or email ${CONTACT_EMAIL} and we’ll delete it for you.`);
+              return;
+            }
+            await signOut();
+            resetJournal();
+            resetApp();
+            setDeleting(false);
+            router.replace('/onboarding/welcome');
+            notify('Account deleted', 'Your account and data have been permanently deleted.');
+          },
+        ),
+    );
 
   const onReset = () =>
     Alert.alert('Reset app data?', 'This clears your journal and onboarding (for testing).', [
@@ -138,22 +181,33 @@ export default function Profile() {
               <Divider />
             </>
           )}
-          <Row icon="lock-closed" label="Privacy & location" onPress={() => soon('Privacy & location')} />
+          <Row icon="shield-checkmark" label="Privacy policy" onPress={() => router.push('/legal/privacy')} />
           <Divider />
-          <Row icon="people" label="Manage child profile" onPress={() => soon('Child profiles')} />
+          <Row icon="document-text" label="Terms of use" onPress={() => router.push('/legal/terms')} />
           <Divider />
-          <Row icon="trash" label="Delete account" danger onPress={() => soon('Delete account')} />
+          <Row icon="mail" label="Contact support" onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}`)} />
           {isSupabaseConfigured && session && (
             <>
               <Divider />
+              <Row icon="ban" label="Blocked accounts" onPress={() => router.push('/settings/blocked')} />
+              <Divider />
               <Row icon="log-out" label="Sign out" onPress={onSignOut} />
+              <Divider />
+              <Row
+                icon="trash"
+                label={deleting ? 'Deleting account…' : 'Delete account'}
+                danger
+                onPress={deleting ? () => {} : onDeleteAccount}
+              />
             </>
           )}
         </Card>
 
-        <Pressable onPress={onReset} style={styles.devReset}>
-          <Text style={styles.devResetText}>Reset app data (dev)</Text>
-        </Pressable>
+        {__DEV__ && (
+          <Pressable onPress={onReset} style={styles.devReset}>
+            <Text style={styles.devResetText}>Reset app data (dev)</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

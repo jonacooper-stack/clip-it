@@ -10,13 +10,19 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0E1411",
     "newArchEnabled": true,
-    "runtimeVersion": { "policy": "appVersion" },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "updates": {
       "url": "https://u.expo.dev/503232c7-e996-4969-ae22-66bf26b5951f"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "extra": {
-      "eas": { "projectId": "503232c7-e996-4969-ae22-66bf26b5951f" }
+      "eas": {
+        "projectId": "503232c7-e996-4969-ae22-66bf26b5951f"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -24,13 +30,46 @@
       "favicon": "./assets/favicon.png"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.clipitwildlife.app",
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryAddUsageDescription": "ClipIt saves the wildlife photos you capture to your camera roll so you keep your own copy.",
         "NSPhotoLibraryUsageDescription": "ClipIt lets you upload a wildlife photo from your camera roll and reads its date and location so the sighting is placed and timed correctly."
+      },
+      "usesAppleSignIn": true,
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "0A2A.1",
+              "3B52.1",
+              "C617.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1",
+              "85F4.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -64,7 +103,8 @@
           "locationWhenInUsePermission": "ClipIt tags each sighting with where you saw the animal. Your precise location stays private to you."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ]
   }
 }
