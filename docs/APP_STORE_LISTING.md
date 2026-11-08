@@ -119,7 +119,7 @@ Notes:
 - Camera, location and photo access are requested only when used. The app works if location is denied.
 - Location is stored only on the device and is never shared with other users.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
-- Accounts named "Ranger …" with a BOT badge are ClipIt Rangers: labeled bot accounts run by our team that post credited wildlife photos and pace the leaderboard. Tap the badge for an explanation; they can be hidden in Profile.
+- The Field Crew (Dr. Hoot, Scout, Moss, Magpie, Kestrel) are labeled bots made by our team. They live behind the bell on the Feed: species facts on each sighting, a weekly regional wildlife forecast, weekly challenges and a weekly duel. Every crew name shows a BOT badge (tap it for an explanation), and they can be hidden from the wall in Profile.
 ```
 
 **Contact:** your name, phone, email.

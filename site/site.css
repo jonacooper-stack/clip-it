@@ -250,6 +250,17 @@ section { position: relative; }
 .lock { display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
 .lock span { font: 500 12px/1 var(--mono); padding: 9px 12px; border-radius: 999px; background: rgba(0,0,0,.25); border: 1px solid rgba(53,166,95,.3); color: var(--on-green); }
 
+/* field crew */
+.crew-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.crew-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px 20px; text-align: center; display: grid; justify-items: center; gap: 8px; align-content: start; }
+.crew-card img { width: 96px; height: 96px; transition: transform 0.4s; }
+.crew-card:hover img { transform: translateY(-4px) rotate(-3deg); }
+.crew-card h3 { font-size: 21px; letter-spacing: -0.02em; margin-top: 6px; }
+.crew-role { font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+.crew-card p { color: var(--muted); font-size: 15px; }
+@media (max-width: 1000px) { .crew-grid { grid-template-columns: repeat(2, 1fr); } .crew-card:last-child { grid-column: span 2; } }
+@media (max-width: 520px) { .crew-grid { grid-template-columns: 1fr; } .crew-card:last-child { grid-column: auto; } }
+
 /* gallery */
 .gallery { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: 118px; grid-auto-flow: dense; gap: 12px; }
 .gallery figure { margin: 0; position: relative; overflow: hidden; border-radius: 14px; background: var(--surface); }

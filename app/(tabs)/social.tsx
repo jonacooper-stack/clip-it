@@ -6,7 +6,7 @@ import { Card } from '@/components/Card';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
-import { RangerBadge } from '@/components/social/RangerBadge';
+import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
@@ -105,7 +105,7 @@ function LeaderboardView({ reloadKey, onMore }: { reloadKey: number; onMore: Mor
                 <Text style={styles.rowName} numberOfLines={1}>
                   {r.displayName}{r.isMe ? ' (you)' : ''}
                 </Text>
-                {r.isBot && <RangerBadge small />}
+                {r.isBot && <CrewBadge small />}
               </View>
               <Text style={styles.rowSub}>{r.speciesCount} species</Text>
             </View>
@@ -170,8 +170,8 @@ function FriendsView({ reloadKey, onMore }: { avatarUrl: string | null; reloadKe
           <UserAvatar name={r.displayName} uri={r.avatarUrl} size={36} />
           <Text style={styles.frowName} numberOfLines={1}>{r.displayName}</Text>
           {r.isBot ? (
-            // Rangers are bots: follow them from the wall, but they can't be friends.
-            <RangerBadge />
+            // The Field Crew are bots: they never appear in search, and can't be friends.
+            <CrewBadge />
           ) : (
             <Pressable onPress={() => onAdd(r.id)} disabled={sent[r.id]} style={[styles.btn, sent[r.id] && styles.btnDone]}>
               <Text style={styles.btnText}>{sent[r.id] ? 'Sent' : 'Add'}</Text>

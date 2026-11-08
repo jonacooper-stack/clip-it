@@ -1,3 +1,5 @@
+import { CREW_RESERVED_NAMES } from '../../shared/crew';
+
 // Lightweight pre-post filter for objectionable language (App Store Guideline
 // 1.2 asks UGC apps to filter objectionable material before it's posted). It's
 // a first line of defense only — reports + review handle the rest. Extend the
@@ -43,11 +45,11 @@ export function checkText(text: string): string | null {
     : null;
 }
 
-// Names reserved for the ClipIt team's labeled bot accounts (the Rangers), so
-// players can't pass themselves off as one (or as staff).
+// Names reserved for the Field Crew (the ClipIt team's labeled bots) and the
+// team itself, so players can't pass themselves off as either.
 export function reservedName(name: string): string | null {
-  const n = name.trim().toLowerCase();
-  return /^ranger\b/.test(n) || n.includes('clipit') || n.includes('clip it')
+  const n = name.trim().toLowerCase().replace(/\s+/g, ' ');
+  return CREW_RESERVED_NAMES.includes(n) || n.includes('clipit') || n.includes('clip it') || n.includes('field crew')
     ? 'That name is reserved. Please choose a different display name.'
     : null;
 }

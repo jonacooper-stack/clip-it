@@ -201,30 +201,43 @@ those builds until they update.
   MX `mx1.improvmx.com` (10) and `mx2.improvmx.com` (20), plus TXT
   `v=spf1 include:spf.improvmx.com ~all`, in Vercel → Domains → DNS records.
 
-### f. ClipIt Rangers (labeled bot accounts)
-Four Rangers (Pip, Wren, Ash, Kestrel) post credited wildlife photos and pace
-the leaderboard. Every Ranger shows a **BOT** badge (tap it for an
-explanation), players can hide them in Profile, and they can't be friended.
-How they score is in `api/_lib/rangers.ts`; in short, each has a steady pace,
-tracks a slice of the real community once there are 10+ active players, and
-stops gaining at a share of the top real player's score (Pip 55%, Wren 75%,
-Ash 88%, Kestrel 95%), so the leader is always a real player.
+### f. The Field Crew (labeled bots)
+Five playful animal-bots, each with a job, always shown with a **BOT** badge:
+- **Dr. Hoot** (facts): 3 facts + a field tip for each species you log, on the
+  sighting screen; also leaves one fact as a comment when you share to the wall.
+- **Scout** (forecasts): a weekly "what's out there now" for the player's home
+  region, ordered by what they log most.
+- **Moss** (coach): three weekly challenges with points, plus milestones.
+- **Magpie** (curator): other players' posts of the same species, or a credited
+  library photo when nobody has posted one; "Magpie's pick" on the feed.
+- **Kestrel** (rival): a weekly duel against a target set from the player's own
+  recent weeks (+15 for a win), and the only crew member on the leaderboard
+  (pacing in `api/_lib/kestrel.ts`; never passes the top real player).
+
+Where: the bell on the Feed opens the crew inbox; a crew strip sits at the top
+of the feed; notes appear on each sighting. Players pick a home region after
+sign-up (or in Profile); "use my current location" only suggests one on-device.
+
+How it runs:
+- `POST /api/crew/notes` and `GET /api/crew/forecast` (signed-in only) call
+  Claude (`claude-opus-5-5`, low effort, cached per species / per region-week).
+  They work with just `ANTHROPIC_API_KEY`; caching across instances and
+  Dr. Hoot's comments need the service role key below.
+- Challenges, duels, milestones and the inbox are computed on the phone.
+- `GET /api/crew-daily` (Vercel Cron, daily) creates the crew accounts, moves
+  Kestrel, and backfills one crew comment per recent wall post (Moss welcomes a
+  first post; otherwise Dr. Hoot adds a fact).
 
 One-time setup:
-1. Supabase SQL editor: run `supabase/migrations/0007_rangers.sql`.
-2. Vercel → Project → Settings → Environment Variables (Production):
-   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase → Project Settings → API Keys →
-     the **secret** (service_role) key. Server-only; never put it in the app.
-   - `CRON_SECRET`: any long random string (e.g. from a password manager).
-   Then redeploy so the function sees them.
-3. The job runs daily from Vercel Cron (`vercel.json`). To start the Rangers
-   right away, run it once by hand (it creates the four accounts):
-   `curl -H "Authorization: Bearer <CRON_SECRET>" https://clipitwildlife.app/api/rangers`
-   Add `?dry=1` to preview without changing anything.
-4. Logs: Vercel → Logs, search `rangers_`.
-
-To retire the Rangers: delete the four users in Supabase → Authentication →
-Users (their posts and likes go with them) and remove the `crons` entry.
+1. Supabase SQL editor: run `supabase/migrations/0007_field_crew.sql`.
+2. Vercel → Project → Settings → Environment Variables (Production), then redeploy:
+   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase → Project Settings → API Keys → the
+     **secret** key. Server-only; never put it in the app.
+   - `CRON_SECRET`: any long random string.
+3. Start the crew now (creates the five accounts) instead of waiting for the
+   daily run: `curl -H "Authorization: Bearer <CRON_SECRET>" https://clipitwildlife.app/api/crew-daily`
+   (add `?dry=1` to preview).
+4. Logs: Vercel → Logs, search `crew_`.
 
 ### g. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real

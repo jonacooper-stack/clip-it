@@ -11,6 +11,7 @@ import { DisputeBox } from '@/components/DisputeBox';
 import { TopoBackground } from '@/components/TopoBackground';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
+import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
 import { ScienceQuestions } from '@/components/ScienceQuestions';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -308,6 +309,8 @@ export default function Result() {
         )}
 
         {sighting.source === 'mock' && <DemoNotice reason={sighting.note} />}
+
+        <CrewNotesCard sighting={sighting} />
 
         <DisputeBox sighting={sighting} />
 

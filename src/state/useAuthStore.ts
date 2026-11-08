@@ -8,6 +8,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAppStore } from './useAppStore';
 import type { AgeBracket } from '@/types';
+import { regionByKey, type RegionKey } from '../../shared/crew';
 
 // Pull OAuth tokens (or an auth code) out of the deep-link the browser returns —
 // they can arrive in the URL's query (?...) or fragment (#...) depending on flow.
@@ -63,6 +64,7 @@ function syncMetadata(session: Session | null) {
     isChild?: boolean;
     full_name?: string;
     name?: string;
+    homeRegion?: string;
   };
   const app = useAppStore.getState();
   // OAuth providers (Google) supply full_name/name instead of our displayName.
@@ -71,6 +73,8 @@ function syncMetadata(session: Session | null) {
   if (meta.ageBracket && meta.ageBracket !== app.ageBracket) {
     app.setAge(meta.ageBracket, Boolean(meta.isChild));
   }
+  // Home region picked on another device.
+  if (meta.homeRegion && !app.homeRegion && regionByKey(meta.homeRegion)) app.setHomeRegion(meta.homeRegion as RegionKey);
 }
 
 export const useAuthStore = create<AuthState>((set) => ({

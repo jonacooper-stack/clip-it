@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
+import { verifyUser, rateLimited } from './_lib/server';
 
 // Real Claude identification for the web app. The app POSTs a base64 photo; we
 // return species + behavior tags + a rarity estimate, and the app's existing
@@ -70,16 +71,7 @@ function parseModelJson(text: string): any {
 }
 
 // Only signed-in ClipIt players may call this endpoint (it spends Anthropic
-// credit per request). The app sends its Supabase access token; we verify it
-// with Supabase Auth. These are the app's public project URL + publishable key
-// (also in eas.json), overridable via Vercel env vars.
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://oybkykeoatfgcfqgaqpl.supabase.co';
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  'sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY';
-
+// credit per request); see api/_lib/server.ts.
 // One JSON line per failure, so problems show up in Vercel → Logs (filter on
 // "identify_failure") instead of on the player's screen. Never logs tokens or
 // image data.
@@ -87,48 +79,14 @@ function logFailure(reason: string, extra: Record<string, unknown> = {}) {
   console.warn(JSON.stringify({ event: 'identify_failure', reason, ...extra }));
 }
 
-// Returns the user id for a valid access token, or null (with the reason logged).
-async function verifyUser(authHeader: string | undefined): Promise<string | null> {
-  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) {
-    logFailure('auth_missing_token');
-    return null;
-  }
-  try {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) {
-      logFailure('auth_rejected', { status: r.status });
-      return null;
-    }
-    const user = (await r.json()) as { id?: string };
-    return user?.id ?? null;
-  } catch (err: any) {
-    logFailure('auth_check_error', { detail: String(err?.message ?? err).slice(0, 200) });
-    return null;
-  }
-}
-
-// Simple per-user burst limit (per warm serverless instance — a speed bump
-// against a runaway client or script, not a hard quota).
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 20;
-const recent = new Map<string, number[]>();
-function rateLimited(userId: string): boolean {
-  const now = Date.now();
-  const hits = (recent.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-  hits.push(now);
-  recent.set(userId, hits);
-  return hits.length > RATE_MAX;
-}
+const RATE_MAX = 20; // identifications per user per minute (per warm instance)
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
 
-  const userId = await verifyUser(req.headers.authorization as string | undefined);
+  const userId = await verifyUser(req.headers.authorization, logFailure);
   if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
-  if (rateLimited(userId)) {
+  if (rateLimited(`identify:${userId}`, RATE_MAX)) {
     logFailure('rate_limited', { userId });
     return res.status(429).json({ error: 'too many requests', detail: 'Slow down a little — try again in a minute.' });
   }

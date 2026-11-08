@@ -14,6 +14,7 @@ import { playerPoints } from '@/lib/quests';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
+import { regionByKey } from '../../shared/crew';
 import type { AgeBracket } from '@/types';
 
 // Alert with buttons is a no-op on react-native-web; fall back to confirm().
@@ -48,8 +49,9 @@ export default function Profile() {
   const streak = useAppStore((s) => s.streakCount);
   const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
   const setSaveToCameraRoll = useAppStore((s) => s.setSaveToCameraRoll);
-  const showRangers = useAppStore((s) => s.showRangers);
-  const setShowRangers = useAppStore((s) => s.setShowRangers);
+  const showCrew = useAppStore((s) => s.showCrew);
+  const setShowCrew = useAppStore((s) => s.setShowCrew);
+  const homeRegion = useAppStore((s) => s.homeRegion);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
   const resetJournal = useJournalStore((s) => s.reset);
@@ -187,11 +189,19 @@ export default function Profile() {
           )}
           {isSupabaseConfigured && session && (
             <>
+              <Row icon="notifications" label="Field Crew" onPress={() => router.push('/crew')} />
+              <Divider />
+              <Row
+                icon="map"
+                label={`Home region${homeRegion ? `: ${regionByKey(homeRegion)?.label}` : ''}`}
+                onPress={() => router.push('/region')}
+              />
+              <Divider />
               <ToggleRow
                 icon="hardware-chip"
-                label="Show ClipIt Rangers (bots)"
-                value={showRangers}
-                onValueChange={setShowRangers}
+                label="Show Field Crew on the wall"
+                value={showCrew}
+                onValueChange={setShowCrew}
               />
               <Divider />
             </>

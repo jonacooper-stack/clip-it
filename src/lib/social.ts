@@ -31,7 +31,7 @@ export interface LeaderboardEntry {
   points: number;
   speciesCount: number;
   isMe: boolean;
-  isBot: boolean; // a ClipIt Ranger (labeled bot account)
+  isBot: boolean; // Kestrel, the Field Crew's rival (a labeled bot)
 }
 
 export interface FeedPost {
@@ -50,8 +50,7 @@ export interface FeedPost {
   commentCount: number;
   isLiked: boolean; // did I like this post
   isFollowing: boolean; // am I following the author (always false for my own posts)
-  isBot: boolean; // posted by a ClipIt Ranger (labeled bot account)
-  photoCredit: string | null; // attribution for licensed photos (Rangers' posts)
+  isBot: boolean; // posted by a Field Crew bot
 }
 
 export interface Comment {
@@ -155,14 +154,14 @@ export async function updateDisplayName(name: string): Promise<{ error?: string 
   return {};
 }
 
-// --- ClipIt Rangers (labeled bot accounts) ---
+// --- The Field Crew (labeled bot accounts) ---
 
-// Columns added by migration 0007 (profiles.is_bot, feed_posts.photo_credit).
+// Columns added by migration 0007 (profiles.is_bot, profiles.crew_role).
 // Until it has been run, queries that name them fail, so every read that uses
 // them retries without, and the app keeps working (no badges).
 function missingColumn(error: any): boolean {
   const msg = String(error?.message ?? '');
-  return error?.code === '42703' || error?.code === 'PGRST204' || /is_bot|photo_credit/.test(msg);
+  return error?.code === '42703' || error?.code === 'PGRST204' || /is_bot|crew_role/.test(msg);
 }
 
 async function selectWithFallback(build: (cols: string) => any, cols: string, fallbackCols: string): Promise<{ data: any[] | null; error: any }> {
@@ -186,9 +185,9 @@ async function profilesFor(ids: string[]): Promise<Map<string, { name: string; a
   return out;
 }
 
-// Players can hide Rangers (Profile → Show ClipIt Rangers).
-function rangersHidden(): boolean {
-  return !useAppStore.getState().showRangers;
+// Players can hide the crew from community surfaces (Profile → Show Field Crew).
+function crewHidden(): boolean {
+  return !useAppStore.getState().showCrew;
 }
 
 // Ids of accepted friends (both directions), used to scope the leaderboard/wall.
@@ -222,12 +221,13 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
     return q;
   };
   const [{ data }, blocked] = await Promise.all([
-    selectWithFallback(build, 'id, display_name, avatar_url, points, species_count, is_bot', 'id, display_name, avatar_url, points, species_count'),
+    selectWithFallback(build, 'id, display_name, avatar_url, points, species_count, is_bot, crew_role', 'id, display_name, avatar_url, points, species_count'),
     getBlockedIds(),
   ]);
-  const hideBots = rangersHidden();
+  const hideBots = crewHidden();
   return (data ?? [])
-    .filter((r: any) => !blocked.has(r.id) && !(hideBots && r.is_bot))
+    // Kestrel (the rival) is the only crew member that plays on the board.
+    .filter((r: any) => !blocked.has(r.id) && !(r.is_bot && (hideBots || r.crew_role !== 'kestrel')))
     .map((r: any) => ({
       id: r.id,
       displayName: r.display_name || 'Explorer',
@@ -242,8 +242,7 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
 // Scalar columns only — display names are fetched separately (see enrichPosts)
 // rather than via a `profiles(display_name)` embed, so a flaky PostgREST
 // relationship/schema-cache can't blank the whole wall.
-const POST_COLUMNS_BASE = 'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at';
-const POST_COLUMNS = `${POST_COLUMNS_BASE}, photo_credit`;
+const POST_COLUMNS = 'id, user_id, common_name, scientific_name, points, caption, photo_url, created_at';
 
 // Turn raw feed_posts rows into FeedPosts, batching the author-name, like,
 // comment and follow lookups into a handful of queries (not per-post).
@@ -294,7 +293,6 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
     isLiked: likedByMe.has(r.id),
     isFollowing: r.user_id !== uid && followingSet.has(r.user_id),
     isBot: Boolean(people.get(r.user_id)?.isBot),
-    photoCredit: r.photo_credit ?? null,
   }));
 }
 
@@ -319,11 +317,11 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
   };
   // Surface the real error instead of swallowing it — otherwise a failed read
   // (RLS, schema, relationship) looks identical to an empty wall.
-  const [{ data, error }, blocked] = await Promise.all([selectWithFallback(build, POST_COLUMNS, POST_COLUMNS_BASE), getBlockedIds()]);
+  const [{ data, error }, blocked] = await Promise.all([build(POST_COLUMNS), getBlockedIds()]);
   if (error) return { posts: [], error: error.message };
   const visible = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
   let posts = await enrichPosts(visible, uid);
-  if (rangersHidden()) posts = posts.filter((p) => !p.isBot);
+  if (crewHidden()) posts = posts.filter((p) => !p.isBot);
   return { posts };
 }
 
@@ -331,11 +329,7 @@ export async function getFeed(scope: FeedScope): Promise<FeedResult> {
 export async function getPost(postId: string): Promise<FeedPost | null> {
   const uid = myId();
   if (!supabase || !uid) return null;
-  const { data: rows } = await selectWithFallback(
-    (cols) => supabase!.from('feed_posts').select(cols).eq('id', postId).limit(1),
-    POST_COLUMNS,
-    POST_COLUMNS_BASE,
-  );
+  const { data: rows } = await supabase.from('feed_posts').select(POST_COLUMNS).eq('id', postId).limit(1);
   const data = rows?.[0];
   if (!data) return null;
   if ((await getBlockedIds()).has((data as any).user_id)) return null;
@@ -390,7 +384,7 @@ export async function getComments(postId: string): Promise<Comment[]> {
   const rows = ((data ?? []) as any[]).filter((r) => !blocked.has(r.user_id));
   // Fetch commenter names/avatars separately (no embed) for the same resilience reason.
   const people = await profilesFor(Array.from(new Set(rows.map((r) => r.user_id))));
-  const hideBots = rangersHidden();
+  const hideBots = crewHidden();
   return rows
     .filter((r) => !(hideBots && people.get(r.user_id)?.isBot))
     .map((r) => ({
@@ -424,7 +418,7 @@ export async function shareToWall(input: {
   points?: number;
   caption?: string;
   photoUri?: string;
-}): Promise<{ error?: string }> {
+}): Promise<{ error?: string; postId?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
   if (input.caption) {
@@ -463,15 +457,19 @@ export async function shareToWall(input: {
     }
   }
 
-  const { error } = await supabase.from('feed_posts').insert({
-    user_id: uid,
-    common_name: input.commonName ?? null,
-    scientific_name: input.scientificName ?? null,
-    points: input.points ?? 0,
-    caption: input.caption ?? null,
-    photo_url: photoUrl,
-  });
-  return error ? { error: error.message } : {};
+  const { data: inserted, error } = await supabase
+    .from('feed_posts')
+    .insert({
+      user_id: uid,
+      common_name: input.commonName ?? null,
+      scientific_name: input.scientificName ?? null,
+      points: input.points ?? 0,
+      caption: input.caption ?? null,
+      photo_url: photoUrl,
+    })
+    .select('id')
+    .single();
+  return error ? { error: error.message } : { postId: (inserted as any)?.id as string | undefined };
 }
 
 // Unshare: delete one of my own posts. Likes/comments cascade away with it (FK
@@ -570,10 +568,9 @@ export async function searchUsers(query: string): Promise<{ id: string; displayN
     'id, display_name, avatar_url',
   );
   const blocked = await getBlockedIds();
-  const hideBots = rangersHidden();
   return (data ?? [])
-    .filter((r: any) => !blocked.has(r.id) && !(hideBots && r.is_bot))
-    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null, isBot: Boolean(r.is_bot) }));
+    .filter((r: any) => !blocked.has(r.id) && !r.is_bot)
+    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null, isBot: false }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {

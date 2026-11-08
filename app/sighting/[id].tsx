@@ -12,6 +12,7 @@ import { ShareToWall } from '@/components/ShareToWall';
 import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
+import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
 import { SCIENCE_QUESTIONS, answerValues, answerLabelsText } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
 import { colors, spacing, font, fonts, radius } from '@/theme';
@@ -189,6 +190,8 @@ export default function SightingDetail() {
         )}
 
         {sighting.source === 'mock' && <DemoNotice compact reason={sighting.note} />}
+
+        <CrewNotesCard sighting={sighting} />
 
         <ShareToWall sighting={sighting} />
         <DisputeBox sighting={sighting} />

@@ -11,7 +11,7 @@ import { SpeciesAvatar } from '@/components/SpeciesAvatar';
 import { UserAvatar } from '@/components/UserAvatar';
 import { timeAgo } from '@/lib/timeAgo';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
-import { RangerBadge } from '@/components/social/RangerBadge';
+import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
   getPost, getComments, addComment, likePost, unlikePost, deletePost, friendlyError,
@@ -138,7 +138,7 @@ export default function PostDetail() {
                     <View style={styles.commentBody}>
                       <View style={styles.commentHead}>
                         <Text style={styles.commentName}>{c.displayName}</Text>
-                        {c.isBot && <RangerBadge small />}
+                        {c.isBot && <CrewBadge small />}
                       </View>
                       <Text style={styles.commentText}>{c.body}</Text>
                       <Text style={styles.commentTime}>{timeAgo(c.createdAt)}</Text>
@@ -229,7 +229,7 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
             <Text style={styles.postName} numberOfLines={1}>{post.displayName}</Text>
-            {post.isBot && <RangerBadge small />}
+            {post.isBot && <CrewBadge small />}
           </View>
           <Text style={styles.postTime}>{timeAgo(post.createdAt)}</Text>
         </View>
@@ -242,8 +242,6 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
           <SpeciesAvatar scientificName={post.scientificName ?? undefined} size={96} />
         </View>
       )}
-
-      {!!post.photoCredit && <Text style={styles.credit}>Photo: {post.photoCredit}</Text>}
 
       <View style={styles.actions}>
         <Pressable onPress={toggleLike} hitSlop={8} style={styles.action}>
