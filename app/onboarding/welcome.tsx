@@ -22,7 +22,7 @@ export default function Welcome() {
   return (
     <ScreenContainer scroll>
       <View style={styles.hero}>
-        <ExpoImage source={HERO_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <ExpoImage source={HERO_PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition={{ top: 0, left: '62%' }} />
         {/* Gradient only at the bottom, so the landscape shows but the wordmark stays legible. */}
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100">
           <Defs>
@@ -82,8 +82,9 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   hero: {
-    // Close to the landscape photo's 1.33 ratio so it isn't cropped to a strip.
-    aspectRatio: 1.2,
+    // Taller than wide, so the fox fills the top and the wordmark sits on the
+    // water below it.
+    aspectRatio: 0.82,
     marginTop: spacing.md,
     marginBottom: spacing.xl,
     borderRadius: radius.xl,

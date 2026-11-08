@@ -186,9 +186,17 @@ those builds until they update.
 - The domain must be attached to the Vercel project (Project → Settings →
   Domains) so `https://clipitwildlife.app/legal/privacy` and `/support` load.
 - Supabase → Authentication → URL Configuration: set the **Site URL** to
-  `https://clipitwildlife.app` and keep the old vercel.app URL and
-  `clipit://auth/callback` in **Redirect URLs**, so Google sign-in on the
-  website works on both addresses.
+  `https://clipitwildlife.app`, and under **Redirect URLs** have
+  `https://clipitwildlife.app/**`, `https://clip-it-rose.vercel.app/**` and
+  `clipit://auth/callback`. Web Google sign-in returns to `/journal` (the
+  site's `/` is now the marketing page), so the `/**` wildcard is required.
+- Website layout: `site/` is the static marketing site (served at `/`, plus
+  `/credits.html`); every other path is the Expo web app. `scripts/build-web.mjs`
+  stitches them together after `expo export` (see `vercel.json`).
+- Photos: wildlife photos come from Wikimedia Commons under PD / CC0 / CC BY /
+  CC BY-SA. Credits are required and live in `src/lib/photoCredits.ts` (app:
+  Help & support → Photo credits) and `site/credits.html` (website footer).
+  Add a credit there whenever you add a photo.
 - `support@clipitwildlife.app` must receive mail. It's forwarded with ImprovMX:
   MX `mx1.improvmx.com` (10) and `mx2.improvmx.com` (20), plus TXT
   `v=spf1 include:spf.improvmx.com ~all`, in Vercel → Domains → DNS records.

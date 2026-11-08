@@ -16,7 +16,7 @@ file). Only claim features the app actually has; update this if features change.
 | **Age rating** | Answer the questionnaire honestly. The key answer is **User-Generated Content: Yes** (people can post photos and comments). Everything else is None/No. Expect **13+**, which matches the in-app age gate. |
 | **Privacy Policy URL** | `https://clipitwildlife.app/legal/privacy` |
 | **Support URL** | `https://clipitwildlife.app/support` |
-| **Marketing URL** (optional) | leave blank for now |
+| **Marketing URL** (optional) | `https://clipitwildlife.app` |
 | **Copyright** | `2026 <your name or company>` |
 
 > These use the custom domain `clipitwildlife.app` (bought on Vercel). The old

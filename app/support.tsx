@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { LegalDoc, legalStyles as ls } from '@/components/LegalDoc';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { CONTACT_EMAIL, SUPPORT_FAQ } from '@/lib/legal';
+import { PHOTO_CREDITS } from '@/lib/photoCredits';
 
 // Public at /support on the web build — the App Store "Support URL".
 export default function Support() {
@@ -33,6 +34,22 @@ export default function Support() {
         ))}
       </View>
 
+      <View style={ls.card}>
+        <Text style={ls.cardTitle}>Photo credits</Text>
+        <Text style={ls.rowDetail}>
+          The wildlife photos in ClipIt are shared on Wikimedia Commons by these photographers, and used
+          (resized and cropped) under the licenses shown. Tap one to see the original.
+        </Text>
+        {PHOTO_CREDITS.map((c) => (
+          <Pressable key={c.source} onPress={() => Linking.openURL(c.source)} style={styles.credit}>
+            <Text style={ls.rowTitle}>{c.species}</Text>
+            <Text style={ls.rowDetail}>
+              {c.artist} · {c.license}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View style={styles.links}>
         <Text style={styles.link} onPress={() => router.push('/legal/privacy')}>Privacy Policy</Text>
         <Text style={styles.dot}>·</Text>
@@ -56,6 +73,7 @@ const styles = StyleSheet.create({
   },
   ctaText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.white },
   faq: { gap: 2 },
+  credit: { gap: 1 },
   links: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.lg },
   link: { fontSize: font.small, color: colors.muted, textDecorationLine: 'underline' },
   dot: { fontSize: font.small, color: colors.faint },
