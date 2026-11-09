@@ -25,6 +25,9 @@ interface AppState {
   showCrew: boolean;
   /** Where the player usually explores; drives Scout's daily posts. */
   homeRegion: RegionKey | null;
+  /** Whether Scout may suggest this player to others (null = not chosen yet:
+   *  on for adults, off for ages 13–17). */
+  discoverable: boolean | null;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -34,6 +37,7 @@ interface AppState {
   setSaveToCameraRoll: (v: boolean) => void;
   setShowCrew: (v: boolean) => void;
   setHomeRegion: (r: RegionKey | null) => void;
+  setDiscoverable: (v: boolean) => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -52,6 +56,7 @@ export const useAppStore = create<AppState>()(
       saveToCameraRoll: true,
       showCrew: true,
       homeRegion: null,
+      discoverable: null,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -61,6 +66,7 @@ export const useAppStore = create<AppState>()(
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
       setShowCrew: (showCrew) => set({ showCrew }),
       setHomeRegion: (homeRegion) => set({ homeRegion }),
+      setDiscoverable: (discoverable) => set({ discoverable }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -83,7 +89,8 @@ export const useAppStore = create<AppState>()(
           saveToCameraRoll: true,
           showCrew: true,
           homeRegion: null,
-            }),
+          discoverable: null,
+        }),
     }),
     {
       name: 'clipit-app',

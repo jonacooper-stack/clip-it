@@ -15,6 +15,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
 import { regionByKey } from '../../shared/crew';
+import { saveDiscoverable } from '@/lib/crew/api';
 import type { AgeBracket } from '@/types';
 
 // Alert with buttons is a no-op on react-native-web; fall back to confirm().
@@ -51,6 +52,7 @@ export default function Profile() {
   const setSaveToCameraRoll = useAppStore((s) => s.setSaveToCameraRoll);
   const showCrew = useAppStore((s) => s.showCrew);
   const setShowCrew = useAppStore((s) => s.setShowCrew);
+  const discoverable = useAppStore((s) => s.discoverable ?? s.ageBracket !== '13_17');
   const homeRegion = useAppStore((s) => s.homeRegion);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
@@ -200,6 +202,13 @@ export default function Profile() {
                 label="Show Scout in my feed"
                 value={showCrew}
                 onValueChange={setShowCrew}
+              />
+              <Divider />
+              <ToggleRow
+                icon="people"
+                label="Let Scout suggest me to others"
+                value={discoverable}
+                onValueChange={(v) => saveDiscoverable(v).catch(() => {})}
               />
               <Divider />
             </>

@@ -80,6 +80,8 @@ export interface CrewPhoto {
   url: string;
   credit: string;
   species: string;
+  /** Where the photo and its license are described (tap the credit to open). */
+  source?: string;
 }
 
 export interface CrewNotes {
@@ -87,7 +89,9 @@ export interface CrewNotes {
   tip: string;
   others: CrewOtherPost[];
   photo: CrewPhoto | null;
-  /** 2 = short, kid-friendly facts. Older notes are refetched. */
+  /** More photos of the species (library, then Wikimedia Commons), one per fact. */
+  photos?: CrewPhoto[];
+  /** 3 = 5 short facts + photos. Older notes are refetched. */
   v?: number;
   fetchedAt: number;
 }

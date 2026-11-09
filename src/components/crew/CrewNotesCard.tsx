@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { CrewAvatar } from './CrewAvatar';
@@ -10,8 +10,9 @@ import { useAuthStore } from '@/state/useAuthStore';
 import type { Sighting } from '@/types';
 import { withArticle } from '../../../shared/crew';
 
-// Scout's notes on a sighting's detail/result screen: a few short facts as
-// bullets, a spotting tip, and other players' photos of the same species.
+// Scout's notes on a sighting's detail/result screen: short facts as bullets,
+// a spotting tip, other players' photos of the same species, and more
+// (credited) photos of it.
 export function CrewNotesCard({ sighting }: { sighting: Sighting }) {
   const router = useRouter();
   const signedIn = useAuthStore((s) => Boolean(s.session));
@@ -75,12 +76,23 @@ export function CrewNotesCard({ sighting }: { sighting: Sighting }) {
           </ScrollView>
         </>
       )}
-      {notes && !notes.others.length && notes.photo && (
+      {notes && !!notes.photos?.length && (
         <>
-          <Image source={{ uri: notes.photo.url }} style={styles.photo} contentFit="cover" transition={150} />
-          <Text style={styles.credit}>Photo: {notes.photo.credit}</Text>
-          <Text style={styles.muted}>Nobody’s posted {withArticle(name)} yet. Share yours to be the first!</Text>
+          <Text style={styles.section}>More photos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.others}>
+            {notes.photos.map((p) => (
+              <View key={p.url} style={styles.more}>
+                <Image source={{ uri: p.url }} style={styles.morePhoto} contentFit="cover" transition={150} />
+                <Text style={styles.credit} numberOfLines={1} onPress={() => p.source && Linking.openURL(p.source).catch(() => {})}>
+                  📷 {p.credit}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
         </>
+      )}
+      {notes && !notes.others.length && (
+        <Text style={styles.muted}>Nobody’s posted {withArticle(name)} yet. Share yours to be the first!</Text>
       )}
     </View>
   );
@@ -101,6 +113,7 @@ const styles = StyleSheet.create({
   other: { width: 132, gap: 4 },
   otherPhoto: { width: 132, height: 100, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
   otherName: { fontSize: font.tiny, color: colors.muted },
-  photo: { width: '100%', aspectRatio: 1.5, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
+  more: { width: 200, gap: 4 },
+  morePhoto: { width: 200, height: 150, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
   credit: { fontSize: 10, color: colors.faint },
 });

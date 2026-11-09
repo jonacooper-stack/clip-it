@@ -1,13 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, log, rateLimited, verifyUser } from '../_lib/server';
 import { askJSON } from '../_lib/claude';
-import { findLibraryPhoto, regionSpecies, type PhotoRef } from '../_lib/library';
+import { regionSpecies, type PhotoRef } from '../_lib/library';
+import { libraryPhotos, speciesPhotos } from '../_lib/photos';
 import { shorten } from '../_lib/crewFacts';
 import { regionByKey, weekOf } from '../../shared/crew';
 
 // GET /api/crew/forecast?region=northeast
-// Scout's weekly "what's happening near you" for a region: one slide per
-// animal (a photo, a short title and one simple fact). Generated on the first
+// Scout's weekly "what's happening near you" for a region: a handful of
+// seasonal stories (one animal each), every one with a short title, three
+// simple lines and its own photos, so the app can show one story per post
+// with a different photo on every slide. Generated on the first
 // request of the week, then cached in crew_forecasts (and in memory) and served
 // to everyone in that region. The app personalises the order.
 
@@ -18,10 +21,11 @@ const GROUPS = ['bird', 'mammal', 'fish', 'reptile', 'amphibian', 'insect', 'oth
 interface ForecastItem {
   group: (typeof GROUPS)[number];
   species: string;
+  sci: string;
   emoji: string;
   title: string;
-  fact: string;
-  photo?: PhotoRef | null;
+  facts: string[]; // what's happening, where/when to look, a fun fact
+  photos: PhotoRef[];
 }
 interface Forecast {
   region: string;
@@ -39,9 +43,11 @@ const SYSTEM =
   'explorer could actually see: migrations, arrivals and departures, babies and nesting, fish runs, the rut, ' +
   'getting ready for winter, insects on flowers. Only well-documented seasonal patterns for that region. ' +
   'Write for a 12-year-old scrolling a phone: simple everyday words, short and fun. ' +
-  'Each item: a title of at most 32 characters saying what the animal is up to (like "Trout are laying eggs"), ' +
-  'one emoji that fits, and ONE fact sentence of at most 90 characters that says what to look for or where ' +
-  '(general habitats like "ponds" or "open fields" only; never nests, dens or roosts). ' +
+  'Each item: the animal\'s common and scientific name, a title of at most 32 characters saying what it is up to ' +
+  '(like "Trout are laying eggs"), one emoji that fits, and exactly 3 short lines, each ONE sentence of at most 90 ' +
+  'characters starting with a fitting emoji and a space: (1) what is happening and why, (2) where and when to look ' +
+  'or listen (general habitats like "ponds" or "open fields" only; never nests, dens or roosts), (3) a fun fact ' +
+  'about it. ' +
   'Hedge timing ("around now", "often"), never give exact dates or counts, no markdown. ' +
   'Use a different kind of animal for each item when the season allows.';
 
@@ -56,11 +62,12 @@ const SCHEMA = {
         properties: {
           group: { type: 'string', enum: [...GROUPS] },
           species: { type: 'string' },
+          sci: { type: 'string' },
           emoji: { type: 'string' },
           title: { type: 'string' },
-          fact: { type: 'string' },
+          facts: { type: 'array', items: { type: 'string' } },
         },
-        required: ['group', 'species', 'emoji', 'title', 'fact'],
+        required: ['group', 'species', 'sci', 'emoji', 'title', 'facts'],
         additionalProperties: false,
       },
     },
@@ -91,15 +98,21 @@ async function build(region: string, week: string): Promise<Forecast> {
     region,
     weekOf: week,
     headline: shorten(String(out.headline ?? ''), 60),
-    items: (out.items ?? []).slice(0, 6).map((it, i) => ({
+    items: (out.items ?? []).slice(0, 6).map((it) => ({
       group: GROUPS.includes(it.group) ? it.group : 'other',
       species: String(it.species ?? '').trim(),
+      sci: String(it.sci ?? '').trim(),
       emoji: String(it.emoji ?? '').trim().slice(0, 8),
       title: shorten(String(it.title ?? ''), 48),
-      fact: shorten(String(it.fact ?? '')),
-      photo: findLibraryPhoto(String(it.species ?? ''), null, i),
+      facts: (it.facts ?? []).map((f) => shorten(String(f))).filter(Boolean).slice(0, 3),
+      photos: [],
     })),
   };
+  // Photos one species at a time (gentle on Wikimedia), within the time budget.
+  const deadline = Date.now() + 25_000;
+  for (const it of forecast.items) {
+    it.photos = Date.now() < deadline ? await speciesPhotos(it.species, it.sci || null, 4) : libraryPhotos(it.species, it.sci).slice(0, 4);
+  }
   if (!forecast.items.length) throw new Error('no forecast items returned');
   if (db) {
     const { error } = await db.from('crew_forecasts').upsert({ region: CACHE_PREFIX + region, week_of: week, payload: forecast });

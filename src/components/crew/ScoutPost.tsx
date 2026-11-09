@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, Linking, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CrewAvatar } from './CrewAvatar';
 import { CrewBadge } from '@/components/social/CrewBadge';
+import { useCrewStore } from '@/state/useCrewStore';
+import { followUser, unfollowUser } from '@/lib/social';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import type { Moment, Slide, Tone } from '@/lib/crew/moments';
@@ -111,15 +113,43 @@ function Carousel({ slides, index, onIndex }: { slides: Slide[]; index: number; 
   );
 }
 
+// Follow / Following, right on a suggestion slide.
+function FollowButton({ userId, name }: { userId: string; name: string }) {
+  const followed = useCrewStore((s) => s.followed.includes(userId));
+  const setFollowed = useCrewStore((s) => s.setFollowed);
+  const toggle = () => {
+    const next = !followed;
+    setFollowed(userId, next);
+    (next ? followUser(userId) : unfollowUser(userId)).then((r) => {
+      if (r.error) setFollowed(userId, !next);
+    });
+  };
+  return (
+    <Pressable
+      onPress={toggle}
+      hitSlop={6}
+      style={[styles.follow, followed && styles.following]}
+      accessibilityRole="button"
+      accessibilityLabel={followed ? `Unfollow ${name}` : `Follow ${name}`}
+    >
+      {followed && <Ionicons name="checkmark" size={15} color="#fff" />}
+      <Text style={[styles.followText, followed && { color: '#fff' }]}>{followed ? 'Following' : 'Follow'}</Text>
+    </Pressable>
+  );
+}
+
 function SlideView({ slide, size }: { slide: Slide; size: number }) {
   const router = useRouter();
   const open = slide.href ? () => router.push(slide.href as any) : undefined;
-  const cta = slide.cta ? (
+  const cta = slide.follow ? (
+    <FollowButton userId={slide.follow.userId} name={slide.follow.name} />
+  ) : slide.cta ? (
     <View style={styles.cta}>
       <Text style={styles.ctaText}>{slide.cta}</Text>
       <Ionicons name="arrow-forward" size={14} color="#1a0d03" />
     </View>
   ) : null;
+  const big = !slide.title; // story slides: the fact itself is the headline
 
   if (slide.photo) {
     return (
@@ -131,14 +161,23 @@ function SlideView({ slide, size }: { slide: Slide; size: number }) {
           ))}
         </View>
         {!!slide.photo.credit && (
-          <Text style={styles.credit} numberOfLines={1}>
-            📷 {slide.photo.credit}
-          </Text>
+          <Pressable
+            style={styles.creditWrap}
+            disabled={!slide.photo.source}
+            onPress={() => slide.photo?.source && Linking.openURL(slide.photo.source).catch(() => {})}
+            hitSlop={6}
+            accessibilityLabel={`Photo credit: ${slide.photo.credit}`}
+          >
+            <Text style={styles.credit} numberOfLines={1}>
+              📷 {slide.photo.credit}
+            </Text>
+          </Pressable>
         )}
         <View style={styles.photoText}>
-          <Text style={styles.photoTitle}>{slide.title}</Text>
-          {!!slide.text && <Text style={styles.photoLine}>{slide.text}</Text>}
-          {cta}
+          {!!slide.kicker && <Text style={styles.kicker} numberOfLines={1}>{slide.kicker}</Text>}
+          {!!slide.title && <Text style={styles.photoTitle}>{slide.title}</Text>}
+          {!!slide.text && <Text style={big ? styles.photoBig : styles.photoLine}>{slide.text}</Text>}
+          {cta && <View style={styles.photoCta}>{cta}</View>}
         </View>
       </Pressable>
     );
@@ -149,9 +188,10 @@ function SlideView({ slide, size }: { slide: Slide; size: number }) {
     <Pressable onPress={open} disabled={!open} style={[styles.emojiSlide, { width: size, height: size, backgroundColor: tone.bg }]}>
       <View style={[styles.ring, { borderColor: tone.ring, width: size * 1.1, height: size * 1.1, borderRadius: size * 0.55, top: -size * 0.45, right: -size * 0.45 }]} />
       <View style={[styles.ring, { borderColor: tone.ring, width: size * 0.8, height: size * 0.8, borderRadius: size * 0.4, bottom: -size * 0.4, left: -size * 0.3 }]} />
+      {!!slide.kicker && <Text style={[styles.kicker, styles.emojiKicker]} numberOfLines={1}>{slide.kicker}</Text>}
       <Text style={[styles.bigEmoji, { fontSize: Math.round(size * 0.2), lineHeight: Math.round(size * 0.26) }]}>{slide.emoji ?? '🦊'}</Text>
-      <Text style={styles.emojiTitle}>{slide.title}</Text>
-      {!!slide.text && <Text style={styles.emojiLine}>{slide.text}</Text>}
+      {!!slide.title && <Text style={styles.emojiTitle}>{slide.title}</Text>}
+      {!!slide.text && <Text style={big ? styles.emojiBig : styles.emojiLine}>{slide.text}</Text>}
       {!!slide.bullets?.length && (
         <View style={styles.bullets}>
           {slide.bullets.map((b) => (
@@ -178,11 +218,20 @@ const styles = StyleSheet.create({
   counterText: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: '#fff' },
   arrow: { position: 'absolute', top: '50%', marginTop: -15, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.88)', alignItems: 'center', justifyContent: 'center' },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '58%' },
-  credit: { position: 'absolute', top: 12, left: 12, maxWidth: '70%', fontSize: 10, color: 'rgba(255,255,255,0.85)', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
+  creditWrap: { position: 'absolute', top: 12, left: 12, maxWidth: '72%' },
+  credit: { fontSize: 10, color: 'rgba(255,255,255,0.85)', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
   photoText: { position: 'absolute', left: 18, right: 18, bottom: 20, gap: 6 },
   photoTitle: { fontSize: 23, lineHeight: 28, fontFamily: fonts.heading, color: '#fff' },
   photoLine: { fontSize: 17, lineHeight: 23, fontFamily: fonts.bodyMedium, color: 'rgba(255,255,255,0.94)' },
-  emojiSlide: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 10, overflow: 'hidden' },
+  photoBig: { fontSize: 21, lineHeight: 27, fontFamily: fonts.heading, color: '#fff' },
+  photoCta: { alignSelf: 'flex-start', marginTop: 4 },
+  kicker: { fontSize: 11, fontFamily: fonts.bodyBold, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: 1 },
+  emojiKicker: { position: 'absolute', top: 16, left: 18, right: 64 },
+  emojiBig: { fontSize: 22, lineHeight: 29, fontFamily: fonts.heading, color: '#fff', textAlign: 'center' },
+  follow: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: radius.pill, paddingHorizontal: 18, paddingVertical: 9 },
+  following: { backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' },
+  followText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: '#111' },
+  emojiSlide: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: Platform.OS === 'web' ? 52 : 28, gap: 10, overflow: 'hidden' },
   ring: { position: 'absolute', borderWidth: 2, opacity: 0.55 },
   bigEmoji: { textAlign: 'center', marginBottom: 4 },
   emojiTitle: { fontSize: 24, lineHeight: 29, fontFamily: fonts.heading, color: '#fff', textAlign: 'center' },

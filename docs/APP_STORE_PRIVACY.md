@@ -22,7 +22,7 @@ Vercel first so the page is live.
 | User Content | **Other User Content** | ✅ | Captions, comments, reports |
 | Identifiers | **User ID** | ✅ | Account ID |
 | Other Data | **Other Data Types** | ✅ | Age range picked at sign-up |
-| Location | **Coarse Location** | ✅ | The home region the player picks (e.g. "Northeast") is saved on their account for Scout's daily posts about wildlife near them |
+| Location | **Coarse Location** | ✅ | The home region the player picks (e.g. "Northeast") is saved privately on their account for Scout's daily posts about wildlife near them and "explorers near you" suggestions (never shown to other players) |
 | Location | Precise Location | ❌ | GPS stays on the device (journal only, and the region suggestion is computed on the phone) |
 | Usage Data, Diagnostics, Purchases, Financial, Health, Browsing, Search, Contacts, Sensitive Info | — | ❌ | Not collected |
 

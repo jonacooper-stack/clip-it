@@ -6,6 +6,7 @@ export interface PhotoRef {
   url: string;
   credit: string;
   species: string;
+  source?: string; // where the photo and its license are described
 }
 
 const norm = (s?: string | null) => (s ?? '').trim().toLowerCase();
@@ -19,7 +20,7 @@ export function findLibraryPhoto(species: string, sci?: string | null, seed = 0)
 }
 
 export function toRef(p: LibraryPhoto): PhotoRef {
-  return { url: `${SITE_URL}/img/library/${p.slug}.jpg`, credit: p.credit, species: p.species };
+  return { url: `${SITE_URL}/img/library/${p.slug}.jpg`, credit: p.credit, species: p.species, source: `${SITE_URL}/credits` };
 }
 
 // Library photo tags (west / northeast / southeast) → the regions they suit.

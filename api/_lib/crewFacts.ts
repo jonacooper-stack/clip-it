@@ -5,13 +5,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { askJSON } from './claude';
 import { log } from './server';
 import { withArticle } from '../../shared/crew';
+import { speciesPhotoLookup } from './photos';
+import type { PhotoRef } from './library';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export interface SpeciesFacts {
-  facts: string[];
+  facts: string[]; // 5 short facts, emoji first
   tip: string;
+  photos?: PhotoRef[]; // a different photo per slide (library, then Commons)
+  photosAt?: number; // when photos were last looked up
 }
+
+const PHOTO_RETRY_MS = 3 * 86_400_000;
 
 const SYSTEM =
   'You are Scout, a friendly fox who is the AI guide in ClipIt, a wildlife photography game for ages 13 and up. ' +
@@ -50,6 +56,20 @@ export function shorten(text: string, max = 110): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), max / 2)).replace(/[,;:\s]+$/, '')}…`;
 }
 
+async function withPhotos(db: SupabaseClient | null, key: string, common: string, sci: string | null | undefined, f: SpeciesFacts): Promise<SpeciesFacts> {
+  const stale = !f.photos || (f.photos.length < 3 && Date.now() - (f.photosAt ?? 0) > PHOTO_RETRY_MS);
+  if (!stale) return f;
+  const { photos, failed } = await speciesPhotoLookup(common, sci, 5);
+  // If Commons was unreachable, look again in about an hour instead of days.
+  const photosAt = failed ? Date.now() - PHOTO_RETRY_MS + 3600_000 : Date.now();
+  const next: SpeciesFacts = { ...f, photos: photos.length >= (f.photos?.length ?? 0) ? photos : f.photos, photosAt };
+  if (db) {
+    const { error } = await db.from('crew_facts').upsert({ species_key: key, common_name: common, facts: next });
+    if (error) log('crew_facts_cache_error', { detail: error.message });
+  }
+  return next;
+}
+
 export async function getFacts(db: SupabaseClient | null, common: string, sci?: string | null): Promise<SpeciesFacts> {
   const key = speciesKey(common, sci);
   if (!memo.has(key)) {
@@ -58,24 +78,21 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
       (async () => {
         if (db) {
           const { data } = await db.from('crew_facts').select('facts').eq('species_key', key).maybeSingle();
-          if (data?.facts) return data.facts as SpeciesFacts;
+          if (data?.facts) return withPhotos(db, key, common, sci, data.facts as SpeciesFacts);
         }
         const out = await askJSON<SpeciesFacts>({
           system: SYSTEM,
-          prompt: `Species: ${common}${sci ? ` (${sci})` : ''}. Give 3 facts and 1 tip.`,
+          prompt: `Species: ${common}${sci ? ` (${sci})` : ''}. Give 5 different facts (looks, food, babies, ` +
+            `superpowers, where it lives or how it behaves) and 1 tip.`,
           schema: SCHEMA,
         });
         const clean: SpeciesFacts = {
-          facts: (out.facts ?? []).map((f) => shorten(String(f))).filter(Boolean).slice(0, 3),
+          facts: (out.facts ?? []).map((f) => shorten(String(f))).filter(Boolean).slice(0, 5),
           tip: shorten(String(out.tip ?? '')),
         };
         if (!clean.facts.length) throw new Error('no facts returned');
-        if (db) {
-          const { error } = await db.from('crew_facts').upsert({ species_key: key, common_name: common, facts: clean });
-          if (error) log('crew_facts_cache_error', { detail: error.message });
-        }
         log('crew_facts_generated', { species: key });
-        return clean;
+        return withPhotos(db, key, common, sci, clean); // also caches the facts
       })().catch((err) => {
         memo.delete(key); // don't cache failures
         throw err;

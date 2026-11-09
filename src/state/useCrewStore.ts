@@ -10,10 +10,11 @@ import type { CrewPhoto } from '@/types';
 export interface ForecastItem {
   group: 'bird' | 'mammal' | 'fish' | 'reptile' | 'amphibian' | 'insect' | 'other';
   species: string;
+  sci?: string;
   emoji: string;
   title: string; // what the animal is up to, e.g. "Trout are laying eggs"
-  fact: string; // one short sentence
-  photo?: CrewPhoto | null;
+  facts: string[]; // what's happening, where to look, a fun fact (emoji first)
+  photos: CrewPhoto[]; // one per slide when we have them
 }
 
 export interface Forecast {
@@ -30,15 +31,35 @@ export interface TodayPick {
   species: string;
   sci: string;
   photo: CrewPhoto;
+  photos?: CrewPhoto[]; // more photos of the same animal, one per slide
   facts: string[];
   tip: string;
+}
+
+// Scout's "explorers you might like" (refreshed weekly).
+export interface SuggestedPerson {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  reason: string;
+  near: boolean;
+  shared: number;
+  posts: { postId: string; photoUrl: string; commonName: string | null; likes: number; createdAt: string }[];
+}
+export interface PeopleSuggestions {
+  fetchedAt: number;
+  people: SuggestedPerson[];
 }
 
 interface CrewState {
   forecasts: Record<string, Forecast>; // key: `${region}:${weekOf}`
   today: Record<string, TodayPick>; // key: `${region}:${date}`
+  people: PeopleSuggestions | null;
+  followed: string[]; // people followed from Scout's suggestions
   saveForecast: (f: Forecast) => void;
   saveToday: (t: TodayPick) => void;
+  savePeople: (p: PeopleSuggestions) => void;
+  setFollowed: (userId: string, on: boolean) => void;
 }
 
 export const useCrewStore = create<CrewState>()(
@@ -46,6 +67,11 @@ export const useCrewStore = create<CrewState>()(
     (set) => ({
       forecasts: {},
       today: {},
+      people: null,
+      followed: [],
+      savePeople: (people) => set({ people }),
+      setFollowed: (userId, on) =>
+        set((s) => ({ followed: on ? [...new Set([...s.followed, userId])].slice(-200) : s.followed.filter((x) => x !== userId) })),
       saveToday: (t) =>
         set((s) => {
           // Keep the last two weeks so they stay in the feed's history.
@@ -66,9 +92,9 @@ export const useCrewStore = create<CrewState>()(
     {
       name: 'clipit-crew',
       storage: createJSONStorage(() => AsyncStorage),
-      // v2: short kid-friendly slides. Drop older long-form content (it refetches).
-      version: 2,
-      migrate: () => ({ forecasts: {}, today: {} }) as any,
+      // v3: one-topic stories with several photos. Drop older content (it refetches).
+      version: 3,
+      migrate: () => ({ forecasts: {}, today: {}, people: null, followed: [] }) as any,
     },
   ),
 );

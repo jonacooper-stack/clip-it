@@ -6,7 +6,8 @@ import { ensureCrew, hasCrewComment } from '../_lib/crewAccounts';
 
 // POST /api/crew/notes  { species, sci?, postId? }
 // Scout's take on a sighting, for the signed-in player:
-//   - 3 short facts + a spotting tip (cached per species)
+//   - 5 short facts + a spotting tip (cached per species), and several photos
+//     of the species (library, then Wikimedia Commons) so each fact gets one
 //   - the best recent wall posts of the same species by other players, or a
 //     licensed library photo when nobody has posted one yet
 // With `postId` (the player just shared this sighting to the wall), Scout also
@@ -99,5 +100,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return res.status(200).json({ facts: facts?.facts ?? [], tip: facts?.tip ?? '', others, photo, commented });
+  return res.status(200).json({ facts: facts?.facts ?? [], tip: facts?.tip ?? '', photos: facts?.photos ?? [], others, photo, commented });
 }
