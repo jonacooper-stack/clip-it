@@ -1,16 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, bearer, log, rateLimited, userClient, verifyUser } from '../_lib/server';
-import { getFacts, hootComment, type SpeciesFacts } from '../_lib/crewFacts';
+import { getFacts, scoutComment, type SpeciesFacts } from '../_lib/crewFacts';
 import { findLibraryPhoto, type PhotoRef } from '../_lib/library';
 import { ensureCrew, hasCrewComment } from '../_lib/crewAccounts';
 
 // POST /api/crew/notes  { species, sci?, postId? }
-// The Field Crew's take on a sighting, for the signed-in player:
-//   - Dr. Hoot: 3 facts + a tip (cached per species)
-//   - Magpie: the best recent wall posts of the same species by other players,
-//     or a licensed library photo when nobody has posted one yet
-// With `postId` (the player just shared this sighting to the wall), Dr. Hoot
-// also leaves one fact as a comment on that post (needs the service role key).
+// Scout's take on a sighting, for the signed-in player:
+//   - 3 short facts + a spotting tip (cached per species)
+//   - the best recent wall posts of the same species by other players, or a
+//     licensed library photo when nobody has posted one yet
+// With `postId` (the player just shared this sighting to the wall), Scout also
+// leaves one fact as a comment on that post (needs the service role key).
 
 export const config = { maxDuration: 60 };
 
@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const db = adminClient();
   const reader = db ?? userClient(bearer(req.headers.authorization)!);
 
-  // Dr. Hoot
+  // Facts
   let facts: SpeciesFacts | null = null;
   try {
     facts = await getFacts(db, species, sci);
@@ -46,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     fail('facts_error', { species, detail: String(err?.message ?? err).slice(0, 200) });
   }
 
-  // Magpie: other players' posts of this species (last 60 days), best first.
+  // Other players' posts of this species (last 60 days), best first.
   let others: OtherPost[] = [];
   try {
     const { data: posts } = await reader
@@ -74,11 +74,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .slice(0, 3);
     }
   } catch (err: any) {
-    fail('magpie_error', { detail: String(err?.message ?? err).slice(0, 200) });
+    fail('others_error', { detail: String(err?.message ?? err).slice(0, 200) });
   }
   const photo: PhotoRef | null = others.length ? null : findLibraryPhoto(species, sci, userId.length + species.length);
 
-  // Dr. Hoot comments on the post the player just shared (once per post).
+  // Scout comments on the post the player just shared (once per post).
   let commented = false;
   if (postId && db && facts) {
     try {
@@ -86,16 +86,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (post && post.user_id === userId) {
         const crew = await ensureCrew(db);
         const crewIds = Object.values(crew).map((c) => c!.id);
-        if (crew.hoot && !(await hasCrewComment(db, postId, crewIds))) {
+        if (crew.scout && !(await hasCrewComment(db, postId, crewIds))) {
           const { error } = await db
             .from('post_comments')
-            .insert({ post_id: postId, user_id: crew.hoot.id, body: hootComment(species, facts, postId) });
+            .insert({ post_id: postId, user_id: crew.scout.id, body: scoutComment(species, facts, postId) });
           commented = !error;
-          if (error) fail('hoot_comment_error', { detail: error.message });
+          if (error) fail('scout_comment_error', { detail: error.message });
         }
       }
     } catch (err: any) {
-      fail('hoot_comment_error', { detail: String(err?.message ?? err).slice(0, 200) });
+      fail('scout_comment_error', { detail: String(err?.message ?? err).slice(0, 200) });
     }
   }
 

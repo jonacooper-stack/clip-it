@@ -2,7 +2,6 @@ import type { Quest, Sighting } from '@/types';
 import { findMockSpecies } from './mockSpecies';
 import { distinctSpecies, totalPoints } from '@/state/useJournalStore';
 import { challengeRewardPoints } from './crew/challenges';
-import { duelBonusPoints } from './crew/duel';
 import { crewSeed } from './crew/seed';
 
 export const SEED_QUESTS: Quest[] = [
@@ -32,15 +31,19 @@ export function questRewardPoints(sightings: Sighting[]): number {
   return SEED_QUESTS.filter((q) => questProgress(q, sightings) >= q.goal).reduce((n, q) => n + q.rewardPoints, 0);
 }
 
-// The player's score: sighting points plus completed-quest rewards, Moss's
-// weekly challenges and Kestrel duel wins. Use this anywhere a total is shown
-// or synced to the leaderboard.
+// When a quest was completed: the sighting that brought it to its goal.
+export function questCompletedAt(quest: Quest, sightings: Sighting[]): number | undefined {
+  const sorted = [...sightings].sort((a, b) => a.observedAt - b.observedAt);
+  for (let i = 1; i <= sorted.length; i++) {
+    if (questProgress(quest, sorted.slice(0, i)) >= quest.goal) return sorted[i - 1].observedAt;
+  }
+  return undefined;
+}
+
+// The player's score: sighting points plus completed big quests and Scout's
+// weekly quests. Use this anywhere a total is shown or synced to the
+// leaderboard.
 export function playerPoints(sightings: Sighting[]): number {
   const seed = crewSeed();
-  return (
-    totalPoints(sightings) +
-    questRewardPoints(sightings) +
-    challengeRewardPoints(sightings, seed, groupOf) +
-    duelBonusPoints(sightings, seed)
-  );
+  return totalPoints(sightings) + questRewardPoints(sightings) + challengeRewardPoints(sightings, seed, groupOf);
 }

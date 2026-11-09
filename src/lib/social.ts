@@ -31,7 +31,7 @@ export interface LeaderboardEntry {
   points: number;
   speciesCount: number;
   isMe: boolean;
-  isBot: boolean; // Kestrel, the Field Crew's rival (a labeled bot)
+  isBot: boolean; // always false on the board (bots are filtered out)
 }
 
 export interface FeedPost {
@@ -50,7 +50,7 @@ export interface FeedPost {
   commentCount: number;
   isLiked: boolean; // did I like this post
   isFollowing: boolean; // am I following the author (always false for my own posts)
-  isBot: boolean; // posted by a Field Crew bot
+  isBot: boolean; // posted by Scout, the AI companion
 }
 
 export interface Comment {
@@ -154,7 +154,7 @@ export async function updateDisplayName(name: string): Promise<{ error?: string 
   return {};
 }
 
-// --- The Field Crew (labeled bot accounts) ---
+// --- Scout, the AI companion (a labeled bot account) ---
 
 // Columns added by migration 0007 (profiles.is_bot, profiles.crew_role).
 // Until it has been run, queries that name them fail, so every read that uses
@@ -185,7 +185,7 @@ async function profilesFor(ids: string[]): Promise<Map<string, { name: string; a
   return out;
 }
 
-// Players can hide the crew from community surfaces (Profile → Show Field Crew).
+// Players can hide Scout from community surfaces (Profile → Show Scout in my feed).
 function crewHidden(): boolean {
   return !useAppStore.getState().showCrew;
 }
@@ -224,10 +224,9 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
     selectWithFallback(build, 'id, display_name, avatar_url, points, species_count, is_bot, crew_role', 'id, display_name, avatar_url, points, species_count'),
     getBlockedIds(),
   ]);
-  const hideBots = crewHidden();
   return (data ?? [])
-    // Kestrel (the rival) is the only crew member that plays on the board.
-    .filter((r: any) => !blocked.has(r.id) && !(r.is_bot && (hideBots || r.crew_role !== 'kestrel')))
+    // The leaderboard is people only: Scout never competes.
+    .filter((r: any) => !blocked.has(r.id) && !r.is_bot)
     .map((r: any) => ({
       id: r.id,
       displayName: r.display_name || 'Explorer',

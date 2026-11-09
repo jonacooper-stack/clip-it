@@ -1,59 +1,35 @@
-// The Field Crew: a handful of clearly labeled, playful animal-bots, each with
-// a job. Shared by the app (src/) and the server (api/) — keep this file free
-// of React Native and Node-only imports.
+// Scout: ClipIt's one AI companion, a playful fox-bot (always labeled AI).
+// Scout shares facts about what you find, tells you what's happening in
+// nature near you each season, and gives you quests. Shared by the app (src/)
+// and the server (api/) — keep this file free of React Native and Node-only
+// imports.
 
-export type CrewKey = 'hoot' | 'scout' | 'moss' | 'magpie' | 'kestrel';
+export type CrewKey = 'scout';
 
 export interface CrewMember {
   key: CrewKey;
   name: string;
-  role: string; // the job, shown under the name
-  color: string; // brand accent for cards and avatar ring
+  role: string;
+  color: string;
   tagline: string;
 }
 
-export const CREW: Record<CrewKey, CrewMember> = {
-  hoot: {
-    key: 'hoot',
-    name: 'Dr. Hoot',
-    role: 'Field facts',
-    color: '#7CA9C6',
-    tagline: 'An owl-bot who gets genuinely thrilled by every critter you find.',
-  },
-  scout: {
-    key: 'scout',
-    name: 'Scout',
-    role: 'What’s out there now',
-    color: '#F4812F',
-    tagline: 'A fox-bot trail guide with the weekly forecast for your region.',
-  },
-  moss: {
-    key: 'moss',
-    name: 'Moss',
-    role: 'Coach',
-    color: '#35A65F',
-    tagline: 'A patient tortoise-bot with challenges made for you.',
-  },
-  magpie: {
-    key: 'magpie',
-    name: 'Magpie',
-    role: 'Curator',
-    color: '#E6B23C',
-    tagline: 'A magpie-bot who collects the best sightings (and shows them off).',
-  },
-  kestrel: {
-    key: 'kestrel',
-    name: 'Kestrel',
-    role: 'Your rival',
-    color: '#D27C4A',
-    tagline: 'A falcon-bot who challenges you to a duel every week. Always beatable.',
-  },
+export const COMPANION: CrewMember = {
+  key: 'scout',
+  name: 'Scout',
+  role: 'Your AI field guide',
+  color: '#F4812F',
+  tagline: 'A friendly fox-bot who shares fun facts, tells you what’s happening in nature near you, and sends you on quests.',
 };
 
-export const CREW_KEYS = Object.keys(CREW) as CrewKey[];
+export const CREW: Record<CrewKey, CrewMember> = { scout: COMPANION };
+export const CREW_KEYS: CrewKey[] = ['scout'];
 
-// Names players can't take (so nobody can pose as a crew member).
-export const CREW_RESERVED_NAMES = ['dr. hoot', 'dr hoot', 'scout', 'moss', 'magpie', 'kestrel', 'field crew'];
+// Earlier bot accounts (the "Field Crew"), removed by the daily job.
+export const RETIRED_CREW = ['hoot', 'moss', 'magpie', 'kestrel'] as const;
+
+// Names players can't take (so nobody can pose as the companion or the team).
+export const CREW_RESERVED_NAMES = ['scout', 'dr. hoot', 'dr hoot', 'moss', 'magpie', 'kestrel', 'field crew'];
 
 // ---------- regions ----------
 // Players pick a home region (the app can suggest one from the device's

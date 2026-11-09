@@ -5,7 +5,7 @@ import { dailyPick, toRef } from '../_lib/library';
 import { regionByKey } from '../../shared/crew';
 
 // GET /api/crew/today?region=northeast&date=2026-11-12
-// Dr. Hoot's "species of the day" for a region: a credited library photo
+// Scout's "animal of the day" for a region: a credited library photo
 // (suited to the region, cycling so nothing repeats for months) plus facts
 // (cached per species). `date` is the player's local date.
 

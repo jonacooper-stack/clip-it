@@ -50,8 +50,13 @@ BUILD YOUR FIELD JOURNAL
 • Browse all your photos, group them by species, and search your finds
 • Add your own field notes to any sighting
 
+MEET SCOUT, YOUR AI FIELD GUIDE
+• A friendly fox who posts an animal of the day, with a photo and a fun fact
+• See what's happening near you each week: who's migrating, nesting or spawning
+• Swipe through fun facts about every new animal you find
+
 QUESTS, STREAKS AND THE LEADERBOARD
-• Daily streaks and quests keep you heading outside
+• Three new quests from Scout every Monday, plus daily streaks
 • Climb the leaderboard against everyone, or just your friends
 • Track how many species you've found
 
@@ -119,7 +124,7 @@ Notes:
 - Camera, location and photo access are requested only when used. The app works if location is denied.
 - Location is stored only on the device and is never shared with other users.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
-- The Field Crew (Dr. Hoot, Scout, Moss, Magpie, Kestrel) are labeled bots made by our team. They appear as clearly marked cards in the Feed (and in full behind the bell): species facts, a species of the day, a weekly regional wildlife forecast, weekly challenges and a weekly duel. Every crew name shows a BOT badge (tap it for an explanation), and they can be hidden from the wall in Profile.
+- Scout is an AI companion made by our team (a cartoon fox), always shown with an "AI" badge (tap it for an explanation). Scout posts in the Feed: an animal of the day, what wildlife is doing near the player's home region each week, fun facts about the animals they find, and weekly quests. Scout isn't a real user, never competes with players, and isn't on the leaderboard. Its posts can be hidden in Profile → "Show Scout in my feed".
 ```
 
 **Contact:** your name, phone, email.
@@ -134,4 +139,4 @@ Notes:
 | Subtitle | 30 | 30 |
 | Promotional text | 170 | 155 |
 | Keywords | 100 | 95 |
-| Description | 4000 | ~1,800 |
+| Description | 4000 | ~2,050 |

@@ -57,7 +57,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       'Account details: your email address, a password (stored only in hashed form by our authentication provider), your display name, and the age range you choose. If you sign in with Apple or Google, we receive your name and email (or Apple’s private relay email if you choose to hide it) from them.',
       'Profile picture: if you add one, it is visible to other signed-in players.',
       'Things you share: sightings you post to the wall (photo, species, points and caption), comments, likes, follows, friend requests, and reports or blocks you make.',
-      'Home region: the region you choose (for example “Northeast”), so the Field Crew can send forecasts for where you explore. If you tap “use my current location”, your phone suggests a region on the device; your location is not sent to us.',
+      'Home region: the region you choose (for example “Northeast”), so Scout can post what animals are up to where you explore. If you tap “use my current location”, your phone suggests a region on the device; your location is not sent to us.',
     ],
   },
   {
@@ -68,9 +68,9 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     ],
   },
   {
-    heading: 'The Field Crew',
+    heading: 'Scout, your AI companion',
     paragraphs: [
-      'The Field Crew (Dr. Hoot, Scout, Moss, Magpie and Kestrel) are bots made by the ClipIt team and are always labeled as bots. When you log a sighting, the species name (never your photo or location) is sent to our server so Dr. Hoot can share facts about it and Magpie can show other players’ wall posts of the same species. Facts and weekly forecasts are written by our AI provider and stored per species or per region, not per person. Weekly challenges and duels are worked out on your phone from your journal.',
+      'Scout is an AI companion made by the ClipIt team. It is not a real person and is always labeled “AI”. When you log a sighting, the species name (never your photo or location) is sent to our server so Scout can share facts about it and show other players’ wall posts of the same species. Facts and the daily and weekly posts are written by our AI provider and stored per species or per region, not per person. Weekly quests are worked out on your phone from your journal.',
     ],
   },
   {
@@ -256,8 +256,8 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
     a: 'In the app, go to Profile → Delete account. This permanently deletes your account, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
   },
   {
-    q: 'Who are the Field Crew?',
-    a: 'Five friendly bots made by the ClipIt team, always marked with a “BOT” badge: Dr. Hoot shares facts about what you find, Scout sends a weekly wildlife forecast for your home region, Moss sets your weekly challenges, Magpie collects the best sightings, and Kestrel challenges you to a weekly duel. Kestrel is the only one on the leaderboard and stops climbing just below the top real player, so you can always pass it. Find them under the bell on the Feed; hide them from the wall in Profile.',
+    q: 'Who is Scout?',
+    a: 'Scout is ClipIt’s AI field guide, a friendly fox made by the ClipIt team and always marked with an “AI” badge. Scout posts in your Feed: an animal of the day, what’s happening with wildlife near you each week, fun facts about the animals you find, and three new quests every Monday. Scout never competes with you and isn’t on the leaderboard. To hide Scout’s posts, turn off “Show Scout in my feed” in Profile.',
   },
   {
     q: 'Who can use ClipIt?',

@@ -1,6 +1,7 @@
-// Moss's weekly challenges: three per week (Monday–Sunday, local time), picked
+// Scout's weekly quests: three per week (Monday–Sunday, local time), picked
 // from a pool with a seed so they're stable, scored from the journal. Pure
 // functions: no storage, so rewards can be recomputed for any past week.
+// (Named "challenges" in code; players see them as quests.)
 import type { Sighting } from '@/types';
 import { addWeeks, dayKey, seededRandom, startOfWeek } from './time';
 
@@ -15,6 +16,7 @@ interface Ctx {
 export interface ChallengeDef {
   id: string;
   title: string;
+  emoji: string;
   description: string;
   goal: number;
   reward: number;
@@ -30,7 +32,8 @@ export const CHALLENGE_POOL: ChallengeDef[] = [
   {
     id: 'new_species',
     title: 'New to you',
-    description: 'Log 2 species you’ve never logged before',
+    emoji: '✨',
+    description: 'Find 2 animals that are new to you',
     goal: 2,
     reward: 20,
     progress: ({ week, before }) => {
@@ -38,23 +41,25 @@ export const CHALLENGE_POOL: ChallengeDef[] = [
       return new Set(week.map(speciesOf).filter((n) => n && !seen.has(n))).size;
     },
   },
-  { id: 'birds', title: 'Feathers', description: 'Photograph 2 different birds', goal: 2, reward: 15, progress: ({ week, groupOf }) => distinct(week, (s) => groupOf(s) === 'bird') },
-  { id: 'mammals', title: 'Fur & whiskers', description: 'Photograph 2 different mammals', goal: 2, reward: 15, progress: ({ week, groupOf }) => distinct(week, (s) => groupOf(s) === 'mammal') },
+  { id: 'birds', title: 'Feathers', emoji: '🐦', description: 'Snap 2 different birds', goal: 2, reward: 15, progress: ({ week, groupOf }) => distinct(week, (s) => groupOf(s) === 'bird') },
+  { id: 'mammals', title: 'Fur & whiskers', emoji: '🦊', description: 'Snap 2 different mammals', goal: 2, reward: 15, progress: ({ week, groupOf }) => distinct(week, (s) => groupOf(s) === 'mammal') },
   {
     id: 'behavior',
     title: 'Caught in the act',
-    description: 'Catch an animal doing something: with young, in flight, courting, hunting or in a group',
+    emoji: '🎬',
+    description: 'Catch an animal in action (flying, hunting, with babies…)',
     goal: 1,
     reward: 20,
     progress: ({ week }) => week.filter((s) => s.sceneTags.length > 0).length,
   },
-  { id: 'days', title: 'Out and about', description: 'Log sightings on 3 different days', goal: 3, reward: 15, easy: true, progress: ({ week }) => new Set(week.map((s) => dayKey(s.observedAt))).size },
-  { id: 'busy', title: 'Busy week', description: 'Log 6 sightings', goal: 6, reward: 10, easy: true, progress: ({ week }) => week.length },
-  { id: 'rare', title: 'Rare air', description: 'Find something rarer than the usual suspects', goal: 1, reward: 25, progress: ({ week }) => week.filter((s) => (s.score?.basePoints ?? 0) >= 5).length },
+  { id: 'days', title: 'Out and about', emoji: '📅', description: 'Go exploring on 3 different days', goal: 3, reward: 15, easy: true, progress: ({ week }) => new Set(week.map((s) => dayKey(s.observedAt))).size },
+  { id: 'busy', title: 'Busy week', emoji: '📸', description: 'Log 6 sightings', goal: 6, reward: 10, easy: true, progress: ({ week }) => week.length },
+  { id: 'rare', title: 'Rare find', emoji: '💎', description: 'Find something rare', goal: 1, reward: 25, progress: ({ week }) => week.filter((s) => (s.score?.basePoints ?? 0) >= 5).length },
   {
     id: 'notes',
     title: 'Field notes',
-    description: 'Add field notes to 2 sightings',
+    emoji: '📝',
+    description: 'Add notes to 2 sightings',
     goal: 2,
     reward: 10,
     easy: true,
@@ -63,6 +68,7 @@ export const CHALLENGE_POOL: ChallengeDef[] = [
   {
     id: 'herps',
     title: 'Scales & slime',
+    emoji: '🐸',
     description: 'Find a reptile or amphibian',
     goal: 1,
     reward: 25,
@@ -76,6 +82,7 @@ const COUNTED = (s: Sighting) => s.idStatus !== 'rejected' && s.idStatus !== 'in
 
 // This week's three: one easy one plus two others, chosen by seed.
 export function weeklyChallenges(weekStart: number, seed: string): ChallengeDef[] {
+  // The ':moss' suffix is historical; keep it so this week's quests don't change.
   const rand = seededRandom(`${seed}:${new Date(weekStart).toDateString()}:moss`);
   const shuffle = <T,>(xs: T[]) => xs.map((x) => [rand(), x] as const).sort((a, b) => a[0] - b[0]).map(([, x]) => x);
   const easy = shuffle(CHALLENGE_POOL.filter((c) => c.easy))[0];
@@ -111,7 +118,7 @@ export function challengeStatus(weekStart: number, sightings: Sighting[], seed: 
   });
 }
 
-// Points earned from Moss's challenges across every week with sightings.
+// Points earned from weekly quests across every week with sightings.
 export function challengeRewardPoints(sightings: Sighting[], seed: string, groupOf: GroupOf, now = Date.now()): number {
   const counted = sightings.filter(COUNTED);
   if (!counted.length) return 0;

@@ -1,6 +1,6 @@
-// Talking to the Field Crew's server endpoints (api/crew/*). Everything here is
-// best-effort: if the network or server is down, the crew simply has less to
-// say, and nothing else in the app is affected.
+// Talking to Scout's server endpoints (api/crew/*). Everything here is
+// best-effort: if the network or server is down, Scout simply has less to say,
+// and nothing else in the app is affected.
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -43,9 +43,13 @@ async function crewFetch<T>(path: string, init: RequestInit = {}): Promise<T | n
 
 const inFlight = new Set<string>();
 
-// Fetch Dr. Hoot's facts + Magpie's finds for a sighting and save them on it.
-// Reuses notes from another sighting of the same species fetched in the last
-// week (no server call). With `postId`, also asks Dr. Hoot to comment on the
+// Notes saved before this version (long-form facts) are refetched.
+export const NOTES_VERSION = 2;
+const fresh = (n?: CrewNotes) => Boolean(n && n.v === NOTES_VERSION && Date.now() - n.fetchedAt < 7 * 86_400_000);
+
+// Fetch Scout's facts + other players' photos for a sighting and save them on
+// it. Reuses notes from another sighting of the same species fetched in the
+// last week (no server call). With `postId`, also asks Scout to comment on the
 // wall post the player just shared.
 export async function fetchCrewNotes(sightingId: string, opts: { postId?: string } = {}): Promise<CrewNotes | null> {
   const store = useJournalStore.getState();
@@ -55,10 +59,8 @@ export async function fetchCrewNotes(sightingId: string, opts: { postId?: string
   if (inFlight.has(key)) return s.crew ?? null;
 
   if (!opts.postId) {
-    if (s.crew && Date.now() - s.crew.fetchedAt < 7 * 86_400_000) return s.crew;
-    const twin = store.sightings.find(
-      (x) => x.id !== sightingId && x.crew && x.species?.commonName === s.species?.commonName && Date.now() - x.crew.fetchedAt < 7 * 86_400_000,
-    );
+    if (fresh(s.crew)) return s.crew!;
+    const twin = store.sightings.find((x) => x.id !== sightingId && fresh(x.crew) && x.species?.commonName === s.species?.commonName);
     if (twin?.crew) {
       store.updateSighting(sightingId, { crew: twin.crew });
       return twin.crew;
@@ -72,7 +74,7 @@ export async function fetchCrewNotes(sightingId: string, opts: { postId?: string
       body: JSON.stringify({ species: s.species.commonName, sci: s.species.scientificName || undefined, postId: opts.postId }),
     });
     if (!res || (!res.facts?.length && !res.others?.length && !res.photo)) return s.crew ?? null;
-    const notes: CrewNotes = { facts: res.facts ?? [], tip: res.tip ?? '', others: res.others ?? [], photo: res.photo ?? null, fetchedAt: Date.now() };
+    const notes: CrewNotes = { facts: res.facts ?? [], tip: res.tip ?? '', others: res.others ?? [], photo: res.photo ?? null, v: NOTES_VERSION, fetchedAt: Date.now() };
     useJournalStore.getState().updateSighting(sightingId, { crew: notes });
     return notes;
   } finally {
@@ -80,7 +82,7 @@ export async function fetchCrewNotes(sightingId: string, opts: { postId?: string
   }
 }
 
-// Scout's forecast for this week, from the device cache or the server.
+// Scout's "this week near you" slides, from the device cache or the server.
 export async function loadForecast(region: RegionKey): Promise<Forecast | null> {
   const week = weekOf();
   const cached = useCrewStore.getState().forecasts[`${region}:${week}`];
@@ -90,14 +92,14 @@ export async function loadForecast(region: RegionKey): Promise<Forecast | null> 
   return f;
 }
 
-// The player's local date as YYYY-MM-DD (species of the day follows the
+// The player's local date as YYYY-MM-DD (the animal of the day follows the
 // player's day, not UTC).
 export function localDate(t = Date.now()): string {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Dr. Hoot's species of the day, from the device cache or the server.
+// Scout's animal of the day, from the device cache or the server.
 export async function loadToday(region: RegionKey): Promise<TodayPick | null> {
   const date = localDate();
   const cached = useCrewStore.getState().today[`${region}:${date}`];
@@ -105,11 +107,6 @@ export async function loadToday(region: RegionKey): Promise<TodayPick | null> {
   const t = await crewFetch<TodayPick>(`/api/crew/today?region=${encodeURIComponent(region)}&date=${date}`);
   if (t?.facts?.length && t.photo) useCrewStore.getState().saveToday({ ...t, region, date });
   return t;
-}
-
-export function cachedForecast(region: RegionKey | null): Forecast | null {
-  if (!region) return null;
-  return useCrewStore.getState().forecasts[`${region}:${weekOf()}`] ?? null;
 }
 
 // Save the home region on the account (both auth metadata, for other devices,
@@ -123,8 +120,4 @@ export async function saveHomeRegion(region: RegionKey): Promise<void> {
     supabase.auth.updateUser({ data: { homeRegion: region } }),
     supabase.from('profiles').update({ home_region: region }).eq('id', uid),
   ]);
-}
-
-export function sightingsWithNotes(sightings: Sighting[]): Sighting[] {
-  return sightings.filter((s) => s.crew && (s.crew.facts.length || s.crew.others.length || s.crew.photo));
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
@@ -8,12 +8,11 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Segmented, Loading, Empty } from '@/components/social/parts';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { CrewBadge } from '@/components/social/CrewBadge';
-import { InboxCard } from '@/components/crew/InboxCard';
-import { YourWeekCard } from '@/components/crew/YourWeekCard';
+import { ScoutPost } from '@/components/crew/ScoutPost';
+import { QuestsCard } from '@/components/crew/QuestsCard';
 import { useAppStore } from '@/state/useAppStore';
-import { useCrewInbox } from '@/lib/crew/useCrewInbox';
-import { FEED_KINDS, type InboxItem } from '@/lib/crew/inbox';
-import { addDays, startOfDay } from '@/lib/crew/time';
+import { useScoutFeed } from '@/lib/crew/useScoutFeed';
+import { weeklyPicks, type Moment } from '@/lib/crew/moments';
 import { timeAgo } from '@/lib/timeAgo';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
@@ -21,35 +20,11 @@ import {
   type FeedPost, type FeedScope,
 } from '@/lib/social';
 
-type FeedEntry = { key: string; at: number } & ({ type: 'post'; post: FeedPost } | { type: 'crew'; item: InboxItem });
+type FeedEntry = { key: string; at: number } & ({ type: 'post'; post: FeedPost } | { type: 'scout'; moment: Moment });
 
-const CREW_WINDOW_MS = 14 * 86_400_000;
-
-// Magpie's weekly picks: the most-liked posts of the past week, on Sunday evening.
-function magpiePicks(posts: FeedPost[], now: number): InboxItem | null {
-  const today = startOfDay(now);
-  const back = (new Date(today).getDay() + 7) % 7; // days since Sunday
-  let at = addDays(today, -back) + 17 * 3600_000;
-  if (at > now) at = addDays(at, -7);
-  const top = posts
-    .filter((p) => !p.isBot && p.photoUrl && p.likeCount > 0 && Date.parse(p.createdAt) <= at && Date.parse(p.createdAt) > at - 7 * 86_400_000)
-    .sort((a, b) => b.likeCount - a.likeCount)
-    .slice(0, 3);
-  if (top.length < 2) return null;
-  return {
-    id: `magpie_picks:${at}`,
-    crew: 'magpie',
-    kind: 'magpie',
-    at,
-    title: 'Magpie’s picks of the week',
-    body: 'The shiniest sightings from the wall this week. Into the collection they go!',
-    others: top.map((p) => ({ postId: p.id, photoUrl: p.photoUrl!, name: p.displayName, likes: p.likeCount, createdAt: p.createdAt })),
-  };
-}
-
-// The home feed: one timeline of wall posts and Field Crew moments (facts,
-// forecasts, challenges, duel updates), newest first, with the week's
-// challenges and duel pinned on top.
+// The home feed: one timeline of wall posts and Scout's posts (the animal of
+// the day, what's happening near you, your new species, quests done), newest
+// first, with this week's quests pinned on top.
 export function WallFeed() {
   const [scope, setScope] = useState<FeedScope>('everyone');
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
@@ -73,50 +48,28 @@ export function WallFeed() {
   );
 
   const [safety, setSafety] = useState<SafetyTarget | null>(null);
-  const showCrew = useAppStore((s) => s.showCrew);
-  const markCrewSeen = useAppStore((s) => s.markCrewSeen);
-  const { items: crewItems } = useCrewInbox();
+  const showScout = useAppStore((s) => s.showCrew);
+  const { moments, quests } = useScoutFeed();
 
-  // New crew cards are highlighted while you look; leaving the feed marks
-  // them seen (so the bell only counts what you haven't seen anywhere).
-  const seenAtOpen = useRef(useAppStore.getState().crewSeenAt);
-  useFocusEffect(
-    useCallback(() => {
-      seenAtOpen.current = useAppStore.getState().crewSeenAt;
-      return () => markCrewSeen();
-    }, [markCrewSeen]),
-  );
-
-  const now = Date.now();
-  const pinnedRegion = showCrew ? crewItems.find((i) => i.kind === 'region') : undefined;
-  const week = crewItems.find((i) => i.kind === 'challenges');
-  const duel = crewItems.find((i) => i.kind === 'duel')?.duel;
-  const intro = crewItems.find((i) => i.kind === 'intro');
+  const pinned = showScout ? moments.find((m) => m.kind === 'region') : undefined;
   const timeline = useMemo<FeedEntry[]>(() => {
     const out: FeedEntry[] = (posts ?? []).map((p) => ({ key: `post:${p.id}`, at: Date.parse(p.createdAt), type: 'post', post: p }));
-    if (showCrew) {
-      for (const it of crewItems) {
-        if (FEED_KINDS.has(it.kind) && now - it.at < CREW_WINDOW_MS) out.push({ key: `crew:${it.id}`, at: it.at, type: 'crew', item: it });
-      }
-      const picks = magpiePicks(posts ?? [], now);
-      if (picks && now - picks.at < CREW_WINDOW_MS) out.push({ key: `crew:${picks.id}`, at: picks.at, type: 'crew', item: picks });
+    if (showScout) {
+      for (const m of moments) if (m.kind !== 'region') out.push({ key: `scout:${m.id}`, at: m.at, type: 'scout', moment: m });
+      const picks = weeklyPicks(posts ?? []);
+      if (picks) out.push({ key: `scout:${picks.id}`, at: picks.at, type: 'scout', moment: picks });
     }
     return out.sort((a, b) => b.at - a.at);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posts, crewItems, showCrew]);
-  const crewCount = timeline.filter((e) => e.type === 'crew').length;
+  }, [posts, moments, showScout]);
+  const scoutCount = timeline.filter((e) => e.type === 'scout').length;
 
   const onRemoved = (id: string) => setPosts((ps) => (ps ? ps.filter((p) => p.id !== id) : ps));
   const onBlocked = (userId: string) => setPosts((ps) => (ps ? ps.filter((p) => p.userId !== userId) : ps));
 
   return (
     <ScrollView contentContainerStyle={styles.feed} showsVerticalScrollIndicator={false}>
-      {pinnedRegion && (
-        <View style={styles.crewWrap}>
-          <InboxCard item={pinnedRegion} />
-        </View>
-      )}
-      {showCrew && week?.challenges && duel && <YourWeekCard challenges={week.challenges} duel={duel} />}
+      {showScout && <QuestsCard quests={quests} />}
+      {pinned && <ScoutPost moment={pinned} />}
       <View style={styles.feedToggle}>
         <Segmented
           value={scope}
@@ -124,7 +77,7 @@ export function WallFeed() {
           options={[{ value: 'everyone', label: 'Everyone' }, { value: 'following', label: 'Following' }]}
         />
       </View>
-      {posts === null && crewCount === 0 ? (
+      {posts === null && scoutCount === 0 ? (
         <Loading />
       ) : (
         <>
@@ -142,17 +95,10 @@ export function WallFeed() {
             e.type === 'post' ? (
               <PostCard key={e.key} post={e.post} onRemoved={onRemoved} onMore={setSafety} />
             ) : (
-              <View key={e.key} style={styles.crewWrap}>
-                <InboxCard item={e.item} unread={e.item.at > seenAtOpen.current} />
-              </View>
+              <ScoutPost key={e.key} moment={e.moment} />
             ),
           )}
-          {showCrew && intro && crewCount < 8 && (
-            <View style={styles.crewWrap}>
-              <InboxCard item={intro} />
-            </View>
-          )}
-          {timeline.length === 0 && !showCrew && !error && posts?.length === 0 && (
+          {timeline.length === 0 && !showScout && !error && posts?.length === 0 && (
             <Empty icon="images-outline" text="Nothing here yet. Tap the camera to ClipIt your first sighting!" />
           )}
         </>
@@ -300,7 +246,6 @@ function PostCard({
 
 const styles = StyleSheet.create({
   feed: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
-  crewWrap: { paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
   inlineNote: { fontSize: font.small, color: colors.muted, textAlign: 'center', paddingHorizontal: spacing.xl, marginBottom: spacing.lg, lineHeight: 20 },
   feedToggle: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   igCard: { marginBottom: spacing.lg },

@@ -1,5 +1,6 @@
-// Dr. Hoot's facts: generated once per species, cached in crew_facts, reused
-// for everyone (and for Dr. Hoot's comments on the wall).
+// Scout's facts: generated once per species, cached in crew_facts, reused for
+// everyone (and for Scout's comments on the wall). Written so a 12-year-old can
+// read them at a glance: one short sentence each, starting with an emoji.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { askJSON } from './claude';
 import { log } from './server';
@@ -13,12 +14,13 @@ export interface SpeciesFacts {
 }
 
 const SYSTEM =
-  'You write field notes for ClipIt, a wildlife photography game. Players have just photographed an animal ' +
-  'and want to learn something delightful about it. Write facts that are accurate and widely documented in field ' +
-  'guides and encyclopedias: prefer surprising but well-established facts over trivia you are unsure of, avoid ' +
-  'precise figures unless they are textbook-standard, and never invent. Each fact is one plain sentence under 170 ' +
-  'characters, no emoji, no markdown. The tip helps a player tell this species from a common look-alike, or says ' +
-  'where and when to look for it; it also stays under 170 characters.';
+  'You are Scout, a friendly fox who is the AI guide in ClipIt, a wildlife photography game for ages 13 and up. ' +
+  'Players have just photographed an animal. Give them facts a 12-year-old would love and understand at a glance. ' +
+  'Rules: only facts that are accurate and widely documented in field guides and encyclopedias; prefer surprising ' +
+  'but well-established facts; never invent; avoid exact numbers unless they are textbook-standard. ' +
+  'Each fact is ONE short, simple sentence of at most 90 characters, using everyday words, that starts with one ' +
+  'fitting emoji and a space. No markdown, no lists inside a fact, no "Did you know". ' +
+  'The tip says how to spot this animal or tell it from a look-alike, in the same style (emoji first, at most 90 characters).';
 
 const SCHEMA = {
   type: 'object',
@@ -34,8 +36,18 @@ const SCHEMA = {
 // burst of players finding the same species makes one model call.
 const memo = new Map<string, Promise<SpeciesFacts>>();
 
+// 'kid:' versions the cache: entries written before the short, emoji-first
+// style are ignored and regenerated.
 export function speciesKey(common: string, sci?: string | null): string {
-  return (sci?.trim() || common.trim()).toLowerCase();
+  return `kid:${(sci?.trim() || common.trim()).toLowerCase()}`;
+}
+
+// Keep facts short even if the model runs long: cut at a word boundary.
+export function shorten(text: string, max = 110): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), max / 2)).replace(/[,;:\s]+$/, '')}…`;
 }
 
 export async function getFacts(db: SupabaseClient | null, common: string, sci?: string | null): Promise<SpeciesFacts> {
@@ -54,8 +66,8 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
           schema: SCHEMA,
         });
         const clean: SpeciesFacts = {
-          facts: (out.facts ?? []).map((f) => String(f).trim()).filter(Boolean).slice(0, 3),
-          tip: String(out.tip ?? '').trim(),
+          facts: (out.facts ?? []).map((f) => shorten(String(f))).filter(Boolean).slice(0, 3),
+          tip: shorten(String(out.tip ?? '')),
         };
         if (!clean.facts.length) throw new Error('no facts returned');
         if (db) {
@@ -73,16 +85,23 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
   return memo.get(key)!;
 }
 
-// Dr. Hoot's voice for wall comments. Picks a phrasing from the post id so
-// it's stable but varied.
-export function hootComment(species: string, facts: SpeciesFacts, seed: string): string {
+// Scout's voice for wall comments. Picks a phrasing from the post id so it's
+// stable but varied.
+export function scoutComment(species: string, facts: SpeciesFacts, seed: string): string {
   const n = [...seed].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
   const fact = facts.facts[n % facts.facts.length];
   const openers = [
-    `Hoo! ${cap(withArticle(species))}! Field note: `,
-    `Ooh, ${species}! Did you know? `,
-    `Excellent ${species} spot. Fun fact: `,
-    `Hoo-hoo, ${withArticle(species)}! `,
+    `Wow, ${withArticle(species)}! 🦊`,
+    `Great ${species} spot! 🦊`,
+    `${cap(withArticle(species))}! Nice one 🦊`,
+    `Ooh, ${species}! 🦊`,
   ];
-  return `🦉 ${openers[n % openers.length]}${fact}`;
+  return `${openers[n % openers.length]}\n${fact}`;
+}
+
+export function scoutWelcome(name: string, species: string | null): string {
+  const first = name.split(' ')[0] || 'explorer';
+  return species
+    ? `Welcome to the wall, ${first}! 🦊\n🎉 ${cap(withArticle(species))} for your first post. What a start!`
+    : `Welcome to the wall, ${first}! 🦊\n🎉 What a first post. See you out there!`;
 }

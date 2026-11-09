@@ -189,8 +189,6 @@ export default function Profile() {
           )}
           {isSupabaseConfigured && session && (
             <>
-              <Row icon="notifications" label="Field Crew" onPress={() => router.push('/crew')} />
-              <Divider />
               <Row
                 icon="map"
                 label={`Home region${homeRegion ? `: ${regionByKey(homeRegion)?.label}` : ''}`}
@@ -198,8 +196,8 @@ export default function Profile() {
               />
               <Divider />
               <ToggleRow
-                icon="hardware-chip"
-                label="Show Field Crew on the wall"
+                icon="sparkles"
+                label="Show Scout in my feed"
                 value={showCrew}
                 onValueChange={setShowCrew}
               />

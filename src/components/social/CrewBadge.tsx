@@ -1,33 +1,30 @@
-// "BOT" badge shown next to every Field Crew name (Dr. Hoot, Scout, Moss,
-// Magpie, Kestrel). Tapping it explains who the crew are, so players always
-// know when they're looking at a bot.
+// "AI" badge shown next to Scout's name everywhere (posts, comments), so
+// players always know when they're reading the AI companion, not a person.
 import { Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radius } from '@/theme';
 
-export const CREW_EXPLAINER =
-  'The Field Crew are friendly bots made by the ClipIt team, not real players: Dr. Hoot shares facts about what ' +
-  'you find, Scout sends a weekly forecast for your region, Moss sets your challenges, Magpie collects the best ' +
-  'sightings, and Kestrel challenges you to a weekly duel. Kestrel is the only one on the leaderboard, and it ' +
-  'stops climbing just below the top real player, so you can always pass it.\n\n' +
-  'Prefer a quieter wall? Turn off “Show Field Crew on the wall” in Profile.';
+export const SCOUT_EXPLAINER =
+  'Scout is ClipIt’s AI field guide, made by the ClipIt team. It isn’t a real player and never competes with you. ' +
+  'Scout posts fun facts about what you find, shows what animals are up to near you, and gives you quests.\n\n' +
+  'Prefer a quieter feed? Turn off “Show Scout in my feed” in Profile.';
 
-export function explainCrew() {
-  if (Platform.OS === 'web') (globalThis as any).alert?.(`The Field Crew are bots\n\n${CREW_EXPLAINER}`);
-  else Alert.alert('The Field Crew are bots', CREW_EXPLAINER);
+export function explainScout() {
+  if (Platform.OS === 'web') (globalThis as any).alert?.(`Scout is an AI\n\n${SCOUT_EXPLAINER}`);
+  else Alert.alert('Scout is an AI', SCOUT_EXPLAINER);
 }
 
 export function CrewBadge({ small = false }: { small?: boolean }) {
   return (
     <Pressable
-      onPress={explainCrew}
+      onPress={explainScout}
       hitSlop={8}
       style={[styles.badge, small && styles.small]}
       accessibilityRole="button"
-      accessibilityLabel="Bot account. Tap to learn about the Field Crew."
+      accessibilityLabel="AI companion. Tap to learn about Scout."
     >
-      <Ionicons name="hardware-chip-outline" size={small ? 10 : 11} color={colors.dusk} />
-      <Text style={[styles.text, small && styles.smallText]}>BOT</Text>
+      <Ionicons name="sparkles" size={small ? 9 : 10} color={colors.dusk} />
+      <Text style={[styles.text, small && styles.smallText]}>AI</Text>
     </Pressable>
   );
 }

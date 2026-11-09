@@ -64,7 +64,7 @@ export interface Sighting {
   /** Optional citizen-science answers (questionId -> selected values). Some
    * questions allow more than one. Legacy data may hold a single string. */
   science?: Record<string, string[]>;
-  /** The Field Crew's notes on this sighting (Dr. Hoot's facts, Magpie's finds). */
+  /** Scout's notes on this sighting (facts, and other players' photos of the species). */
   crew?: CrewNotes;
 }
 
@@ -87,6 +87,8 @@ export interface CrewNotes {
   tip: string;
   others: CrewOtherPost[];
   photo: CrewPhoto | null;
+  /** 2 = short, kid-friendly facts. Older notes are refetched. */
+  v?: number;
   fetchedAt: number;
 }
 

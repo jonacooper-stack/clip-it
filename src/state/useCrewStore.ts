@@ -3,15 +3,16 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CrewPhoto } from '@/types';
 
-// Scout's weekly forecasts, cached on the device by region + week so the inbox
-// and feed strip work offline and the server is asked at most once a week.
+// Scout's content, cached on the device: the weekly "near you" slides (by
+// region + week) and the animal of the day (by region + local date), so the
+// feed works offline and the server is asked at most once a week / day.
 
 export interface ForecastItem {
   group: 'bird' | 'mammal' | 'fish' | 'reptile' | 'amphibian' | 'insect' | 'other';
   species: string;
-  title: string;
-  body: string;
-  where: string;
+  emoji: string;
+  title: string; // what the animal is up to, e.g. "Trout are laying eggs"
+  fact: string; // one short sentence
   photo?: CrewPhoto | null;
 }
 
@@ -22,7 +23,7 @@ export interface Forecast {
   items: ForecastItem[];
 }
 
-// Dr. Hoot's species of the day (one per region per local date).
+// Scout's animal of the day (one per region per local date).
 export interface TodayPick {
   region: string;
   date: string; // local YYYY-MM-DD
@@ -62,6 +63,12 @@ export const useCrewStore = create<CrewState>()(
           return { forecasts: Object.fromEntries(entries) };
         }),
     }),
-    { name: 'clipit-crew', storage: createJSONStorage(() => AsyncStorage) },
+    {
+      name: 'clipit-crew',
+      storage: createJSONStorage(() => AsyncStorage),
+      // v2: short kid-friendly slides. Drop older long-form content (it refetches).
+      version: 2,
+      migrate: () => ({ forecasts: {}, today: {} }) as any,
+    },
   ),
 );

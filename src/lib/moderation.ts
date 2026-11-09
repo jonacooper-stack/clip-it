@@ -45,8 +45,8 @@ export function checkText(text: string): string | null {
     : null;
 }
 
-// Names reserved for the Field Crew (the ClipIt team's labeled bots) and the
-// team itself, so players can't pass themselves off as either.
+// Names reserved for Scout (the AI companion), the retired crew, and the team
+// itself, so players can't pass themselves off as any of them.
 export function reservedName(name: string): string | null {
   const n = name.trim().toLowerCase().replace(/\s+/g, ' ');
   return CREW_RESERVED_NAMES.includes(n) || n.includes('clipit') || n.includes('clip it') || n.includes('field crew')

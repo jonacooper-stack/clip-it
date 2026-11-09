@@ -201,48 +201,53 @@ those builds until they update.
   MX `mx1.improvmx.com` (10) and `mx2.improvmx.com` (20), plus TXT
   `v=spf1 include:spf.improvmx.com ~all`, in Vercel → Domains → DNS records.
 
-### f. The Field Crew (labeled bots)
-Five playful animal-bots, each with a job, always shown with a **BOT** badge:
-- **Dr. Hoot** (facts): 3 facts + a field tip for each species you log, on the
-  sighting screen; also leaves one fact as a comment when you share to the wall.
-- **Scout** (forecasts): a weekly "what's out there now" for the player's home
-  region, ordered by what they log most.
-- **Moss** (coach): three weekly challenges with points, plus milestones.
-- **Magpie** (curator): other players' posts of the same species, or a credited
-  library photo when nobody has posted one; "Magpie's pick" on the feed.
-- **Kestrel** (rival): a weekly duel against a target set from the player's own
-  recent weeks (+15 for a win), and the only crew member on the leaderboard
-  (pacing in `api/_lib/kestrel.ts`; never passes the top real player).
+### f. Scout, the AI companion
+One friendly fox-bot, **Scout**, always shown with an **AI** badge. Scout never
+competes: it isn't on the leaderboard and there are no duels. Everything it
+says is short and simple (one fact per slide, emoji first, bullets not
+paragraphs).
 
-Where: the Feed is one timeline of wall posts and crew moments (species of
-the day, Scout's daily pick, Kestrel's evening duel update, Moss's nudges and
-completions, Dr. Hoot's notes on your firsts, Magpie's finds and weekly picks,
-"one year ago today"), with this week's challenges + duel pinned on top as
-"Your week". The bell opens the full crew inbox; notes also appear on each
-sighting. "Show Field Crew on the wall" (Profile) turns the crew cards off. Players pick a home region after
-sign-up (or in Profile); "use my current location" only suggests one on-device.
+What players see in the Feed (one timeline with wall posts):
+- **One Scout post a day**, Instagram-style: swipeable square slides, each one
+  picture (or one big emoji) and one short line. Monday is "This week near
+  you" (what's migrating, nesting or spawning in their home region, ordered by
+  what they log most). Tuesday to Sunday is "Today with Scout": the animal of
+  the day, a spotting tip and one thing happening nearby.
+- **Moments they earn**: a new species (their photo, then fun facts and other
+  players' photos), a quest done, a milestone, "one year ago today", and the
+  week's best wall photos on Sunday evening. Anything earned on the same outing
+  is merged into one post, so one sighting never makes a pile of cards.
+- **Weekly quests** pinned on top (three new every Monday, +10 for all three),
+  also on the Quests screen above the long-term "big quests".
+- On each sighting: "Scout's notes" (3 short facts + how to spot one), and Scout
+  comments one fact on wall posts.
+- "Show Scout in my feed" (Profile) hides Scout's posts and comments. Players
+  pick a home region after sign-up (or in Profile); "use my current location"
+  only suggests one on the device.
 
 How it runs:
-- `GET /api/crew/today` (species of the day: a regional library photo, cycling
-  without repeats, plus cached facts),
-  `POST /api/crew/notes` and `GET /api/crew/forecast` (signed-in only) call
-  Claude (`claude-opus-5-5`, low effort, cached per species / per region-week).
-  They work with just `ANTHROPIC_API_KEY`; caching across instances and
-  Dr. Hoot's comments need the service role key below.
-- Challenges, duels, milestones and the inbox are computed on the phone.
-- `GET /api/crew-daily` (Vercel Cron, daily) creates the crew accounts, moves
-  Kestrel, and backfills one crew comment per recent wall post (Moss welcomes a
-  first post; otherwise Dr. Hoot adds a fact).
+- `GET /api/crew/today` (animal of the day: a regional library photo, cycling
+  without repeats, plus cached facts), `POST /api/crew/notes` and
+  `GET /api/crew/forecast` (signed-in only) call Claude (`claude-opus-5-5`, low
+  effort, cached per species / per region-week; cache keys start with `kid:`, so
+  older long-form content is regenerated in the new style). They work with just
+  `ANTHROPIC_API_KEY`; caching across instances and Scout's comments need the
+  service role key below.
+- Quests, milestones and the feed posts are computed on the phone.
+- `GET /api/crew-daily` (Vercel Cron, daily) creates Scout's account, removes
+  the retired Field Crew bot accounts (Dr. Hoot, Moss, Magpie, Kestrel, along
+  with their comments), and backfills one Scout comment per recent wall post (a
+  welcome on a player's first post, otherwise a fun fact).
 
-One-time setup:
+One-time setup (already done if the Field Crew was running):
 1. Supabase SQL editor: run `supabase/migrations/0007_field_crew.sql`.
 2. Vercel → Project → Settings → Environment Variables (Production), then redeploy:
    - `SUPABASE_SERVICE_ROLE_KEY`: Supabase → Project Settings → API Keys → the
      **secret** key. Server-only; never put it in the app.
    - `CRON_SECRET`: any long random string.
-3. Start the crew now (creates the five accounts) instead of waiting for the
-   daily run: `curl -H "Authorization: Bearer <CRON_SECRET>" https://clipitwildlife.app/api/crew-daily`
-   (add `?dry=1` to preview).
+3. Run the job once now instead of waiting for the daily run (this also removes
+   the old crew accounts): `curl -H "Authorization: Bearer <CRON_SECRET>" https://clipitwildlife.app/api/crew-daily`
+   (add `?dry=1` first to preview what it would remove).
 4. Logs: Vercel → Logs, search `crew_`.
 
 ### g. Before submitting

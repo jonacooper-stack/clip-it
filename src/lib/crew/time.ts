@@ -1,5 +1,5 @@
-// Week math for the crew (local time: challenges and duels run Monday–Sunday
-// in the player's own time zone).
+// Week math for Scout (local time: weekly quests run Monday–Sunday in the
+// player's own time zone).
 export const DAY_MS = 86_400_000;
 
 export function startOfWeek(t: number): number {

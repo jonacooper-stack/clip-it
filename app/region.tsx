@@ -67,11 +67,11 @@ export default function RegionPicker() {
           </Pressable>
         )}
         <View style={styles.scout}>
-          <CrewAvatar crew="scout" size={52} />
+          <CrewAvatar size={52} />
           <View style={styles.bubble}>
             <Text style={styles.bubbleText}>
-              Hi, I’m Scout! Where do you usually explore? Every Monday I’ll send you what’s migrating, nesting and
-              spawning near you.
+              Hi, I’m Scout, your AI field guide! 🦊 Where do you usually explore? I’ll post what animals are up to
+              near you every day.
             </Text>
           </View>
         </View>

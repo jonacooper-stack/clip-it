@@ -1,11 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, log, rateLimited, verifyUser } from '../_lib/server';
 import { askJSON } from '../_lib/claude';
-import { findLibraryPhoto, type PhotoRef } from '../_lib/library';
+import { findLibraryPhoto, regionSpecies, type PhotoRef } from '../_lib/library';
+import { shorten } from '../_lib/crewFacts';
 import { regionByKey, weekOf } from '../../shared/crew';
 
 // GET /api/crew/forecast?region=northeast
-// Scout's weekly "what's out there now" for a region: generated on the first
+// Scout's weekly "what's happening near you" for a region: one slide per
+// animal (a photo, a short title and one simple fact). Generated on the first
 // request of the week, then cached in crew_forecasts (and in memory) and served
 // to everyone in that region. The app personalises the order.
 
@@ -16,9 +18,9 @@ const GROUPS = ['bird', 'mammal', 'fish', 'reptile', 'amphibian', 'insect', 'oth
 interface ForecastItem {
   group: (typeof GROUPS)[number];
   species: string;
+  emoji: string;
   title: string;
-  body: string;
-  where: string;
+  fact: string;
   photo?: PhotoRef | null;
 }
 interface Forecast {
@@ -28,15 +30,20 @@ interface Forecast {
   items: ForecastItem[];
 }
 
+// 'kid:' versions the cache (forecasts written before the slide format are ignored).
+const CACHE_PREFIX = 'kid:';
+
 const SYSTEM =
-  'You are Scout, the seasonal wildlife guide in ClipIt, a game where people photograph wild animals. ' +
-  'For a region and a week of the year, list wildlife events that typically happen then and that a casual ' +
-  'explorer could actually see: migrations, arrivals and departures, breeding and nesting, spawning runs, the rut, ' +
-  'hibernation prep, insects and the plants they visit. Only well-documented seasonal patterns for that region. ' +
-  'Hedge the timing ("around now", "often", "look for"), never give exact dates or counts, never name private or ' +
-  'sensitive sites (nests, dens, roosts); general habitats like "beaches", "ridgelines" or "clear riffles" are good. ' +
-  'Spread items across different animal groups when the season allows. Titles under 60 characters, bodies under ' +
-  '220 characters, warm and specific, no emoji, no markdown. Where it fits, remind people to watch from a distance.';
+  'You are Scout, a friendly fox who is the AI guide in ClipIt, a game where people photograph wild animals. ' +
+  'For a region and a week of the year, pick animals that are doing something seasonal right now that a casual ' +
+  'explorer could actually see: migrations, arrivals and departures, babies and nesting, fish runs, the rut, ' +
+  'getting ready for winter, insects on flowers. Only well-documented seasonal patterns for that region. ' +
+  'Write for a 12-year-old scrolling a phone: simple everyday words, short and fun. ' +
+  'Each item: a title of at most 32 characters saying what the animal is up to (like "Trout are laying eggs"), ' +
+  'one emoji that fits, and ONE fact sentence of at most 90 characters that says what to look for or where ' +
+  '(general habitats like "ponds" or "open fields" only; never nests, dens or roosts). ' +
+  'Hedge timing ("around now", "often"), never give exact dates or counts, no markdown. ' +
+  'Use a different kind of animal for each item when the season allows.';
 
 const SCHEMA = {
   type: 'object',
@@ -49,11 +56,11 @@ const SCHEMA = {
         properties: {
           group: { type: 'string', enum: [...GROUPS] },
           species: { type: 'string' },
+          emoji: { type: 'string' },
           title: { type: 'string' },
-          body: { type: 'string' },
-          where: { type: 'string' },
+          fact: { type: 'string' },
         },
-        required: ['group', 'species', 'title', 'body', 'where'],
+        required: ['group', 'species', 'emoji', 'title', 'fact'],
         additionalProperties: false,
       },
     },
@@ -67,32 +74,35 @@ const memo = new Map<string, Promise<Forecast>>();
 async function build(region: string, week: string): Promise<Forecast> {
   const db = adminClient();
   if (db) {
-    const { data } = await db.from('crew_forecasts').select('payload').eq('region', region).eq('week_of', week).maybeSingle();
+    const { data } = await db.from('crew_forecasts').select('payload').eq('region', CACHE_PREFIX + region).eq('week_of', week).maybeSingle();
     if (data?.payload) return data.payload as Forecast;
   }
   const r = regionByKey(region)!;
   const when = new Date(`${week}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   const out = await askJSON<{ headline: string; items: ForecastItem[] }>({
     system: SYSTEM,
-    prompt: `Region: ${r.describe}. The week starting Monday ${when}. Give a headline under 80 characters and 5 items.`,
+    prompt:
+      `Region: ${r.describe}. The week starting Monday ${when}. Give a headline of at most 40 characters and 6 items. ` +
+      `We have photos of these animals, so prefer them whenever they really fit the season and region (use the exact ` +
+      `name): ${regionSpecies(region).join(', ')}. Other animals are fine when they are the better story (like a fish run).`,
     schema: SCHEMA,
   });
   const forecast: Forecast = {
     region,
     weekOf: week,
-    headline: String(out.headline ?? '').trim(),
+    headline: shorten(String(out.headline ?? ''), 60),
     items: (out.items ?? []).slice(0, 6).map((it, i) => ({
       group: GROUPS.includes(it.group) ? it.group : 'other',
       species: String(it.species ?? '').trim(),
-      title: String(it.title ?? '').trim(),
-      body: String(it.body ?? '').trim(),
-      where: String(it.where ?? '').trim(),
+      emoji: String(it.emoji ?? '').trim().slice(0, 8),
+      title: shorten(String(it.title ?? ''), 48),
+      fact: shorten(String(it.fact ?? '')),
       photo: findLibraryPhoto(String(it.species ?? ''), null, i),
     })),
   };
   if (!forecast.items.length) throw new Error('no forecast items returned');
   if (db) {
-    const { error } = await db.from('crew_forecasts').upsert({ region, week_of: week, payload: forecast });
+    const { error } = await db.from('crew_forecasts').upsert({ region: CACHE_PREFIX + region, week_of: week, payload: forecast });
     if (error) log('crew_forecast_cache_error', { detail: error.message });
   }
   log('crew_forecast_generated', { region, week });

@@ -21,12 +21,10 @@ interface AppState {
   streakCount: number;
   lastActiveDate: string | null;
   saveToCameraRoll: boolean;
-  /** Show the Field Crew (labeled bots) on the wall, comments and leaderboard. */
+  /** Show Scout (the AI companion, always labeled) in the feed and comments. */
   showCrew: boolean;
-  /** Where the player usually explores; drives Scout's forecasts. */
+  /** Where the player usually explores; drives Scout's daily posts. */
   homeRegion: RegionKey | null;
-  /** When the player last opened the Field Crew inbox (epoch ms). */
-  crewSeenAt: number;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -36,7 +34,6 @@ interface AppState {
   setSaveToCameraRoll: (v: boolean) => void;
   setShowCrew: (v: boolean) => void;
   setHomeRegion: (r: RegionKey | null) => void;
-  markCrewSeen: () => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -55,7 +52,6 @@ export const useAppStore = create<AppState>()(
       saveToCameraRoll: true,
       showCrew: true,
       homeRegion: null,
-      crewSeenAt: 0,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -65,7 +61,6 @@ export const useAppStore = create<AppState>()(
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
       setShowCrew: (showCrew) => set({ showCrew }),
       setHomeRegion: (homeRegion) => set({ homeRegion }),
-      markCrewSeen: () => set({ crewSeenAt: Date.now() }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -88,8 +83,7 @@ export const useAppStore = create<AppState>()(
           saveToCameraRoll: true,
           showCrew: true,
           homeRegion: null,
-          crewSeenAt: 0,
-        }),
+            }),
     }),
     {
       name: 'clipit-app',
