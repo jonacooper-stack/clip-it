@@ -64,7 +64,7 @@ export interface Sighting {
   /** Optional citizen-science answers (questionId -> selected values). Some
    * questions allow more than one. Legacy data may hold a single string. */
   science?: Record<string, string[]>;
-  /** The Field Crew's notes on this sighting (Dr. Hoot's facts, Magpie's finds). */
+  /** Scout's notes on this sighting (facts, and other players' photos of the species). */
   crew?: CrewNotes;
 }
 
@@ -80,6 +80,8 @@ export interface CrewPhoto {
   url: string;
   credit: string;
   species: string;
+  /** Where the photo and its license are described (tap the credit to open). */
+  source?: string;
 }
 
 export interface CrewNotes {
@@ -87,6 +89,10 @@ export interface CrewNotes {
   tip: string;
   others: CrewOtherPost[];
   photo: CrewPhoto | null;
+  /** More photos of the species (library, then Wikimedia Commons), one per fact. */
+  photos?: CrewPhoto[];
+  /** 3 = 5 short facts + photos. Older notes are refetched. */
+  v?: number;
   fetchedAt: number;
 }
 

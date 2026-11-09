@@ -101,8 +101,8 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
     note: outcome.note,
   });
   useAppStore.getState().registerActivityToday();
-  // The Field Crew looks it up in the background (Dr. Hoot's facts, Magpie's
-  // finds). Best-effort; real AI results only.
+  // Scout looks it up in the background (facts, other players' photos).
+  // Best-effort; real AI results only.
   if (outcome.source !== 'mock' && outcome.eligible) fetchCrewNotes(id).catch(() => {});
 }
 

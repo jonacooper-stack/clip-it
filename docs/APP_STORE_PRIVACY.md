@@ -22,13 +22,13 @@ Vercel first so the page is live.
 | User Content | **Other User Content** | ✅ | Captions, comments, reports |
 | Identifiers | **User ID** | ✅ | Account ID |
 | Other Data | **Other Data Types** | ✅ | Age range picked at sign-up |
-| Location | **Coarse Location** | ✅ | The home region the player picks (e.g. "Northeast") is saved on their account for Scout's forecasts |
+| Location | **Coarse Location** | ✅ | The home region the player picks (e.g. "Northeast") is saved privately on their account for Scout's daily posts about wildlife near them and "explorers near you" suggestions (never shown to other players) |
 | Location | Precise Location | ❌ | GPS stays on the device (journal only, and the region suggestion is computed on the phone) |
 | Usage Data, Diagnostics, Purchases, Financial, Health, Browsing, Search, Contacts, Sensitive Info | — | ❌ | Not collected |
 
 > Apple counts data as "collected" only when it leaves the device. The capture
 > location is written to the on-device journal and is **not** included in the
-> identify request, wall posts or crew requests, so Precise Location is not
+> identify request, wall posts or Scout's requests, so Precise Location is not
 > ticked. The player-chosen home region is coarse location, so it is. If you later sync
 > sightings (with coordinates) to Supabase or build the sightings map, tick
 > **Precise Location** → App Functionality → Linked → No tracking.

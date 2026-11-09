@@ -6,6 +6,7 @@ export interface PhotoRef {
   url: string;
   credit: string;
   species: string;
+  source?: string; // where the photo and its license are described
 }
 
 const norm = (s?: string | null) => (s ?? '').trim().toLowerCase();
@@ -19,7 +20,7 @@ export function findLibraryPhoto(species: string, sci?: string | null, seed = 0)
 }
 
 export function toRef(p: LibraryPhoto): PhotoRef {
-  return { url: `${SITE_URL}/img/library/${p.slug}.jpg`, credit: p.credit, species: p.species };
+  return { url: `${SITE_URL}/img/library/${p.slug}.jpg`, credit: p.credit, species: p.species, source: `${SITE_URL}/credits` };
 }
 
 // Library photo tags (west / northeast / southeast) → the regions they suit.
@@ -29,6 +30,15 @@ const TAG_REGIONS: Record<string, string[]> = {
   northeast: ['northeast', 'mid_atlantic', 'midwest', 'canada', 'plains'],
   southeast: ['southeast', 'mid_atlantic', 'texas', 'hawaii'],
 };
+
+function suits(p: LibraryPhoto, region: string): boolean {
+  return !p.region || (TAG_REGIONS[p.region] ?? []).includes(region);
+}
+
+// Species we have photos of that suit a region (so Scout can prefer them).
+export function regionSpecies(region: string): string[] {
+  return [...new Set(PHOTO_LIBRARY.filter((p) => suits(p, region) && !p.species.includes('(')).map((p) => p.species))];
+}
 
 function dayNumber(date: string): number {
   return Math.floor(Date.parse(`${date}T12:00:00Z`) / 86_400_000);
@@ -44,7 +54,7 @@ function hashStr(s: string): number {
 // region's pool, walked one step per day, so nothing repeats until every
 // species has had its day. One species per photo set (no twins in a row).
 export function dailyPick(region: string, date: string): LibraryPhoto {
-  const pool = PHOTO_LIBRARY.filter((p) => !p.region || (TAG_REGIONS[p.region] ?? []).includes(region));
+  const pool = PHOTO_LIBRARY.filter((p) => suits(p, region));
   const bySpecies = new Map<string, LibraryPhoto[]>();
   for (const p of pool) bySpecies.set(p.species, [...(bySpecies.get(p.species) ?? []), p]);
   const species = [...bySpecies.keys()].sort((a, b) => hashStr(`${region}:${a}`) - hashStr(`${region}:${b}`));

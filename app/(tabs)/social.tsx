@@ -170,7 +170,7 @@ function FriendsView({ reloadKey, onMore }: { avatarUrl: string | null; reloadKe
           <UserAvatar name={r.displayName} uri={r.avatarUrl} size={36} />
           <Text style={styles.frowName} numberOfLines={1}>{r.displayName}</Text>
           {r.isBot ? (
-            // The Field Crew are bots: they never appear in search, and can't be friends.
+            // Scout is a bot: it never appears in search, and can't be a friend.
             <CrewBadge />
           ) : (
             <Pressable onPress={() => onAdd(r.id)} disabled={sent[r.id]} style={[styles.btn, sent[r.id] && styles.btnDone]}>

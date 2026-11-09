@@ -1,9 +1,8 @@
-// The Field Crew's accounts (needed so crew comments and Kestrel's leaderboard
-// row can reference a profile). Created on first use with the service role.
+// Scout's account (needed so Scout's comments on the wall reference a
+// profile). Created on first use with the service role.
 import { randomBytes } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CREW, CREW_KEYS, type CrewKey } from '../../shared/crew';
-import { KESTREL } from './kestrel';
+import { CREW, CREW_KEYS, RETIRED_CREW, type CrewKey } from '../../shared/crew';
 import { SITE_URL, log } from './server';
 
 export type CrewProfile = { id: string; points: number; species_count: number; updated_at: string };
@@ -28,7 +27,7 @@ export async function ensureCrew(db: SupabaseClient, opts: { dry?: boolean } = {
     .eq('is_bot', true)
     .not('crew_role', 'is', null);
   const out: Partial<Record<CrewKey, CrewProfile>> = {};
-  for (const r of rows ?? []) out[r.crew_role as CrewKey] = r as CrewProfile;
+  for (const r of rows ?? []) if ((CREW_KEYS as string[]).includes(r.crew_role)) out[r.crew_role as CrewKey] = r as CrewProfile;
 
   for (const key of CREW_KEYS) {
     if (out[key] || opts.dry) continue;
@@ -46,8 +45,8 @@ export async function ensureCrew(db: SupabaseClient, opts: { dry?: boolean } = {
       avatar_url: `${SITE_URL}/img/crew/${key}.png`,
       is_bot: true,
       crew_role: key,
-      points: key === 'kestrel' ? KESTREL.seedPoints : 0,
-      species_count: key === 'kestrel' ? KESTREL.seedSpecies : 0,
+      points: 0,
+      species_count: 0,
       updated_at: new Date(Date.now() - 86_400_000).toISOString(),
     };
     const { error } = await db.from('profiles').upsert(row, { onConflict: 'id' });
@@ -58,7 +57,7 @@ export async function ensureCrew(db: SupabaseClient, opts: { dry?: boolean } = {
   return out;
 }
 
-// True if any crew member has already commented on the post (max one each post).
+// True if the companion has already commented on the post (max one each post).
 export async function hasCrewComment(db: SupabaseClient, postId: string, crewIds: string[]): Promise<boolean> {
   if (!crewIds.length) return false;
   const { count } = await db
@@ -67,4 +66,27 @@ export async function hasCrewComment(db: SupabaseClient, postId: string, crewIds
     .eq('post_id', postId)
     .in('user_id', crewIds);
   return (count ?? 0) > 0;
+}
+
+// Remove the earlier Field Crew bot accounts (Dr. Hoot, Moss, Magpie, Kestrel).
+// Deleting the auth user cascades to its profile and comments.
+export async function retireOldCrew(db: SupabaseClient, opts: { dry?: boolean } = {}): Promise<string[]> {
+  const { data: rows } = await db
+    .from('profiles')
+    .select('id, crew_role')
+    .eq('is_bot', true)
+    .in('crew_role', [...RETIRED_CREW]);
+  const removed: string[] = [];
+  for (const r of rows ?? []) {
+    if (!opts.dry) {
+      const { error } = await db.auth.admin.deleteUser(r.id);
+      if (error) {
+        log('crew_retire_error', { crew: r.crew_role, detail: error.message });
+        continue;
+      }
+    }
+    removed.push(r.crew_role);
+  }
+  if (removed.length) log('crew_retired', { crew: removed, dry: Boolean(opts.dry) });
+  return removed;
 }

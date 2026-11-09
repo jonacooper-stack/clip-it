@@ -47,7 +47,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       setState('error');
     } else {
       setState('done');
-      // Dr. Hoot drops a fact on the new post (and the crew's notes refresh).
+      // Scout drops a fun fact on the new post (and Scout's notes refresh).
       if (res.postId) fetchCrewNotes(sighting.id, { postId: res.postId });
     }
   };

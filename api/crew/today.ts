@@ -5,9 +5,9 @@ import { dailyPick, toRef } from '../_lib/library';
 import { regionByKey } from '../../shared/crew';
 
 // GET /api/crew/today?region=northeast&date=2026-11-12
-// Dr. Hoot's "species of the day" for a region: a credited library photo
+// Scout's "animal of the day" for a region: a credited library photo
 // (suited to the region, cycling so nothing repeats for months) plus facts
-// (cached per species). `date` is the player's local date.
+// and photos (cached per species). `date` is the player's local date.
 
 export const config = { maxDuration: 60 };
 
@@ -30,7 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const facts = await getFacts(adminClient(), pick.species, pick.sci);
     res.setHeader('Cache-Control', 'private, max-age=3600');
-    return res.status(200).json({ region, date, species: pick.species, sci: pick.sci, photo: toRef(pick), facts: facts.facts, tip: facts.tip });
+    const photo = toRef(pick);
+    const photos = [photo, ...(facts.photos ?? []).filter((p) => p.url !== photo.url)].slice(0, 6);
+    return res.status(200).json({ region, date, species: pick.species, sci: pick.sci, photo, photos, facts: facts.facts, tip: facts.tip });
   } catch (err: any) {
     fail('facts_error', { species: pick.species, detail: String(err?.message ?? err).slice(0, 200) });
     return res.status(502).json({ error: 'species of the day unavailable' });

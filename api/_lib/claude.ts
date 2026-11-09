@@ -1,4 +1,4 @@
-// Claude calls for the Field Crew (Dr. Hoot's facts, Scout's forecasts).
+// Claude calls for Scout (species facts and the weekly "near you" slides).
 import Anthropic from '@anthropic-ai/sdk';
 
 export const CREW_MODEL = 'claude-opus-5-5';
