@@ -6,6 +6,9 @@ import { CrewAvatar } from './CrewAvatar';
 import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { fetchCrewNotes, NOTES_VERSION } from '@/lib/crew/api';
+import { useCrewStore } from '@/state/useCrewStore';
+import { askReportPhoto } from './reportPhoto';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/state/useAuthStore';
 import type { Sighting } from '@/types';
 import { withArticle } from '../../../shared/crew';
@@ -17,7 +20,9 @@ export function CrewNotesCard({ sighting }: { sighting: Sighting }) {
   const router = useRouter();
   const signedIn = useAuthStore((s) => Boolean(s.session));
   const [loading, setLoading] = useState(false);
+  const hidden = useCrewStore((s) => s.hiddenPhotos);
   const notes = sighting.crew;
+  const morePhotos = (notes?.photos ?? []).filter((p) => !hidden.includes(p.url));
   const stale = !notes || notes.v !== NOTES_VERSION;
   const eligible = Boolean(sighting.species?.commonName) && sighting.idStatus !== 'rejected' && sighting.idStatus !== 'ineligible' && sighting.idStatus !== 'queued';
 
@@ -76,16 +81,21 @@ export function CrewNotesCard({ sighting }: { sighting: Sighting }) {
           </ScrollView>
         </>
       )}
-      {notes && !!notes.photos?.length && (
+      {notes && morePhotos.length > 0 && (
         <>
           <Text style={styles.section}>More photos</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.others}>
-            {notes.photos.map((p) => (
+            {morePhotos.map((p) => (
               <View key={p.url} style={styles.more}>
                 <Image source={{ uri: p.url }} style={styles.morePhoto} contentFit="cover" transition={150} />
-                <Text style={styles.credit} numberOfLines={1} onPress={() => p.source && Linking.openURL(p.source).catch(() => {})}>
-                  📷 {p.credit}
-                </Text>
+                <View style={styles.creditRow}>
+                  <Text style={[styles.credit, { flex: 1 }]} numberOfLines={1} onPress={() => p.source && Linking.openURL(p.source).catch(() => {})}>
+                    📷 {p.credit}
+                  </Text>
+                  <Pressable onPress={() => askReportPhoto(p.url, { species: name, context: 'Scout’s notes' })} hitSlop={8} accessibilityLabel="Report this photo">
+                    <Ionicons name="flag-outline" size={12} color={colors.faint} />
+                  </Pressable>
+                </View>
               </View>
             ))}
           </ScrollView>
@@ -116,4 +126,5 @@ const styles = StyleSheet.create({
   more: { width: 200, gap: 4 },
   morePhoto: { width: 200, height: 150, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
   credit: { fontSize: 10, color: colors.faint },
+  creditRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });

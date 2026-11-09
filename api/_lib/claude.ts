@@ -1,4 +1,4 @@
-// Claude calls for Scout (species facts and the weekly "near you" slides).
+// Claude calls for Scout (facts, weekly themes, stories, and photo checks).
 import Anthropic from '@anthropic-ai/sdk';
 
 export const CREW_MODEL = 'claude-opus-5-5';
@@ -15,18 +15,21 @@ function getClient(): Anthropic {
 }
 
 // One request → one JSON object matching `schema` (structured outputs).
-// Low effort: these are short, factual answers, cached by the caller.
+// `prompt` is text, or content blocks (e.g. images to check). Low effort by
+// default: these are short, factual answers, cached by the caller.
 export async function askJSON<T>(opts: {
   system: string;
-  prompt: string;
+  prompt: string | Anthropic.Beta.BetaContentBlockParam[];
   schema: Record<string, unknown>;
+  effort?: 'low' | 'medium' | 'high';
+  maxTokens?: number;
 }): Promise<T> {
   const res = await getClient().beta.messages.create({
     model: CREW_MODEL,
-    max_tokens: 16000,
+    max_tokens: opts.maxTokens ?? 16000,
     betas: ['server-side-fallback-2026-06-01'],
     fallbacks: [{ model: FALLBACK_MODEL }],
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: opts.schema } },
+    output_config: { effort: opts.effort ?? 'low', format: { type: 'json_schema', schema: opts.schema } },
     system: opts.system,
     messages: [{ role: 'user', content: opts.prompt }],
   });

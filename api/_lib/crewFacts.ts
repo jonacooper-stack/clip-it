@@ -13,9 +13,12 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export interface SpeciesFacts {
   facts: string[]; // 5 short facts, emoji first
   tip: string;
-  photos?: PhotoRef[]; // a different photo per slide (library, then Commons)
+  photos?: PhotoRef[]; // a different photo per slide (library, then checked Commons photos)
   photosAt?: number; // when photos were last looked up
+  photosV?: number; // PHOTOS_V: lookups before the vision check are redone
 }
+
+const PHOTOS_V = 2;
 
 const PHOTO_RETRY_MS = 3 * 86_400_000;
 
@@ -57,12 +60,13 @@ export function shorten(text: string, max = 110): string {
 }
 
 async function withPhotos(db: SupabaseClient | null, key: string, common: string, sci: string | null | undefined, f: SpeciesFacts): Promise<SpeciesFacts> {
-  const stale = !f.photos || (f.photos.length < 3 && Date.now() - (f.photosAt ?? 0) > PHOTO_RETRY_MS);
+  const stale = !f.photos || f.photosV !== PHOTOS_V || (f.photos.length < 3 && Date.now() - (f.photosAt ?? 0) > PHOTO_RETRY_MS);
   if (!stale) return f;
   const { photos, failed } = await speciesPhotoLookup(common, sci, 5);
   // If Commons was unreachable, look again in about an hour instead of days.
   const photosAt = failed ? Date.now() - PHOTO_RETRY_MS + 3600_000 : Date.now();
-  const next: SpeciesFacts = { ...f, photos: photos.length >= (f.photos?.length ?? 0) ? photos : f.photos, photosAt };
+  const keepOld = f.photosV === PHOTOS_V && (f.photos?.length ?? 0) > photos.length;
+  const next: SpeciesFacts = { ...f, photos: keepOld ? f.photos : photos, photosAt, photosV: PHOTOS_V };
   if (db) {
     const { error } = await db.from('crew_facts').upsert({ species_key: key, common_name: common, facts: next });
     if (error) log('crew_facts_cache_error', { detail: error.message });
@@ -76,9 +80,12 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
     memo.set(
       key,
       (async () => {
+        let cachedPhotos: Pick<SpeciesFacts, 'photos' | 'photosAt' | 'photosV'> = {};
         if (db) {
           const { data } = await db.from('crew_facts').select('facts').eq('species_key', key).maybeSingle();
-          if (data?.facts) return withPhotos(db, key, common, sci, data.facts as SpeciesFacts);
+          const row = data?.facts as SpeciesFacts | undefined;
+          if (row?.facts?.length) return withPhotos(db, key, common, sci, row);
+          if (row) cachedPhotos = { photos: row.photos, photosAt: row.photosAt, photosV: row.photosV };
         }
         const out = await askJSON<SpeciesFacts>({
           system: SYSTEM,
@@ -89,6 +96,7 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
         const clean: SpeciesFacts = {
           facts: (out.facts ?? []).map((f) => shorten(String(f))).filter(Boolean).slice(0, 5),
           tip: shorten(String(out.tip ?? '')),
+          ...cachedPhotos,
         };
         if (!clean.facts.length) throw new Error('no facts returned');
         log('crew_facts_generated', { species: key });
@@ -100,6 +108,31 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
     );
   }
   return memo.get(key)!;
+}
+
+// Just the photos of a species (checked, cached per species with its facts).
+// Doesn't generate facts; stores a photos-only row when there are none yet.
+const photoMemo = new Map<string, Promise<PhotoRef[]>>();
+export function getSpeciesPhotos(db: SupabaseClient | null, common: string, sci?: string | null): Promise<PhotoRef[]> {
+  const key = speciesKey(common, sci);
+  if (!photoMemo.has(key)) {
+    photoMemo.set(
+      key,
+      (async () => {
+        let row: SpeciesFacts = { facts: [], tip: '' };
+        if (db) {
+          const { data } = await db.from('crew_facts').select('facts').eq('species_key', key).maybeSingle();
+          if (data?.facts) row = data.facts as SpeciesFacts;
+        }
+        return (await withPhotos(db, key, common, sci, row)).photos ?? [];
+      })().catch((err) => {
+        photoMemo.delete(key);
+        throw err;
+      }),
+    );
+    setTimeout(() => photoMemo.delete(key), 10 * 60_000).unref?.(); // pick up refreshes on warm instances
+  }
+  return photoMemo.get(key)!;
 }
 
 // Scout's voice for wall comments. Picks a phrasing from the post id so it's

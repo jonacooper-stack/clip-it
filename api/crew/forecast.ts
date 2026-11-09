@@ -2,7 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, log, rateLimited, verifyUser } from '../_lib/server';
 import { askJSON } from '../_lib/claude';
 import { regionSpecies, type PhotoRef } from '../_lib/library';
-import { libraryPhotos, speciesPhotos } from '../_lib/photos';
+import { libraryPhotos } from '../_lib/photos';
+import { getSpeciesPhotos } from '../_lib/crewFacts';
+import { withoutBlocked } from '../_lib/photoFlags';
 import { shorten } from '../_lib/crewFacts';
 import { regionByKey, weekOf } from '../../shared/crew';
 
@@ -32,6 +34,26 @@ interface Forecast {
   weekOf: string;
   headline: string;
   items: ForecastItem[];
+  photosV?: number; // 2 = photos checked by the vision pass
+}
+
+// Photos for each theme, from the per-species cache (checked once per
+// species), a few at a time, within a time budget.
+async function addPhotos(db: ReturnType<typeof adminClient>, forecast: Forecast): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  const queue = [...forecast.items];
+  const worker = async () => {
+    for (let it = queue.shift(); it; it = queue.shift()) {
+      const item = it;
+      try {
+        item.photos = Date.now() < deadline ? (await getSpeciesPhotos(db, item.species, item.sci || null)).slice(0, 4) : libraryPhotos(item.species, item.sci).slice(0, 4);
+      } catch {
+        item.photos = libraryPhotos(item.species, item.sci).slice(0, 4);
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  forecast.photosV = 2;
 }
 
 // 'kid:' versions the cache (forecasts written before the slide format are ignored).
@@ -82,7 +104,16 @@ async function build(region: string, week: string): Promise<Forecast> {
   const db = adminClient();
   if (db) {
     const { data } = await db.from('crew_forecasts').select('payload').eq('region', CACHE_PREFIX + region).eq('week_of', week).maybeSingle();
-    if (data?.payload) return data.payload as Forecast;
+    if (data?.payload) {
+      const cached = data.payload as Forecast;
+      if (cached.photosV !== 2) {
+        // Cached before photos were checked: redo them once.
+        await addPhotos(db, cached);
+        const { error } = await db.from('crew_forecasts').upsert({ region: CACHE_PREFIX + region, week_of: week, payload: cached });
+        if (error) log('crew_forecast_cache_error', { detail: error.message });
+      }
+      return cached;
+    }
   }
   const r = regionByKey(region)!;
   const when = new Date(`${week}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -108,12 +139,8 @@ async function build(region: string, week: string): Promise<Forecast> {
       photos: [],
     })),
   };
-  // Photos one species at a time (gentle on Wikimedia), within the time budget.
-  const deadline = Date.now() + 25_000;
-  for (const it of forecast.items) {
-    it.photos = Date.now() < deadline ? await speciesPhotos(it.species, it.sci || null, 4) : libraryPhotos(it.species, it.sci).slice(0, 4);
-  }
   if (!forecast.items.length) throw new Error('no forecast items returned');
+  await addPhotos(db, forecast);
   if (db) {
     const { error } = await db.from('crew_forecasts').upsert({ region: CACHE_PREFIX + region, week_of: week, payload: forecast });
     if (error) log('crew_forecast_cache_error', { detail: error.message });
@@ -136,8 +163,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!memo.has(key)) memo.set(key, build(region, week).catch((e) => { memo.delete(key); throw e; }));
   try {
     const forecast = await memo.get(key)!;
+    const db = adminClient();
+    const items = await Promise.all(forecast.items.map(async (it) => ({ ...it, photos: await withoutBlocked(db, it.photos) })));
     res.setHeader('Cache-Control', 'private, max-age=3600');
-    return res.status(200).json(forecast);
+    return res.status(200).json({ ...forecast, items });
   } catch (err: any) {
     fail('generate_error', { region, detail: String(err?.message ?? err).slice(0, 200) });
     return res.status(502).json({ error: 'forecast unavailable' });

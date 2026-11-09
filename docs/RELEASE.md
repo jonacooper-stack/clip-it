@@ -208,24 +208,24 @@ says is short and simple (one fact per slide, emoji first, bullets not
 paragraphs).
 
 What players see in the Feed (one timeline with wall posts):
-- **One Scout story a day**, Instagram-style: swipeable square slides, each
-  one picture (or one big emoji) and one short line. Every story is about ONE
-  animal or theme, and swiping goes deeper: another photo of the same animal
-  with another fact.
-  - Monday, "This week near you": a quick look at the week's seasonal themes
-    for their home region (what's migrating, nesting or spawning), ordered by
-    what they log most.
-  - Tuesday, Thursday, Saturday: one of those themes in depth (what's going
-    on, where to look, a fun fact), ending with "Can you find one?" and a
-    camera button.
-  - Wednesday, Friday, Sunday: the animal of the day (5 facts, each with a
-    different photo when we have one, plus how to spot it).
+- **Two Scout stories a day**, Instagram-style: swipeable square slides, each
+  one picture (or one big emoji) and one short line, all about ONE animal or
+  theme.
+  - Morning (7am), "near you": Monday is a quick look at the week's seasonal
+    themes for the player's home region (tap any slide for its story);
+    Tuesday to Sunday dig into one theme each (what's going on, where to look,
+    a fun fact), ending with "Can you find one?" and a camera button.
+  - Afternoon (2pm): the animal of the day (5 facts, a different photo on
+    most slides, how to spot it).
+- **Read the story**: tap a post (or its "Read the story" button) for a
+  full-screen story, Instagram Stories style, 6 short pages: why they do it,
+  when, where to look and listen, a wow fact, how to be a good explorer, and
+  a mission. Tap right for the next page, left to go back.
 - **Explorers you might like**, once a week: people to follow, each with
-  their best photo, why Scout picked them ("Explores near you", "Also found a
-  red fox, like you") and a Follow button. Never bots, people you already
-  follow, or anyone blocked either way.
-- **Moments they earn**: a new species (their photo, then 5 fun facts with
-  photos, how to spot it and other players' photos), a quest done, a
+  their best photo, why Scout picked them and a Follow button. Never bots,
+  people you already follow, or anyone blocked either way.
+- **Moments they earn**: a new species (their photo, fun facts with photos,
+  how to spot it, other players' photos, and its story), a quest done, a
   milestone, "one year ago today", and the week's best wall photos on Sunday
   evening. Anything earned on the same outing is merged into one post.
 - **Weekly quests** pinned on top (three new every Monday, +10 for all three),
@@ -234,15 +234,24 @@ What players see in the Feed (one timeline with wall posts):
   Scout comments one fact on wall posts.
 - Profile: "Show Scout in my feed" hides Scout's posts and comments; "Let Scout
   suggest me to others" opts out of suggestions (off by default for 13–17).
-  Players pick a home region after sign-up (or in Profile); "use my current
-  location" only suggests one on the device. The region is stored privately
-  (`profile_private`), never shown to other players.
+  The home region is stored privately (`profile_private`).
 
-Photos: Scout uses our credited library first, then freely licensed photos
-from Wikimedia Commons (quality images first; public domain, CC0, CC BY and CC
-BY-SA only; book plates, fact sheets and specimens filtered out). They're
-looked up once per species and cached with its facts; tapping a credit opens
-the photo's source page.
+Photos, and how wrong ones are caught:
+- Our curated library (`site/img/library`, credits on /credits) was audited
+  photo by photo; wrong or unsuitable ones were replaced or retired (retired
+  ones are blocked in `api/_lib/photoFlags.ts`, even in cached content).
+- Extra photos come from Wikimedia Commons (quality images first; public
+  domain, CC0, CC BY and CC BY-SA only). Every Commons photo is downloaded and
+  checked by Claude before use: it must clearly show a live animal of that
+  species (no diagrams, skeletons, specimens, devices, captive birds on a
+  glove, nothing gory). Checked photos are cached per species; if the check
+  can't run, no unchecked photo is used and it's retried in an hour.
+- Every Scout photo has a small flag ("Wrong photo?"). One report hides it
+  for everyone, everywhere (feed, stories, sighting notes) and it's never
+  picked again. Review reports in the Supabase SQL editor:
+  `select url, species, context, reason, created_at from crew_photo_flags order by created_at desc;`
+  Restore one that was fine: `update crew_photo_flags set cleared = true where url = '…';`
+- Tapping a photo credit opens its source page (author and license).
 
 How it runs:
 - `GET /api/crew/today` (animal of the day: a regional library photo, cycling
@@ -252,20 +261,27 @@ How it runs:
   older long-form content is regenerated in the new style). They work with just
   `ANTHROPIC_API_KEY`; caching across instances and Scout's comments need the
   service role key below.
+- `POST /api/crew/story` (signed-in only) writes a story once per theme and
+  week, or per species and month, cached in `crew_stories`;
+  `POST /api/crew/flag-photo` stores "Wrong photo?" reports.
 - `POST /api/crew/people` (signed-in only, needs the service role key)
   suggests explorers from the last 45 days of wall posts. The app sends the
   species names in the player's journal to match finds; nothing is stored.
 - Quests, milestones and the feed posts are computed on the phone.
 - `GET /api/crew-daily` (Vercel Cron, daily) creates Scout's account, removes
   the retired Field Crew bot accounts (Dr. Hoot, Moss, Magpie, Kestrel, along
-  with their comments), and backfills one Scout comment per recent wall post (a
-  welcome on a player's first post, otherwise a fun fact).
+  with their comments), backfills one Scout comment per recent wall post (a
+  welcome on a player's first post, otherwise a fun fact), and writes the
+  upcoming stories ahead of time (this week's themes, today's and tomorrow's
+  animal of the day) so they open instantly.
 
 One-time setup:
 1. Supabase SQL editor: run `supabase/migrations/0007_field_crew.sql` (already
    done if the Field Crew was running), then
    `supabase/migrations/0008_scout_people.sql` (private home region + the
-   suggestions opt-out; moves regions saved so far out of the public profile).
+   suggestions opt-out; moves regions saved so far out of the public profile),
+   then `supabase/migrations/0009_scout_stories_and_photo_reports.sql`
+   (story cache + photo reports).
 2. Vercel → Project → Settings → Environment Variables (Production), then redeploy:
    - `SUPABASE_SERVICE_ROLE_KEY`: Supabase → Project Settings → API Keys → the
      **secret** key. Server-only; never put it in the app.

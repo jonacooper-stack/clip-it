@@ -36,6 +36,22 @@ export interface TodayPick {
   tip: string;
 }
 
+// Scout's deeper story behind a post (tap "Read the story").
+export interface StoryPage {
+  heading: string;
+  emoji: string;
+  text: string;
+  photo?: CrewPhoto | null;
+}
+export interface Story {
+  key: string;
+  kind: 'theme' | 'species';
+  title: string;
+  species: string;
+  pages: StoryPage[];
+  fetchedAt?: number;
+}
+
 // Scout's "explorers you might like" (refreshed weekly).
 export interface SuggestedPerson {
   userId: string;
@@ -56,10 +72,14 @@ interface CrewState {
   today: Record<string, TodayPick>; // key: `${region}:${date}`
   people: PeopleSuggestions | null;
   followed: string[]; // people followed from Scout's suggestions
+  stories: Record<string, Story>; // key: storyId (see lib/crew/api)
+  hiddenPhotos: string[]; // photos this player reported (hidden right away)
   saveForecast: (f: Forecast) => void;
   saveToday: (t: TodayPick) => void;
   savePeople: (p: PeopleSuggestions) => void;
   setFollowed: (userId: string, on: boolean) => void;
+  saveStory: (id: string, s: Story) => void;
+  hidePhoto: (url: string) => void;
 }
 
 export const useCrewStore = create<CrewState>()(
@@ -69,6 +89,16 @@ export const useCrewStore = create<CrewState>()(
       today: {},
       people: null,
       followed: [],
+      stories: {},
+      hiddenPhotos: [],
+      saveStory: (id, story) =>
+        set((s) => {
+          const entries = Object.entries({ ...s.stories, [id]: { ...story, fetchedAt: Date.now() } })
+            .sort(([, a], [, b]) => (b.fetchedAt ?? 0) - (a.fetchedAt ?? 0))
+            .slice(0, 30);
+          return { stories: Object.fromEntries(entries) };
+        }),
+      hidePhoto: (url) => set((s) => ({ hiddenPhotos: [...new Set([...s.hiddenPhotos, url])].slice(-300) })),
       savePeople: (people) => set({ people }),
       setFollowed: (userId, on) =>
         set((s) => ({ followed: on ? [...new Set([...s.followed, userId])].slice(-200) : s.followed.filter((x) => x !== userId) })),
@@ -92,9 +122,10 @@ export const useCrewStore = create<CrewState>()(
     {
       name: 'clipit-crew',
       storage: createJSONStorage(() => AsyncStorage),
-      // v3: one-topic stories with several photos. Drop older content (it refetches).
-      version: 3,
-      migrate: () => ({ forecasts: {}, today: {}, people: null, followed: [] }) as any,
+      // v4: photos are now checked before use. Drop older content (it refetches),
+      // keeping who the player followed.
+      version: 4,
+      migrate: (old: any) => ({ forecasts: {}, today: {}, people: null, followed: old?.followed ?? [], stories: {}, hiddenPhotos: [] }) as any,
     },
   ),
 );

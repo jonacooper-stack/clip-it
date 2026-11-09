@@ -70,7 +70,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Scout, your AI companion',
     paragraphs: [
-      'Scout is an AI companion made by the ClipIt team. It is not a real person and is always labeled “AI”. When you log a sighting, the species name (never your photo or location) is sent to our server so Scout can share facts about it and show other players’ wall posts of the same species. Facts and the daily and weekly posts are written by our AI provider and stored per species or per region, not per person. Some photos in Scout’s posts come from Wikimedia Commons and are credited on the photo. Weekly quests are worked out on your phone from your journal.',
+      'Scout is an AI companion made by the ClipIt team. It is not a real person and is always labeled “AI”. When you log a sighting, the species name (never your photo or location) is sent to our server so Scout can share facts about it and show other players’ wall posts of the same species. Facts and the daily and weekly posts are written by our AI provider and stored per species or per region, not per person. Some photos in Scout’s posts come from Wikimedia Commons and are credited on the photo; each one is checked by AI before it’s shown. If you report a photo (“Wrong photo?”), we store the photo’s address, the animal and where it appeared, linked to your account, so our team can review it. Weekly quests are worked out on your phone from your journal.',
       'Scout also suggests explorers you might like: players whose public wall posts show the same animals you’ve found, or who explore the same home region (only if they allow it). To match finds, the names of the species in your journal are sent to our server and are not stored. Suggestions never show anyone’s region. To stop being suggested to others, turn off “Let Scout suggest me to others” in Profile; for ages 13–17 it starts off.',
     ],
   },
@@ -258,7 +258,7 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Who is Scout?',
-    a: 'Scout is ClipIt’s AI field guide, a friendly fox made by the ClipIt team and always marked with an “AI” badge. Scout posts in your Feed: an animal of the day, what’s happening with wildlife near you each week, fun facts about the animals you find, and three new quests every Monday. Once a week Scout also suggests explorers you might like to follow. Scout never competes with you and isn’t on the leaderboard. To hide Scout’s posts, turn off “Show Scout in my feed” in Profile; to stop being suggested to others, turn off “Let Scout suggest me to others”.',
+    a: 'Scout is ClipIt’s AI field guide, a friendly fox made by the ClipIt team and always marked with an “AI” badge. Scout posts in your Feed twice a day: in the morning, what wildlife is up to near you; in the afternoon, an animal of the day. Tap “Read the story” on any post to go deeper. Scout also shares fun facts about the animals you find and sets three new quests every Monday. If a photo looks wrong, tap the flag on it and we’ll hide it right away. Once a week Scout also suggests explorers you might like to follow. Scout never competes with you and isn’t on the leaderboard. To hide Scout’s posts, turn off “Show Scout in my feed” in Profile; to stop being suggested to others, turn off “Let Scout suggest me to others”.',
   },
   {
     q: 'Who can use ClipIt?',

@@ -4,7 +4,7 @@
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useJournalStore } from '@/state/useJournalStore';
-import { useCrewStore, type Forecast, type PeopleSuggestions, type TodayPick } from '@/state/useCrewStore';
+import { useCrewStore, type Forecast, type PeopleSuggestions, type Story, type TodayPick } from '@/state/useCrewStore';
 import { useAppStore } from '@/state/useAppStore';
 import type { CrewNotes, Sighting } from '@/types';
 import { weekOf, type RegionKey } from '../../../shared/crew';
@@ -45,7 +45,7 @@ async function crewFetch<T>(path: string, init: RequestInit = {}): Promise<T | n
 const inFlight = new Set<string>();
 
 // Notes saved before this version (long-form facts) are refetched.
-export const NOTES_VERSION = 3;
+export const NOTES_VERSION = 4;
 const fresh = (n?: CrewNotes) => Boolean(n && n.v === NOTES_VERSION && Date.now() - n.fetchedAt < 7 * 86_400_000);
 
 // Fetch Scout's facts + other players' photos for a sighting and save them on
@@ -162,4 +162,41 @@ export async function loadPeople(force = false): Promise<PeopleSuggestions | nul
   const next = { fetchedAt: Date.now(), people: res.people ?? [] };
   useCrewStore.getState().savePeople(next);
   return next;
+}
+
+// ---------- stories ----------
+
+export interface StoryRef {
+  kind: 'theme' | 'species';
+  species: string;
+  sci?: string;
+  title?: string;
+  region?: string;
+  weekOf?: string;
+}
+
+export function storyId(r: StoryRef): string {
+  return [r.kind, r.region ?? '', r.weekOf ?? '', (r.sci || r.species).toLowerCase(), (r.title ?? '').toLowerCase()].join('|');
+}
+
+// The deeper story behind a post, from the device cache or the server
+// (written once on the server, then shared).
+export async function loadStory(r: StoryRef): Promise<Story | null> {
+  const id = storyId(r);
+  const cached = useCrewStore.getState().stories[id];
+  if (cached && Date.now() - (cached.fetchedAt ?? 0) < 7 * 86_400_000) return cached;
+  const s = await crewFetch<Story>('/api/crew/story', { method: 'POST', body: JSON.stringify(r) });
+  if (s?.pages?.length) useCrewStore.getState().saveStory(id, s);
+  return s ?? cached ?? null;
+}
+
+// ---------- "Wrong photo?" ----------
+
+export type PhotoReportReason = 'wrong_animal' | 'not_a_photo_of_it' | 'inappropriate' | 'other';
+
+// Hide the photo for this player right away and report it (one report hides
+// it for everyone; the team can review reports).
+export async function reportPhoto(url: string, opts: { species?: string; context?: string; reason?: PhotoReportReason } = {}): Promise<void> {
+  useCrewStore.getState().hidePhoto(url);
+  await crewFetch('/api/crew/flag-photo', { method: 'POST', body: JSON.stringify({ url, species: opts.species, context: opts.context, reason: opts.reason ?? 'wrong_animal' }) });
 }

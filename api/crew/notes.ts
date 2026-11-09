@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, bearer, log, rateLimited, userClient, verifyUser } from '../_lib/server';
 import { getFacts, scoutComment, type SpeciesFacts } from '../_lib/crewFacts';
 import { findLibraryPhoto, type PhotoRef } from '../_lib/library';
+import { withoutBlocked } from '../_lib/photoFlags';
 import { ensureCrew, hasCrewComment } from '../_lib/crewAccounts';
 
 // POST /api/crew/notes  { species, sci?, postId? }
@@ -77,7 +78,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     fail('others_error', { detail: String(err?.message ?? err).slice(0, 200) });
   }
-  const photo: PhotoRef | null = others.length ? null : findLibraryPhoto(species, sci, userId.length + species.length);
+  const libPhoto: PhotoRef | null = others.length ? null : findLibraryPhoto(species, sci, userId.length + species.length);
+  const photo = libPhoto ? (await withoutBlocked(db, [libPhoto]))[0] ?? null : null;
+  const photos = await withoutBlocked(db, facts?.photos);
 
   // Scout comments on the post the player just shared (once per post).
   let commented = false;
@@ -100,5 +103,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return res.status(200).json({ facts: facts?.facts ?? [], tip: facts?.tip ?? '', photos: facts?.photos ?? [], others, photo, commented });
+  return res.status(200).json({ facts: facts?.facts ?? [], tip: facts?.tip ?? '', photos, others, photo, commented });
 }
