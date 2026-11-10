@@ -15,10 +15,13 @@ import { checkText, reservedName } from '@/lib/moderation';
 const webInputReset: any =
   Platform.OS === 'web' ? { outlineStyle: 'none', borderWidth: 0, backgroundColor: 'transparent' } : null;
 
-// After creating an account (or signing in with Apple/Google), ask for the
-// home region unless we already know it, then the ethos screen.
+// After creating an account (or signing in with Apple/Google): ask for the OK
+// to use AI identification (unless already answered), then the home region
+// (unless we already know it), then the ethos screen.
 function afterAuth(): string {
-  return useAppStore.getState().homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos';
+  const { homeRegion, aiConsent } = useAppStore.getState();
+  const rest = homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos';
+  return aiConsent === null ? `/ai-consent?next=${encodeURIComponent(rest)}` : rest;
 }
 
 export default function Account() {

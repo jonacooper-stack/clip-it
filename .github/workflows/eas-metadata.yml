@@ -1,0 +1,74 @@
+name: "App Store Connect: update listing"
+
+# Fills in the App Store Connect listing from store.config.js: name, subtitle,
+# description, keywords, promotional text, URLs, categories, copyright, the
+# age rating questionnaire, App Review contact + demo login + notes, and the
+# 6.9" iPhone screenshots in store/screenshots/. Safe to run again any time
+# before you submit; it updates what's there.
+#
+# Actions → "App Store Connect: update listing" → Run workflow.
+# Needs these repo secrets (Settings → Secrets and variables → Actions):
+#   EXPO_TOKEN     (already set for EAS Build)
+#   REVIEW_EMAIL   e.g. the address Apple should contact during review
+#   REVIEW_PHONE   e.g. +1 555 555 0100
+#   DEMO_USERNAME  the demo account's email   (optional: leave unset to type it in App Store Connect)
+#   DEMO_PASSWORD  the demo account's password (optional, same)
+# Apple access uses the App Store Connect API key stored on Expo, like EAS Submit.
+# Not covered (Apple doesn't allow it from here): App Privacy answers, price and
+# availability, choosing the build, and "Submit for Review".
+
+on:
+  workflow_dispatch:
+
+jobs:
+  listing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+          REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+        run: |
+          missing=""
+          [ -z "$EXPO_TOKEN" ] && missing="$missing EXPO_TOKEN"
+          [ -z "$REVIEW_EMAIL" ] && missing="$missing REVIEW_EMAIL"
+          [ -z "$REVIEW_PHONE" ] && missing="$missing REVIEW_PHONE"
+          if [ -n "$missing" ]; then
+            echo "::error::Add these repo secrets first (Settings → Secrets and variables → Actions):$missing"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Check the listing
+        env:
+          REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+          REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+          DEMO_USERNAME: ${{ secrets.DEMO_USERNAME }}
+          DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+        run: eas metadata:lint --profile production
+
+      - name: Push it to App Store Connect
+        env:
+          REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+          REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+          DEMO_USERNAME: ${{ secrets.DEMO_USERNAME }}
+          DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EXPO_APPLE_TEAM_TYPE: ${{ secrets.APPLE_TEAM_TYPE }}
+        run: eas metadata:push --profile production --non-interactive

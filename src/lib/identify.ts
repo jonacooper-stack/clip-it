@@ -9,6 +9,16 @@ import * as Network from 'expo-network';
 import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
 import { supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
+import { useAppStore } from '@/state/useAppStore';
+
+// Thrown when the player hasn't said OK to AI identification yet. Callers
+// treat it like being offline: the capture is kept and identified later.
+export class NeedsAiConsentError extends Error {
+  constructor() {
+    super('ai consent needed');
+    this.name = 'NeedsAiConsentError';
+  }
+}
 
 const IDENTIFY_URL = process.env.EXPO_PUBLIC_IDENTIFY_URL ?? '/api/identify';
 // On web the endpoint is same-origin ('/api/identify'). On native a relative path
@@ -77,6 +87,8 @@ export interface IdentifyOutcome {
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function identifySighting(input: IdentifyInput): Promise<IdentifyOutcome> {
+  // No photo leaves the device for AI identification without the player's OK.
+  if (useAppStore.getState().aiConsent !== true) throw new NeedsAiConsentError();
   // Future shared-data backend (only when explicitly enabled — the function isn't deployed yet).
   if (USE_SUPABASE_IDENTIFY && supabase) {
     try {

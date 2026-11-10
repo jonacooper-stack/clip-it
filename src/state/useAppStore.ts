@@ -28,6 +28,9 @@ interface AppState {
   /** Whether Scout may suggest this player to others (null = not chosen yet:
    *  on for adults, off for ages 13–17). */
   discoverable: boolean | null;
+  /** The player's OK to send photos to the AI (Anthropic's Claude) for
+   *  identification. null = not asked yet. Nothing is sent without true. */
+  aiConsent: boolean | null;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -38,6 +41,7 @@ interface AppState {
   setShowCrew: (v: boolean) => void;
   setHomeRegion: (r: RegionKey | null) => void;
   setDiscoverable: (v: boolean) => void;
+  setAiConsent: (v: boolean) => void;
   registerActivityToday: () => void;
   reset: () => void;
 }
@@ -57,6 +61,7 @@ export const useAppStore = create<AppState>()(
       showCrew: true,
       homeRegion: null,
       discoverable: null,
+      aiConsent: null,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -67,6 +72,7 @@ export const useAppStore = create<AppState>()(
       setShowCrew: (showCrew) => set({ showCrew }),
       setHomeRegion: (homeRegion) => set({ homeRegion }),
       setDiscoverable: (discoverable) => set({ discoverable }),
+      setAiConsent: (aiConsent) => set({ aiConsent }),
 
       registerActivityToday: () => {
         const today = todayStr();
@@ -90,6 +96,7 @@ export const useAppStore = create<AppState>()(
           showCrew: true,
           homeRegion: null,
           discoverable: null,
+          aiConsent: null,
         }),
     }),
     {

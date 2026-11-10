@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
-import { identifySighting, OfflineError } from '@/lib/identify';
+import { identifySighting, NeedsAiConsentError, OfflineError } from '@/lib/identify';
 import { applyIdentifyOutcome, processAnalysisQueue, hashPhotoBase64 } from '@/lib/analysis';
 import { savePhotoBase64, resolvePhoto } from '@/lib/photoStore';
 import { takePendingPhoto } from '@/state/pendingCaptures';
@@ -60,6 +60,15 @@ export default function Identifying() {
         processAnalysisQueue();
       } catch (err) {
         if (cancelled.current) return;
+        if (err instanceof NeedsAiConsentError) {
+          // Not OK'd yet: keep the capture and ask (it's identified right after).
+          let photoUri = current?.photoUri;
+          if (!photoUri && base64) photoUri = await savePhotoBase64(base64);
+          if (cancelled.current) return;
+          updateSighting(id, { idStatus: 'queued', photoUri });
+          router.replace(`/ai-consent?next=${encodeURIComponent(`/capture/result?id=${id}`)}`);
+          return;
+        }
         if (err instanceof OfflineError) {
           // No signal: queue it. The photo was already persisted at capture; if it
           // somehow wasn't, stash the base64 now so the retry still has it.

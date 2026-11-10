@@ -1,5 +1,9 @@
 # App Store listing: copy to paste into App Store Connect
 
+> The same text lives in `store.config.js`, which the GitHub workflow
+> **App Store Connect: update listing** pushes to App Store Connect for you
+> (with the screenshots in `store/screenshots/`). Change both together.
+
 Character counts are checked against Apple's limits (see the bottom of this
 file). Only claim features the app actually has; update this if features change.
 
@@ -17,7 +21,7 @@ file). Only claim features the app actually has; update this if features change.
 | **Privacy Policy URL** | `https://clipitwildlife.app/legal/privacy` |
 | **Support URL** | `https://clipitwildlife.app/support` |
 | **Marketing URL** (optional) | `https://clipitwildlife.app` |
-| **Copyright** | `2026 <your name or company>` |
+| **Copyright** | `2026 Jonathan Cooper` |
 
 > These use the custom domain `clipitwildlife.app` (bought on Vercel). The old
 > `clip-it-rose.vercel.app` address serves the same pages if the domain isn't
@@ -113,7 +117,7 @@ account**, so the reviewer sees content to report/block.
 
 **Notes for the reviewer:**
 ```
-ClipIt is a wildlife photography game. Sign in with the demo account below (or Sign in with Apple).
+ClipIt is a wildlife photography game. Sign in with the demo account below (or Sign in with Apple). On first use the app asks permission before any photo is sent to the AI (Anthropic's Claude) for identification; tap "Allow AI identification".
 
 How to try it:
 1. Tap the green camera button and photograph any animal. In the office, it's easiest to point the camera at a photo of a wild animal on another screen, or use the gallery icon to upload one from Photos. The AI identifies it and awards points in a few seconds.
@@ -124,7 +128,7 @@ How to try it:
 Notes:
 - ClipIt is 13+; the sign-up age gate turns away anyone younger.
 - Camera, location and photo access are requested only when used. The app works if location is denied.
-- Location is stored only on the device and is never shared with other users.
+- Precise (GPS) location stays on the device and is never shared with other users; only the broad home region the player picks (e.g. "Northeast") is saved, privately.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
 - Scout is an AI companion made by our team (a cartoon fox), always shown with an "AI" badge (tap it for an explanation). Scout posts in the Feed: an animal of the day, what wildlife is doing near the player's home region each week, fun facts about the animals they find, and weekly quests. Scout isn't a real user, never competes with players, and isn't on the leaderboard. Tapping a post opens a short illustrated story about it. Every photo Scout shows can be reported with the flag icon ("Wrong photo?"), which hides it immediately. Its posts can be hidden in Profile → "Show Scout in my feed". Once a week Scout suggests other players to follow (based on public wall posts and, only if both allow it, the same home region; regions are never shown); players can opt out in Profile, and it is off by default for ages 13–17.
 ```

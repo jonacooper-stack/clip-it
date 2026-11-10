@@ -53,6 +53,8 @@ export default function Profile() {
   const showCrew = useAppStore((s) => s.showCrew);
   const setShowCrew = useAppStore((s) => s.setShowCrew);
   const discoverable = useAppStore((s) => s.discoverable ?? s.ageBracket !== '13_17');
+  const aiConsent = useAppStore((s) => s.aiConsent);
+  const setAiConsent = useAppStore((s) => s.setAiConsent);
   const homeRegion = useAppStore((s) => s.homeRegion);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
@@ -202,6 +204,13 @@ export default function Profile() {
                 label="Show Scout in my feed"
                 value={showCrew}
                 onValueChange={setShowCrew}
+              />
+              <Divider />
+              <ToggleRow
+                icon="sparkles"
+                label="AI photo identification"
+                value={aiConsent === true}
+                onValueChange={setAiConsent}
               />
               <Divider />
               <ToggleRow

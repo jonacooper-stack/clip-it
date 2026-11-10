@@ -292,6 +292,31 @@ One-time setup:
 4. Logs: Vercel → Logs, search `crew_`.
 
 ### g. Before submitting
-- Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
-  support address and company name, and make sure that inbox exists.
-- Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.
+- Legal pages name the operator as **Jonathan Cooper** (an individual;
+  `LEGAL_ENTITY` in `src/lib/legal.ts`). Change it there if a company takes over.
+- **AI permission:** before the first photo is sent to Anthropic's Claude, the
+  app asks for permission (`app/ai-consent.tsx`, App Store Guideline 5.1.2(i)):
+  during sign-up, and before the first capture for anyone who hasn't answered.
+  Nothing is sent without it (`identifySighting()` checks), and players can
+  change it in Profile → "AI photo identification".
+- Deploy to Vercel so `/legal/privacy`, `/legal/terms` and `/support` are live.
+
+### h. Fill in App Store Connect (one click)
+`store.config.js` holds the whole listing; the **App Store Connect: update
+listing** workflow pushes it (Expo's `eas metadata:push`, using the App Store
+Connect API key already stored on Expo): name, subtitle, description,
+keywords, promotional text, URLs, categories, copyright, the age rating
+answers (13+), App Review contact + demo login + notes, and the six
+screenshots in `store/screenshots/iphone-6.9/`.
+
+1. GitHub → repo → **Settings → Secrets and variables → Actions → New
+   repository secret**, add: `REVIEW_EMAIL`, `REVIEW_PHONE` (like
+   `+1 555 555 0100`), and, once the demo account exists, `DEMO_USERNAME` and
+   `DEMO_PASSWORD`. (The repo is public, so these never go in files.)
+2. **Actions → App Store Connect: update listing → Run workflow.** Re-run it
+   any time the text or screenshots change.
+3. Then, on the App Store Connect website (Apple doesn't allow these from the
+   API): **App Privacy** (answers in `APP_STORE_PRIVACY.md`), **Pricing and
+   Availability** (free), choose the **build**, and **Submit for Review**.
+
+Screenshots are regenerated with `scripts/store-screenshots/` (see its README).

@@ -12,8 +12,12 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
-      "ios": { "simulator": false },
-      "android": { "buildType": "apk" }
+      "ios": {
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "channel": "production",
@@ -31,7 +35,8 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6785170741"
+        "ascAppId": "6785170741",
+        "metadataPath": "store.config.js"
       }
     }
   }

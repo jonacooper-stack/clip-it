@@ -7,9 +7,9 @@
 // privacy label answers in docs/APP_STORE_PRIVACY.md.
 
 // ⚠️ Set these before submitting to the App Store.
-export const LEGAL_ENTITY = 'ClipIt';
+export const LEGAL_ENTITY = 'Jonathan Cooper';
 export const CONTACT_EMAIL = 'support@clipitwildlife.app';
-export const EFFECTIVE_DATE = 'November 8, 2026';
+export const EFFECTIVE_DATE = 'November 10, 2026';
 
 export const WEB_BASE = 'https://clipitwildlife.app';
 export const PRIVACY_URL = `${WEB_BASE}/legal/privacy`;
@@ -63,7 +63,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Photos and identification',
     paragraphs: [
-      'When you capture or upload a photo, a downscaled copy is sent to our server, which asks an AI service (Anthropic’s Claude) to identify the animal. The copy is sent only to produce the identification; we don’t keep it on our server, and our AI provider processes it under commercial terms that don’t allow it to use your photos to train its models.',
+      'When you capture or upload a photo, a downscaled copy is sent to our server, which asks an AI service (Anthropic’s Claude) to identify the animal. We ask for your permission before the first photo is sent, and you can turn AI identification off any time in Profile. The copy is sent only to produce the identification; we don’t keep it on our server, and our AI provider processes it under commercial terms that don’t allow it to use your photos to train its models.',
       'Downscaling removes the photo’s embedded metadata (such as GPS coordinates) before anything leaves your device. Photos you share to the wall have the same metadata removed.',
     ],
   },

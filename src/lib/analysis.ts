@@ -7,7 +7,7 @@
 
 import { Platform } from 'react-native';
 import type { IdentifyInput, IdentifyOutcome } from './identify';
-import { identifySighting, OfflineError } from './identify';
+import { identifySighting, NeedsAiConsentError, OfflineError } from './identify';
 import { fetchCrewNotes } from './crew/api';
 import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
@@ -133,7 +133,7 @@ export async function processAnalysisQueue(): Promise<void> {
       try {
         applyIdentifyOutcome(s.id, await identifySighting(input), hashPhotoBase64(base64));
       } catch (err) {
-        if (err instanceof OfflineError) break; // still offline — stop and retry later
+        if (err instanceof OfflineError || err instanceof NeedsAiConsentError) break; // offline, or not OK'd yet: retry later
         // Any other error: leave this capture queued and move on.
       }
     }

@@ -10,7 +10,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Redirect, useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
@@ -71,6 +71,8 @@ export default function CameraScreen() {
   // `?rapid=1` opens straight into rapid-fire (used by "switch to rapid fire").
   const params = useLocalSearchParams<{ rapid?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
+  // Photos are identified by AI, so ask for the OK first (see below).
+  const aiConsent = useAppStore((s) => s.aiConsent);
   const camRef = useRef<CameraView>(null);
   const [busy, setBusy] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
@@ -182,6 +184,10 @@ export default function CameraScreen() {
       setBusy(false);
     }
   };
+
+  // Ask for the OK to use AI identification before the first photo (rendered
+  // as a redirect, so it also works when the camera is opened by a link).
+  if (aiConsent !== true) return <Redirect href={`/ai-consent?next=${encodeURIComponent('/capture/camera')}`} />;
 
   if (!permission) {
     return (
