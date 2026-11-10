@@ -14,6 +14,7 @@
 //     a one-year-ago memory, and the week's best photos on Sunday evening.
 import type { CrewPhoto, Sighting } from '@/types';
 import type { Forecast, ForecastItem, PeopleSuggestions, TodayPick } from '@/state/useCrewStore';
+import type { StoryRef } from './api';
 import { regionByKey, withArticle, type RegionKey } from '../../../shared/crew';
 import { challengeStatus, SWEEP_BONUS, type ChallengeStatus, type GroupOf } from './challenges';
 import { addDays, addWeeks, DAY_MS, hash, localDateStart, startOfDay, startOfWeek } from './time';
@@ -22,7 +23,7 @@ export type Tone = 'green' | 'orange' | 'blue' | 'gold' | 'clay';
 
 export interface Slide {
   key: string;
-  photo?: { uri: string; credit?: string; source?: string };
+  photo?: { uri: string; credit?: string; source?: string; species?: string }; // credit = a Scout photo (can be reported)
   emoji?: string; // shown big when there's no photo
   kicker?: string; // small label above, e.g. "Osprey · 2 of 5"
   title?: string;
@@ -32,6 +33,7 @@ export interface Slide {
   href?: string;
   cta?: string;
   follow?: { userId: string; name: string }; // a Follow button (people suggestions)
+  story?: StoryRef; // tapping the slide opens this story (else the post's)
 }
 
 export type MomentKind =
@@ -52,6 +54,7 @@ export interface Moment {
   at: number;
   caption: string;
   slides: Slide[];
+  story?: StoryRef; // "Read the story": the deeper story behind the post
 }
 
 export const MOMENT_WINDOW_MS = 10 * DAY_MS;
@@ -59,7 +62,7 @@ export const MOMENT_WINDOW_MS = 10 * DAY_MS;
 const COUNTED = (s: Sighting) => s.idStatus !== 'rejected' && s.idStatus !== 'ineligible' && typeof s.points === 'number';
 const pick = <T,>(xs: T[], seed: string) => xs[hash(seed) % xs.length];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const ref = (p?: CrewPhoto | null) => (p ? { uri: p.url, credit: p.credit, source: p.source } : undefined);
+const ref = (p?: CrewPhoto | null) => (p ? { uri: p.url, credit: p.credit, source: p.source, species: p.species } : undefined);
 
 export const GROUP_EMOJI: Record<string, string> = {
   bird: '🐦', mammal: '🦌', fish: '🐟', reptile: '🐢', amphibian: '🐸', insect: '🦋', other: '🌿',
@@ -140,13 +143,13 @@ function findSlide(species: string, emoji: string): Slide {
 }
 
 // One theme from this week's "near you" list, in depth.
-function themeStory(it: ForecastItem, key: string): Slide[] {
+function themeStory(it: ForecastItem, key: string, photos: CrewPhoto[]): Slide[] {
   return [
     ...storySlides({
       key,
       subject: it.species,
       lines: it.facts,
-      photos: it.photos ?? [],
+      photos,
       first: { kicker: 'Near you this week', title: it.title },
       fallbackEmoji: it.emoji || GROUP_EMOJI[it.group] || '🌿',
     }),
@@ -155,8 +158,7 @@ function themeStory(it: ForecastItem, key: string): Slide[] {
 }
 
 // The animal of the day, in depth: a different photo with each fact.
-function animalStory(t: TodayPick): Slide[] {
-  const photos = t.photos?.length ? t.photos : t.photo ? [t.photo] : [];
+function animalStory(t: TodayPick, photos: CrewPhoto[]): Slide[] {
   const slides = storySlides({
     key: 'a',
     subject: t.species,
@@ -179,6 +181,7 @@ export function buildMoments(opts: {
   forecasts: Forecast[]; // cached weekly themes for the player's region
   today: TodayPick[]; // cached animals of the day for the player's region
   people?: PeopleSuggestions | null;
+  hidden?: string[]; // photo URLs this player reported
   seed: string;
   groupOf: GroupOf;
   bigQuests?: { id: string; title: string; reward: number; doneAt?: number }[];
@@ -191,6 +194,8 @@ export function buildMoments(opts: {
   const week = startOfWeek(now);
   const thisWeek = challengeStatus(week, sightings, seed, groupOf);
   const regionLabel = opts.region ? regionByKey(opts.region)?.label ?? 'your area' : 'your area';
+  const hidden = new Set(opts.hidden ?? []);
+  const vis = (ps?: (CrewPhoto | null | undefined)[] | null): CrewPhoto[] => (ps ?? []).filter((p): p is CrewPhoto => Boolean(p) && !hidden.has(p!.url));
 
   if (!opts.region) {
     out.push({
@@ -212,65 +217,71 @@ export function buildMoments(opts: {
     });
   }
 
-  // ---------- one Scout story a day ----------
+  // ---------- Scout's two stories a day ----------
+  // Morning (7am): Monday is a quick look at the week's themes; Tuesday to
+  // Sunday dig into one theme each. Afternoon (2pm): the animal of the day.
+  // Today's first story ends with the quest slide.
   const byWeek = new Map(opts.forecasts.map((f) => [startOfWeek(localDateStart(f.weekOf) + 12 * 3600_000), f]));
   const byDate = new Map(opts.today.map((t) => [startOfDay(localDateStart(t.date) + 12 * 3600_000), t]));
-  for (let d = 0; d < 10; d++) {
+  let questSlideUsed = false;
+  const questsFor = (day: number, at: number) => {
+    if (questSlideUsed || day !== startOfDay(now) || at > now || !thisWeek.some((c) => !c.done)) return [];
+    questSlideUsed = true;
+    return [questSlide(thisWeek, 'quests')];
+  };
+  for (let d = 9; d >= 0; d--) {
     const day = startOfDay(addDays(now, -d));
     const wk = startOfWeek(day);
     const f = byWeek.get(wk);
     const items = f ? personaliseForecast(f.items, sightings, groupOf) : [];
     const dow = Math.round((day - wk) / DAY_MS); // 0 = Monday … 6 = Sunday
     const t = byDate.get(day);
-    const isToday = d === 0;
-    const at = day + (dow === 0 ? 7 : 8) * 3600_000;
-    if (!recent(at)) continue;
-    const quests = isToday && thisWeek.some((c) => !c.done) ? [questSlide(thisWeek, 'quests')] : [];
 
-    // Monday: a quick look at the week's themes (one slide each).
-    if (dow === 0 && items.length) {
-      const slides: Slide[] = items.slice(0, 6).map((it, i) => {
-        const photo = ref(it.photos?.[0]);
-        const { emoji, rest } = splitEmoji(it.facts[0]);
-        return photo
-          ? { key: `w${i}`, photo, kicker: it.species, title: it.title, text: it.facts[0] }
-          : { key: `w${i}`, emoji: emoji ?? (it.emoji || GROUP_EMOJI[it.group]), kicker: it.species, title: it.title, text: rest, tone: GROUP_TONE[it.group] ?? 'green' };
-      });
-      if (wk === week) slides.push(questSlide(thisWeek, 'quests'));
-      out.push({
-        id: `weekly:${f!.weekOf}`,
-        kind: 'weekly',
-        at,
-        caption: `${f!.headline || 'This week near you'} Here’s what’s happening around the ${regionLabel}. I’ll dig into these all week!`,
-        slides,
-      });
-      continue;
+    const morning = day + 7 * 3600_000;
+    if (recent(morning) && items.length) {
+      const themeRef = (it: ForecastItem): StoryRef => ({ kind: 'theme', species: it.species, sci: it.sci || undefined, title: it.title, region: f!.region, weekOf: f!.weekOf });
+      if (dow === 0) {
+        // A quick look at the week's themes (one slide each; tap one for its story).
+        const slides: Slide[] = items.slice(0, 6).map((it, i) => {
+          const photo = ref(vis(it.photos)[0]);
+          const { emoji, rest } = splitEmoji(it.facts[0]);
+          const base = { key: `w${i}`, kicker: it.species, title: it.title, story: themeRef(it) };
+          return photo
+            ? { ...base, photo, text: it.facts[0] }
+            : { ...base, emoji: emoji ?? (it.emoji || GROUP_EMOJI[it.group]), text: rest, tone: GROUP_TONE[it.group] ?? 'green' };
+        });
+        out.push({
+          id: `weekly:${f!.weekOf}`,
+          kind: 'weekly',
+          at: morning,
+          caption: `${f!.headline || 'This week near you'} Here’s what’s happening around the ${regionLabel}. Tap one to read its story. I’ll dig into each one this week!`,
+          slides: [...slides, ...questsFor(day, morning)],
+        });
+      } else {
+        const it = items[(dow - 1) % items.length];
+        out.push({
+          id: `theme:${day}`,
+          kind: 'theme',
+          at: morning,
+          caption: `${it.emoji ? `${it.emoji} ` : ''}${it.title}! Here’s what’s going on and where to look.`,
+          slides: [...themeStory(it, 't', vis(it.photos)), ...questsFor(day, morning)],
+          story: themeRef(it),
+        });
+      }
     }
 
-    // Tue / Thu / Sat: one theme in depth. Wed / Fri / Sun: animal of the day.
-    const themeIndex = dow % 2 === 1 ? (dow - 1) / 2 : -1;
-    const theme = themeIndex >= 0 ? items[themeIndex] : undefined;
-    if (theme || (!t?.facts.length && items.length && dow > 0)) {
-      const it = theme ?? items[(3 + Math.floor(dow / 2)) % items.length];
-      out.push({
-        id: `theme:${day}`,
-        kind: 'theme',
-        at,
-        caption: `${it.emoji ? `${it.emoji} ` : ''}${it.title}! Here’s what’s going on and where to look.`,
-        slides: [...themeStory(it, 't'), ...quests],
-      });
-      continue;
-    }
-    if (t?.facts.length) {
+    const afternoon = day + 14 * 3600_000;
+    if (recent(afternoon) && t?.facts.length) {
       out.push({
         id: `daily:${day}`,
         kind: 'daily',
-        at,
+        at: afternoon,
         caption: pick(
           [`Meet today’s animal: the ${t.species.toLowerCase()}! 🌟`, `Today’s animal is the ${t.species.toLowerCase()} 🦊`, `Say hi to the ${t.species.toLowerCase()}, today’s animal 👋`],
           `${seed}:${day}`,
         ),
-        slides: [...animalStory(t), ...quests],
+        slides: [...animalStory(t, vis(t.photos?.length ? t.photos : [t.photo])), ...questsFor(day, afternoon)],
+        story: { kind: 'species', species: t.species, sci: t.sci || undefined, region: t.region },
       });
     }
   }
@@ -327,7 +338,7 @@ export function buildMoments(opts: {
     ];
     const notes = s.crew;
     if (notes) {
-      const photos = notes.photos?.length ? notes.photos : notes.photo ? [notes.photo] : [];
+      const photos = vis(notes.photos?.length ? notes.photos : [notes.photo]);
       slides.push(...storySlides({ key: 'f', subject: name, lines: notes.facts, photos, fallbackEmoji: GROUP_EMOJI[g] ?? '💡' }));
       if (notes.tip) {
         const { emoji, rest } = splitEmoji(notes.tip);
@@ -343,6 +354,7 @@ export function buildMoments(opts: {
       at,
       caption: n === 1 ? 'Your very first species! 🎉' : `Species #${n} in your journal! 🎉`,
       slides,
+      story: { kind: 'species', species: name, sci: s.species!.scientificName || undefined, region: opts.region ?? undefined },
     });
   });
 

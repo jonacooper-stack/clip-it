@@ -19,6 +19,7 @@ export function useScoutFeed() {
   const forecastMap = useCrewStore((s) => s.forecasts);
   const todayMap = useCrewStore((s) => s.today);
   const people = useCrewStore((s) => s.people);
+  const hidden = useCrewStore((s) => s.hiddenPhotos);
   const discoverable = useAppStore((s) => s.discoverable);
   const uid = useAuthStore((s) => s.session?.user?.id);
   const seed = uid ?? 'local';
@@ -49,8 +50,8 @@ export function useScoutFeed() {
     const forecasts = Object.values(forecastMap).filter((f) => f.region === region);
     const today = Object.values(todayMap).filter((t) => t.region === region);
     const bigQuests = SEED_QUESTS.map((q) => ({ id: q.id, title: q.title, reward: q.rewardPoints, doneAt: questCompletedAt(q, sightings) }));
-    return buildMoments({ sightings, region, forecasts, today, people, seed, groupOf, bigQuests });
-  }, [sightings, region, forecastMap, todayMap, people, seed]);
+    return buildMoments({ sightings, region, forecasts, today, people, hidden, seed, groupOf, bigQuests });
+  }, [sightings, region, forecastMap, todayMap, people, hidden, seed]);
 
   const quests = useMemo(() => challengeStatus(startOfWeek(Date.now()), sightings, seed, groupOf), [sightings, seed]);
   return { moments, quests, region };

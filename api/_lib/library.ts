@@ -23,12 +23,15 @@ export function toRef(p: LibraryPhoto): PhotoRef {
   return { url: `${SITE_URL}/img/library/${p.slug}.jpg`, credit: p.credit, species: p.species, source: `${SITE_URL}/credits` };
 }
 
-// Library photo tags (west / northeast / southeast) → the regions they suit.
+// Library photo tags → the regions they suit.
 // Untagged photos (the curated core set) suit everywhere.
 const TAG_REGIONS: Record<string, string[]> = {
   west: ['pacific_northwest', 'california', 'rockies', 'southwest', 'alaska', 'plains'],
   northeast: ['northeast', 'mid_atlantic', 'midwest', 'canada', 'plains'],
   southeast: ['southeast', 'mid_atlantic', 'texas', 'hawaii'],
+  east: ['northeast', 'mid_atlantic', 'midwest', 'southeast', 'plains', 'texas', 'canada'],
+  north: ['northeast', 'midwest', 'canada', 'alaska', 'rockies', 'pacific_northwest'],
+  world: ['elsewhere'], // not North American: only for players who explore elsewhere
 };
 
 function suits(p: LibraryPhoto, region: string): boolean {

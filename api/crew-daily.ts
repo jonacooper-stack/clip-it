@@ -3,6 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, log } from './_lib/server';
 import { ensureCrew, hasCrewComment, retireOldCrew } from './_lib/crewAccounts';
 import { getFacts, scoutComment, scoutWelcome, speciesKey } from './_lib/crewFacts';
+import { prewarmStories } from './_lib/stories';
+import { dailyPick } from './_lib/library';
+import { weekOf } from '../shared/crew';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
@@ -13,6 +16,8 @@ import { getFacts, scoutComment, scoutWelcome, speciesKey } from './_lib/crewFac
 // 2. Recent wall posts get at most one Scout comment each: a welcome on a
 //    player's very first post, otherwise a fun fact about the species
 //    (catching posts shared from older app versions or while facts were down).
+// 3. Writes upcoming stories ahead of time (this week's themes, today's and
+//    tomorrow's animal of the day), so "Read the story" opens instantly.
 //
 // Needs SUPABASE_SERVICE_ROLE_KEY and CRON_SECRET in Vercel; run
 // supabase/migrations/0007_field_crew.sql first.
@@ -21,6 +26,7 @@ export const config = { maxDuration: 60 };
 const MAX_NEW_FACTS_PER_RUN = 12;
 
 export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } = {}) {
+  const started = Date.now();
   const dry = Boolean(opts.dry);
   const retired = await retireOldCrew(db, { dry });
   const crew = await ensureCrew(db, { dry });
@@ -69,7 +75,14 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
     }
   }
 
-  const result = { ok: true, dry, companion: scout ? 'scout' : 'not created yet', retired, comments };
+  let stories: string[] = [];
+  try {
+    stories = await prewarmStories(db, { dry, cap: 6, deadline: started + 40_000, week: weekOf(), dailyPick });
+  } catch (err: any) {
+    log('crew_daily_stories_error', { detail: String(err?.message ?? err).slice(0, 200) });
+  }
+
+  const result = { ok: true, dry, companion: scout ? 'scout' : 'not created yet', retired, comments, stories };
   log('crew_daily_run', result);
   return result;
 }

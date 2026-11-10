@@ -51,7 +51,8 @@ BUILD YOUR FIELD JOURNAL
 • Add your own field notes to any sighting
 
 MEET SCOUT, YOUR AI FIELD GUIDE
-• A friendly fox who posts an animal of the day, with a photo and a fun fact
+• A friendly fox who posts twice a day: what's happening near you, and an animal of the day
+• Tap any post to read the story: why animals do what they do, and where to look
 • See what's happening near you each week: who's migrating, nesting or spawning
 • Swipe through fun facts and photos about every new animal you find
 • Discover explorers near you, or who found the same animals, to follow
@@ -125,7 +126,7 @@ Notes:
 - Camera, location and photo access are requested only when used. The app works if location is denied.
 - Location is stored only on the device and is never shared with other users.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
-- Scout is an AI companion made by our team (a cartoon fox), always shown with an "AI" badge (tap it for an explanation). Scout posts in the Feed: an animal of the day, what wildlife is doing near the player's home region each week, fun facts about the animals they find, and weekly quests. Scout isn't a real user, never competes with players, and isn't on the leaderboard. Its posts can be hidden in Profile → "Show Scout in my feed". Once a week Scout suggests other players to follow (based on public wall posts and, only if both allow it, the same home region; regions are never shown); players can opt out in Profile, and it is off by default for ages 13–17.
+- Scout is an AI companion made by our team (a cartoon fox), always shown with an "AI" badge (tap it for an explanation). Scout posts in the Feed: an animal of the day, what wildlife is doing near the player's home region each week, fun facts about the animals they find, and weekly quests. Scout isn't a real user, never competes with players, and isn't on the leaderboard. Tapping a post opens a short illustrated story about it. Every photo Scout shows can be reported with the flag icon ("Wrong photo?"), which hides it immediately. Its posts can be hidden in Profile → "Show Scout in my feed". Once a week Scout suggests other players to follow (based on public wall posts and, only if both allow it, the same home region; regions are never shown); players can opt out in Profile, and it is off by default for ages 13–17.
 ```
 
 **Contact:** your name, phone, email.
@@ -140,4 +141,4 @@ Notes:
 | Subtitle | 30 | 30 |
 | Promotional text | 170 | 155 |
 | Keywords | 100 | 95 |
-| Description | 4000 | ~2,120 |
+| Description | 4000 | ~2,210 |

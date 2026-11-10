@@ -3,6 +3,7 @@ import { adminClient, log, rateLimited, verifyUser } from '../_lib/server';
 import { getFacts } from '../_lib/crewFacts';
 import { dailyPick, toRef } from '../_lib/library';
 import { regionByKey } from '../../shared/crew';
+import { withoutBlocked } from '../_lib/photoFlags';
 
 // GET /api/crew/today?region=northeast&date=2026-11-12
 // Scout's "animal of the day" for a region: a credited library photo
@@ -29,9 +30,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const pick = dailyPick(region, date);
   try {
     const facts = await getFacts(adminClient(), pick.species, pick.sci);
+    if (!facts.facts.length) throw new Error('no facts');
     res.setHeader('Cache-Control', 'private, max-age=3600');
-    const photo = toRef(pick);
-    const photos = [photo, ...(facts.photos ?? []).filter((p) => p.url !== photo.url)].slice(0, 6);
+    const db = adminClient();
+    const photos = (await withoutBlocked(db, [toRef(pick), ...(facts.photos ?? []).filter((p) => p.url !== toRef(pick).url)])).slice(0, 6);
+    const photo = photos[0] ?? toRef(pick);
     return res.status(200).json({ region, date, species: pick.species, sci: pick.sci, photo, photos, facts: facts.facts, tip: facts.tip });
   } catch (err: any) {
     fail('facts_error', { species: pick.species, detail: String(err?.message ?? err).slice(0, 200) });
