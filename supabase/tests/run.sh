@@ -28,14 +28,15 @@ for f in $(ls "$MIGRATIONS"/*.sql | sort); do
   [ "$name" = "0001_init.sql" ] && continue
   # Rows written before the newest migration must survive it: seed them just before it runs.
   if [ "$name" = "0010_hardening.sql" ]; then run legacy.sql; fi
+  if [ "$name" = "0011_cloud_journal.sql" ]; then run legacy_0011.sql; fi
   run "$f" || { echo "FAILED applying $name"; exit 1; }
   last="$f"
 done
 # Migrations are run by hand in the SQL editor, sometimes twice: the newest must be safe to repeat.
 run "$last" || { echo "FAILED re-applying $(basename "$last")"; exit 1; }
-echo "applied $(ls "$MIGRATIONS"/*.sql | wc -l | tr -d ' ') migrations (newest one twice)"
+echo "applied $(($(ls "$MIGRATIONS"/*.sql | wc -l) - 1)) migrations (newest one twice)"
 
-out="$(psql -q -d "$DB" -f rules.test.sql 2>&1 | grep -E 'PASS|FAIL|ERROR' | sed 's/^.*NOTICE:  //' || true)"
+out="$( (psql -q -d "$DB" -f rules.test.sql 2>&1; psql -q -d "$DB" -f moderation.test.sql 2>&1) | grep -E 'PASS|FAIL|ERROR' | sed 's/^.*NOTICE:  //' || true)"
 echo "$out"
 dropdb "$DB"
 pass=$(grep -c '^PASS' <<< "$out" || true)

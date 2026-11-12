@@ -3,23 +3,13 @@
 // and nothing else in the app is affected.
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { API_BASE, authHeaders, hasServer } from '@/lib/apiBase';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useCrewStore, type Forecast, type PeopleSuggestions, type Story, type TodayPick } from '@/state/useCrewStore';
 import { useAppStore } from '@/state/useAppStore';
 import type { CrewNotes, Sighting } from '@/types';
 import { weekOf, type RegionKey } from '../../../shared/crew';
 
-// Same server as the identify endpoint (absolute on native, same-origin on web).
-const IDENTIFY_URL = process.env.EXPO_PUBLIC_IDENTIFY_URL ?? '/api/identify';
-const API_BASE = Platform.OS === 'web' ? '' : IDENTIFY_URL.replace(/\/api\/identify\/?$/, '');
-const hasServer = Platform.OS === 'web' || /^https?:\/\//i.test(API_BASE);
-
-async function authHeaders(): Promise<Record<string, string> | null> {
-  if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : null;
-}
 
 async function crewFetch<T>(path: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<T | null> {
   if (!hasServer) return null;

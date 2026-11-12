@@ -14,7 +14,7 @@ import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
 import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
 import { SCIENCE_QUESTIONS, answerValues, answerLabelsText } from '@/lib/scienceQuestions';
-import { resolvePhoto } from '@/lib/photoStore';
+import { usePhoto } from '@/lib/usePhoto';
 import { MAX_AUTO_RETRIES, retryCaptureNow } from '@/lib/analysis';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -39,6 +39,8 @@ export default function SightingDetail() {
   const [confirming, setConfirming] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // The photo's file on this device, or a link to the copy in the cloud journal.
+  const { uri: photoSrc, onError: onPhotoError } = usePhoto(sighting?.photoUri);
 
   const retryNow = async () => {
     setRetrying(true);
@@ -69,7 +71,6 @@ export default function SightingDetail() {
   }
 
   const status = STATUS[sighting.idStatus];
-  const photoSrc = resolvePhoto(sighting.photoUri);
   const observed = new Date(sighting.observedAt);
   const hasLoc = sighting.lat != null && sighting.lng != null;
 
@@ -108,7 +109,11 @@ export default function SightingDetail() {
             source={{ uri: photoSrc }}
             style={styles.photo}
             contentFit="cover"
-            onError={() => setPhotoFailed(true)}
+            onError={() => {
+              // A cloud link may just have expired: ask for a fresh one once before giving up.
+              if (sighting.photoUri?.startsWith('cloud:') && !photoFailed) onPhotoError();
+              else setPhotoFailed(true);
+            }}
           />
         ) : (
           <View style={styles.photoFallback}>

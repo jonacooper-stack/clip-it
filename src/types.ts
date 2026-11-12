@@ -1,6 +1,7 @@
 // Shared client types for Clip-It.
 
 import type { Retry } from '@/lib/retry';
+import type { PhotoEvidence } from '../shared/photoEvidence';
 
 export type IdStatus =
   | 'identifying'
@@ -59,6 +60,26 @@ export interface Sighting {
   /** For a queued capture: how many times identifying it has failed, and when
    * to try again (see lib/analysis). */
   retry?: Retry;
+
+  // ----- the cloud journal (see lib/journalSync) -----
+  /** How the photo got here: taken with the in-app camera, or uploaded from the camera roll. */
+  capture?: 'camera' | 'library';
+  /** For an upload: whether the photo carried a camera's details (sent to the server's photo check). */
+  evidence?: PhotoEvidence;
+  /** When the server last confirmed it holds this sighting. Unset: not in the cloud yet. */
+  cloudAt?: number;
+  /** Counts the player's changes to what the cloud keeps (field notes, a suggested species, the wall post). */
+  rev?: number;
+  /** The `rev` the server has. A higher `rev` means a change still waiting to be sent. */
+  sentRev?: number;
+  /** The server's signed note for a result it couldn't record at the time; sent on the next sync. */
+  receipt?: string;
+  /** The server identified and scored this sighting itself. */
+  verified?: boolean;
+  /** The cloud holds a copy of the photo. */
+  cloudPhoto?: boolean;
+  /** The server won't take this sighting (so don't keep sending it). */
+  cloudSkip?: boolean;
 }
 
 export interface CrewOtherPost {

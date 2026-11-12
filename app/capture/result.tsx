@@ -29,7 +29,7 @@ export default function Result() {
   const router = useRouter();
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const removeSighting = useJournalStore((s) => s.removeSighting);
-  const updateSighting = useJournalStore((s) => s.updateSighting);
+  const editSighting = useJournalStore((s) => s.editSighting);
   const [confirming, setConfirming] = useState(false);
 
   const scale = useRef(new Animated.Value(0.7)).current;
@@ -102,10 +102,12 @@ export default function Result() {
     else delete next[qid];
     const answered = Object.keys(next).length;
     if (sighting.score) {
+      // Shown at once with the same rule the server uses; the server
+      // confirms the bonus when the answers reach it.
       const { score, points } = applyFieldNotesBonus(sighting.score, answered);
-      updateSighting(sighting.id, { science: next, score, points });
+      editSighting(sighting.id, { science: next, score, points });
     } else {
-      updateSighting(sighting.id, { science: next });
+      editSighting(sighting.id, { science: next });
     }
   };
 

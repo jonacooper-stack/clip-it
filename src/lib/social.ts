@@ -8,6 +8,7 @@ import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { resizedBase64, WALL_PHOTO, AVATAR_PHOTO } from './prepareImage';
 import { resolvePhoto } from './photoStore';
+import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
 import { checkText, reservedName } from './moderation';
 import { publicStorageUrl } from '../../shared/storage';
 
@@ -129,13 +130,15 @@ export async function getBlockedIds(): Promise<Set<string>> {
   return ids;
 }
 
-// Upsert the signed-in user's leaderboard row (display name + aggregate points).
+// Upsert the signed-in user's leaderboard row.
 //
-// The journal lives on the device, so a fresh install (or a second phone)
-// starts at zero locally. Never let that overwrite a higher score already on
-// the board: only ever raise the stored totals.
+// The score on the board is worked out by the server from the cloud journal.
+// Pass `totals` only for an account the server hasn't taken over yet (a
+// server or database that hasn't been updated): then the device's own totals
+// are sent as before, and only ever raise what is stored. Otherwise this
+// keeps the display name up to date and nothing else.
 // Returns true when the stored row changed (so an open leaderboard can refresh).
-export async function syncMyProfile(displayName: string, points: number, speciesCount: number): Promise<boolean> {
+export async function syncMyProfile(displayName: string, totals: { points: number; speciesCount: number } | null): Promise<boolean> {
   const uid = myId();
   if (!supabase || !uid) return false;
   const { data: current } = await supabase
@@ -146,12 +149,17 @@ export async function syncMyProfile(displayName: string, points: number, species
   // Names from Google or Apple can be long; the board keeps the first 40 characters.
   const shown = displayName.trim().slice(0, 40) || 'Explorer';
   const name = checkText(shown) || reservedName(shown) ? 'Explorer' : shown;
+  const row = current as { display_name?: string; points?: number; species_count?: number } | null;
+  if (!totals) {
+    if (row && row.display_name === name) return false; // nothing new to say
+    const { error } = await supabase.from('profiles').upsert({ id: uid, display_name: name, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    return !error;
+  }
   const next = {
     display_name: name,
-    points: Math.max(points, (current as any)?.points ?? 0),
-    species_count: Math.max(speciesCount, (current as any)?.species_count ?? 0),
+    points: Math.max(totals.points, row?.points ?? 0),
+    species_count: Math.max(totals.speciesCount, row?.species_count ?? 0),
   };
-  const row = current as { display_name?: string; points?: number; species_count?: number } | null;
   // Nothing new to say: skip the write.
   if (row && row.display_name === next.display_name && row.points === next.points && row.species_count === next.species_count) return false;
   const { error } = await supabase
@@ -445,6 +453,10 @@ export async function shareToWall(input: {
   points?: number;
   caption?: string;
   photoUri?: string;
+  /** The journal sighting being shared. With it the database takes the post's
+   * points and species from the cloud journal (not from the app), and a
+   * sighting can only be shared once, from any device. */
+  sightingId?: string;
 }): Promise<{ error?: string; postId?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
@@ -464,7 +476,9 @@ export async function shareToWall(input: {
   let photoUrl: string | null = null;
   if (input.photoUri) {
     try {
-      const b64 = await resizedBase64(resolvePhoto(input.photoUri) ?? input.photoUri, WALL_PHOTO);
+      // A photo that lives only in the cloud journal is fetched from there.
+      const source = isCloudRef(input.photoUri) ? await cloudPhotoUrl(cloudRefId(input.photoUri)) : resolvePhoto(input.photoUri) ?? input.photoUri;
+      const b64 = source ? await resizedBase64(source, WALL_PHOTO) : undefined;
       if (b64) {
         const path = `${uid}/${Date.now()}.jpg`;
         // Pass the ArrayBuffer (not the view) — React Native's fetch uploads an
@@ -484,19 +498,39 @@ export async function shareToWall(input: {
     }
   }
 
-  const { data: inserted, error } = await supabase
-    .from('feed_posts')
-    .insert({
-      user_id: uid,
-      common_name: input.commonName ?? null,
-      scientific_name: input.scientificName ?? null,
-      points: input.points ?? 0,
-      caption: input.caption ?? null,
-      photo_url: photoUrl,
-    })
-    .select('id')
-    .single();
+  const post = {
+    user_id: uid,
+    common_name: input.commonName ?? null,
+    scientific_name: input.scientificName ?? null,
+    points: input.points ?? 0,
+    caption: input.caption ?? null,
+    photo_url: photoUrl,
+  };
+  const insert = (row: Record<string, unknown>) => supabase!.from('feed_posts').insert(row).select('id').single();
+  let { data: inserted, error } = await insert(input.sightingId ? { ...post, sighting_id: input.sightingId } : post);
+  // A database that hasn't had migration 0011 has no sighting_id column: post without it.
+  if (error && input.sightingId && missingColumn(error)) ({ data: inserted, error } = await insert(post));
+  if (error?.code === '23505' && input.sightingId) {
+    // Already shared (from another device, or a double tap): hand back that post.
+    const { data: existing } = await supabase.from('feed_posts').select('id').eq('user_id', uid).eq('sighting_id', input.sightingId).maybeSingle();
+    if ((existing as any)?.id) {
+      if (photoUrl) void removeWallPhoto(photoUrl);
+      return { postId: (existing as any).id as string };
+    }
+  }
   return error ? { error: error.message } : { postId: (inserted as any)?.id as string | undefined };
+}
+
+// Delete a file we uploaded to the wall bucket (best effort).
+async function removeWallPhoto(photoUrl: string): Promise<void> {
+  const marker = `/${WALL_BUCKET}/`;
+  const i = photoUrl.indexOf(marker);
+  if (i === -1 || !supabase) return;
+  try {
+    await supabase.storage.from(WALL_BUCKET).remove([photoUrl.slice(i + marker.length)]);
+  } catch {
+    // an orphaned photo is harmless
+  }
 }
 
 // Unshare: delete one of my own posts. Likes/comments cascade away with it (FK
@@ -508,18 +542,8 @@ export async function deletePost(postId: string, photoUrl?: string | null): Prom
   if (error) return { error: error.message };
   // The sighting it came from can be shared again.
   const journal = useJournalStore.getState();
-  for (const sg of journal.sightings) if (sg.wallPostId === postId) journal.updateSighting(sg.id, { wallPostId: undefined });
-  if (photoUrl) {
-    const marker = `/${WALL_BUCKET}/`;
-    const i = photoUrl.indexOf(marker);
-    if (i !== -1) {
-      try {
-        await supabase.storage.from(WALL_BUCKET).remove([photoUrl.slice(i + marker.length)]);
-      } catch {
-        // orphaned photo is harmless
-      }
-    }
-  }
+  for (const sg of journal.sightings) if (sg.wallPostId === postId) journal.editSighting(sg.id, { wallPostId: undefined });
+  if (photoUrl) await removeWallPhoto(photoUrl);
   return {};
 }
 
@@ -726,7 +750,7 @@ async function emptyMyFolder(bucket: string, uid: string) {
 export async function deleteMyAccount(): Promise<{ error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'You’re not signed in.' };
-  for (const bucket of [WALL_BUCKET, AVATAR_BUCKET, 'sightings']) {
+  for (const bucket of [WALL_BUCKET, AVATAR_BUCKET, 'journal-photos']) {
     try {
       await emptyMyFolder(bucket, uid);
     } catch {

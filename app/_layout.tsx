@@ -16,7 +16,9 @@ import { applyGlobalFont } from '@/lib/fonts';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { processAnalysisQueue, recoverInterruptedCaptures } from '@/lib/analysis';
+import { processAnalysisQueue } from '@/lib/analysis';
+import { useJournalLoader } from '@/lib/useJournalLoader';
+import { scheduleJournalSync } from '@/lib/journalSync';
 import { APP_MAX_WIDTH, isWideWeb } from '@/lib/layout';
 
 applyGlobalFont();
@@ -40,9 +42,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     useAuthStore.getState().init();
-    // Retry offline-queued captures whenever the app returns to the foreground.
+    // Retry offline-queued captures, and catch up with the cloud journal,
+    // whenever the app returns to the foreground.
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') processAnalysisQueue();
+      if (state === 'active') {
+        processAnalysisQueue();
+        scheduleJournalSync();
+      }
     });
     // Also poll periodically so the queue drains when the signal returns while the
     // app stays open (AppState won't fire then). No-ops when nothing's queued.
@@ -53,13 +59,10 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Once the journal has loaded, rescue any capture that was interrupted
-  // mid-identification, then flush anything captured while offline.
-  useEffect(() => {
-    if (!journalHydrated) return;
-    recoverInterruptedCaptures();
-    processAnalysisQueue();
-  }, [journalHydrated]);
+  // The signed-in account's journal is loaded here (and again whenever the
+  // account changes). Each load also rescues interrupted captures, sends
+  // anything queued for identification, and syncs with the cloud.
+  useJournalLoader();
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});

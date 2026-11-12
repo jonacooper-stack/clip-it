@@ -10,7 +10,7 @@ import type { Sighting } from '@/types';
 // The "self-ID as a check" path: AI leads, but if you disagree you submit your
 // own guess, which marks the sighting disputed and routes it to human review.
 export function DisputeBox({ sighting }: { sighting: Sighting }) {
-  const update = useJournalStore((s) => s.updateSighting);
+  const update = useJournalStore((s) => s.editSighting);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
 

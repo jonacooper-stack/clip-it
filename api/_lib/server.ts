@@ -100,6 +100,7 @@ export const DAILY_LIMITS = {
   identify: limit('DAILY_IDENTIFY_LIMIT', 300), // photos identified
   generate: limit('DAILY_GENERATE_LIMIT', 60), // new Scout facts / stories written because of this player
   flag: limit('DAILY_FLAG_LIMIT', 20), // photos reported
+  journal: limit('DAILY_JOURNAL_LIMIT', 600), // journal sync requests (each carries up to 40 sightings)
 } as const;
 
 let warnedNoCounters = false;

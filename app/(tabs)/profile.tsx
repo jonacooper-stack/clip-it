@@ -9,8 +9,9 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
+import { useJournalStore, distinctSpecies, purgeJournal } from '@/state/useJournalStore';
 import { playerPoints } from '@/lib/quests';
+import { pendingCount, syncJournal, useSyncStatus } from '@/lib/journalSync';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -41,17 +42,29 @@ export default function Profile() {
   const homeRegion = useAppStore((s) => s.homeRegion);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
-  const resetJournal = useJournalStore((s) => s.reset);
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const email = session?.user?.email;
+  const uid = session?.user?.id;
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
   const resetCrew = useCrewStore((s) => s.reset);
-  const points = useMemo(() => playerPoints(sightings), [sightings]);
+  // The score is the server's once it keeps this account's journal (it is the
+  // number on the leaderboard); until then, what this device adds up to.
+  const cloud = useJournalStore((s) => s.cloud);
+  const pendingDeletes = useJournalStore((s) => s.pendingDeletes);
+  const localPoints = useMemo(() => playerPoints(sightings), [sightings]);
+  const points = cloud?.ready && cloud.totals ? cloud.totals.points : localPoints;
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
+  const syncState = useSyncStatus((s) => s.state);
+  const backupLabel =
+    syncState === 'syncing' ? 'Journal backup: saving…'
+    : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
+    : cloud?.ready ? 'Journal backup: up to date'
+    : 'Journal backup: not started yet';
   const streak = useMemo(() => currentStreak(sightings), [sightings]);
   // Sightings in the journal: photos that turned out not to be wildlife (or
   // found no animal) aren't kept there, so they aren't counted here either.
@@ -105,8 +118,10 @@ export default function Profile() {
               notify('Couldn’t delete your account', `Please try again, or email ${CONTACT_EMAIL} and we’ll delete it for you.`);
               return;
             }
+            // Erase the journal and its photos from this phone before signing
+            // out (after sign-out the journal is no longer loaded).
+            await purgeJournal(uid ?? null);
             await signOut();
-            resetJournal();
             resetCrew();
             resetApp();
             setDeleting(false);
@@ -118,8 +133,8 @@ export default function Profile() {
 
   const onReset = () =>
     confirmAction('Reset app data?', 'This clears your journal and onboarding (for testing).', 'Reset', async () => {
+      await purgeJournal(uid ?? null);
       await signOut();
-      resetJournal();
       resetCrew();
       resetApp();
       router.replace('/onboarding/welcome');
@@ -185,6 +200,9 @@ export default function Profile() {
                 label={`Home region${homeRegion ? `: ${regionByKey(homeRegion)?.label}` : ''}`}
                 onPress={() => router.push('/region')}
               />
+              <Divider />
+              {/* The journal is kept in the cloud, private to this account. Tap to save now. */}
+              <Row icon="cloud-done-outline" label={backupLabel} onPress={() => void syncJournal({ force: true })} />
               <Divider />
               <ToggleRow
                 icon="sparkles"

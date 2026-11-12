@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { resizedBase64, CAPTURE_QUALITY } from './prepareImage';
 import { savePhoto } from './photoStore';
+import { exifFromJpeg, photoEvidence, type PhotoEvidence } from '../../shared/photoEvidence';
 
 export interface ImportedPhoto {
   uri: string;
@@ -20,6 +21,21 @@ export interface ImportedPhoto {
   lng?: number;
   /** Epoch ms the photo was taken (from metadata), or now if unknown. */
   observedAt: number;
+  /** Whether the photo carries a camera's details (make, lens, exposure). The
+   * server only scores uploads that do: a saved picture or a screenshot doesn't. */
+  evidence: PhotoEvidence;
+}
+
+// The start of a base64 file as bytes (camera details sit at the front of a JPEG).
+function headBytes(base64: string, maxBytes = 131072): Uint8Array {
+  try {
+    const bin = globalThis.atob(base64.slice(0, Math.ceil(maxBytes / 3) * 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return new Uint8Array(0);
+  }
 }
 
 function num(v: unknown): number | undefined {
@@ -55,6 +71,8 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
   let lat: number | undefined;
   let lng: number | undefined;
   let observedAt: number | undefined;
+  let libraryDetails: unknown;
+  let subtypes: string[] | undefined;
 
   // Most reliable source: the asset's own metadata (survives the picker's EXIF
   // stripping). Native-only and best-effort.
@@ -66,6 +84,8 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
         lng = info.location.longitude;
       }
       if (info.creationTime) observedAt = info.creationTime;
+      libraryDetails = info.exif;
+      subtypes = (info as { mediaSubtypes?: string[] }).mediaSubtypes;
     } catch {
       // fall back to EXIF below
     }
@@ -96,5 +116,10 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
   const base64 = small ?? (Platform.OS === 'web' ? a.base64 ?? undefined : undefined);
   // Persist a copy so it survives app updates (stored as a stable relative ref).
   const uri = Platform.OS === 'web' ? a.uri : (await savePhoto(a.uri)) ?? a.uri;
-  return { uri, base64, lat, lng, observedAt: observedAt ?? Date.now() };
+  // Does it look like it came out of a camera? Whatever details we can get:
+  // the picker's, the photo library's, or (on the web, where neither exists)
+  // read straight from the file.
+  const fromFile = Platform.OS === 'web' && a.base64 ? exifFromJpeg(headBytes(a.base64)) : null;
+  const evidence = photoEvidence({ picker: a.exif ?? null, library: libraryDetails ?? null, file: fromFile }, { subtypes });
+  return { uri, base64, lat, lng, observedAt: observedAt ?? Date.now(), evidence };
 }

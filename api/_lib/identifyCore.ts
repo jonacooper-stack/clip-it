@@ -109,7 +109,10 @@ export interface Identification {
 // Whether the picture is the player's own photograph of a real scene, as far
 // as the picture itself shows. `ok: false` means it can't score. `review`
 // marks a picture the model had doubts about but not enough to refuse.
-export type AuthenticityReason = 'screen' | 'print' | 'screenshot' | 'artwork' | 'watermark' | 'synthetic';
+type PictureReason = 'screen' | 'print' | 'screenshot' | 'artwork' | 'watermark' | 'synthetic';
+// 'import', 'copied' and 'library' are not read from the picture: they come
+// from the server's own checks (see api/_lib/journal.ts).
+export type AuthenticityReason = PictureReason | 'import' | 'copied' | 'library';
 export interface Authenticity {
   ok: boolean;
   reason: AuthenticityReason | null;
@@ -119,7 +122,7 @@ export interface Authenticity {
 const PHOTO_OF = ['scene', 'screen', 'print', 'screenshot', 'artwork'] as const;
 
 // What the player is told. Plain and not accusing: the check can be wrong.
-export const AUTHENTICITY_MESSAGES: Record<AuthenticityReason, string> = {
+export const AUTHENTICITY_MESSAGES: Record<PictureReason, string> = {
   screen: 'That looks like a photo of a screen. Only wildlife you photograph yourself, out in the world, can score.',
   print: 'That looks like a photo of a printed picture. Only wildlife you photograph yourself can score.',
   screenshot: 'That looks like a screenshot. Only photos you take yourself can score.',
@@ -133,7 +136,7 @@ export const AUTHENTICITY_MESSAGES: Record<AuthenticityReason, string> = {
 // refuses a picture.
 export function readAuthenticity(p: any): Authenticity {
   const photoOf = (PHOTO_OF as readonly unknown[]).includes(p?.photoOf) ? (p.photoOf as (typeof PHOTO_OF)[number]) : 'scene';
-  const reason: AuthenticityReason | null =
+  const reason: PictureReason | null =
     photoOf !== 'scene' ? photoOf : p?.watermark === true ? 'watermark' : p?.aiMade === 'yes' ? 'synthetic' : null;
   return { ok: reason === null, reason, review: reason === null && p?.aiMade === 'maybe' };
 }
@@ -179,7 +182,23 @@ export function normalizeIdentification(parsed: any): Identification {
     caption: text(p.caption, 240),
     dangerous,
     idStatus,
-    ineligibleReason: wild && authenticity.reason ? AUTHENTICITY_MESSAGES[authenticity.reason] : text(p.ineligibleReason, 200),
+    ineligibleReason: wild && authenticity.reason ? AUTHENTICITY_MESSAGES[authenticity.reason as PictureReason] : text(p.ineligibleReason, 200),
     authenticity,
+  };
+}
+
+// Turn a result that would have scored into one that doesn't, with the
+// reason the player is shown. Used by the checks that aren't about what the
+// picture shows (an upload without camera details, a copy of someone else's
+// photo).
+export function refuse(id: Identification, reason: AuthenticityReason, message: string): Identification {
+  return {
+    ...id,
+    eligible: false,
+    idStatus: id.present ? 'ineligible' : id.idStatus,
+    rarityScore: 0,
+    sceneTags: [],
+    ineligibleReason: message,
+    authenticity: { ok: false, reason, review: false },
   };
 }

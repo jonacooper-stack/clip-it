@@ -1,12 +1,14 @@
 // Identify orchestration. The default (offline) mode returns a mock so the loop is
-// fully playable with no backend. On the deployed web app it calls the Vercel
-// function (api/identify.ts) for real Claude identification. A Supabase path is
-// kept for the future shared-data backend. Any failure falls back to the mock so
-// the app never gets stuck.
+// fully playable with no backend. With a server configured it calls the Vercel
+// function (api/identify.ts) for real Claude identification; the server also
+// records a result that counts in the player's cloud journal and scores it.
 
 import { Platform } from 'react-native';
 import * as Network from 'expo-network';
 import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
+import type { PhotoEvidence } from '../../shared/photoEvidence';
+import type { CloudRow } from './journalMerge';
+import { deviceTimeZone } from './apiBase';
 import { supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
 
@@ -14,9 +16,6 @@ const IDENTIFY_URL = process.env.EXPO_PUBLIC_IDENTIFY_URL ?? '/api/identify';
 // On web the endpoint is same-origin ('/api/identify'). On native a relative path
 // can't be reached, so the real AI runs only when an absolute URL is configured.
 const hasAbsoluteIdentifyUrl = /^https?:\/\//i.test(IDENTIFY_URL);
-// The Supabase identify-and-score function isn't deployed yet, so don't route
-// identification through it just because Supabase is configured for auth/social.
-const USE_SUPABASE_IDENTIFY = process.env.EXPO_PUBLIC_USE_SUPABASE_IDENTIFY === 'true';
 
 // Thrown when a capture couldn't be identified right now, so the caller can
 // queue it and try again later. `status` is the server's HTTP status when it
@@ -90,6 +89,15 @@ export interface IdentifyInput {
   lng?: number;
   accuracyM?: number;
   observedAt: number;
+  // For the cloud journal: which sighting this photo is for, and whose. With
+  // these the server records a result that counts and scores it.
+  sightingId?: string;
+  loggedAt?: number;
+  account?: string;
+  /** Taken with the in-app camera, or uploaded from the camera roll. */
+  capture?: 'camera' | 'library';
+  /** For an upload: whether the photo carries a camera's details. */
+  evidence?: PhotoEvidence;
 }
 
 export interface IdentifyOutcome {
@@ -115,20 +123,19 @@ export interface IdentifyOutcome {
   source: IdSource;
   /** When we fell back to the mock, why the real AI didn't run (for diagnostics). */
   note?: string;
+  // ----- the cloud journal -----
+  /** The server recorded the sighting; `journal` is its row (score included). */
+  recorded?: boolean;
+  journal?: CloudRow;
+  /** The server's signed note for a result it couldn't record right now. */
+  receipt?: string;
+  /** The player's totals after this sighting, when the server worked them out. */
+  totals?: { points: number; speciesCount: number } | null;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function identifySighting(input: IdentifyInput): Promise<IdentifyOutcome> {
-  // Future shared-data backend (only when explicitly enabled — the function isn't deployed yet).
-  if (USE_SUPABASE_IDENTIFY && supabase) {
-    try {
-      return await identifyViaBackend(input);
-    } catch (err) {
-      console.warn('Supabase identify failed, falling back:', err);
-    }
-  }
-
   // Real AI via the Vercel function — on web (same-origin) or native (absolute URL).
   let note: string | undefined;
   if (input.photoBase64 && (Platform.OS === 'web' || hasAbsoluteIdentifyUrl)) {
@@ -202,7 +209,22 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     resp = await fetch(IDENTIFY_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ imageBase64: input.photoBase64, mediaType: 'image/jpeg' }),
+      body: JSON.stringify({
+        imageBase64: input.photoBase64,
+        mediaType: 'image/jpeg',
+        // Which sighting this is, and when and where it was taken: the server
+        // keeps the journal now. (An older server ignores these.)
+        sightingId: input.sightingId,
+        account: input.account,
+        observedAt: input.observedAt,
+        loggedAt: input.loggedAt,
+        lat: input.lat,
+        lng: input.lng,
+        accuracyM: input.accuracyM,
+        capture: input.capture,
+        evidence: input.evidence,
+        tz: deviceTimeZone(),
+      }),
       signal: controller.signal,
     });
   } catch (err: any) {
@@ -245,64 +267,9 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     dangerous: Boolean(data.dangerous),
     idStatus: (data.idStatus as IdStatus) ?? 'ai_confident',
     source: 'ai',
+    recorded: data.recorded === true,
+    journal: data.journal && typeof data.journal === 'object' ? (data.journal as CloudRow) : undefined,
+    receipt: typeof data.receipt === 'string' ? data.receipt : undefined,
+    totals: data.totals && typeof data.totals.points === 'number' ? data.totals : undefined,
   };
-}
-
-async function identifyViaBackend(input: IdentifyInput): Promise<IdentifyOutcome> {
-  if (!supabase) throw new Error('no client');
-
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
-  if (!userId) throw new Error('not signed in');
-
-  // 1. Upload the photo to Storage.
-  const path = `${userId}/${input.observedAt}.jpg`;
-  if (input.photoBase64) {
-    const bytes = decodeBase64(input.photoBase64);
-    const { error: upErr } = await supabase.storage
-      .from('sightings')
-      .upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
-    if (upErr) throw upErr;
-  }
-
-  // 2. Insert the sighting row (precise geom set server-side from lat/lng).
-  const { data: row, error: insErr } = await supabase
-    .from('sightings')
-    .insert({
-      user_id: userId,
-      observed_at: new Date(input.observedAt).toISOString(),
-      media_path: path,
-      capture_method: 'in_app_camera',
-      location_accuracy_m: input.accuracyM,
-      id_status: 'ai_pending',
-    })
-    .select('id')
-    .single();
-  if (insErr || !row) throw insErr ?? new Error('insert failed');
-
-  // 3. Invoke the trusted identify-and-score function.
-  const { data, error: fnErr } = await supabase.functions.invoke('identify-and-score', {
-    body: { sightingId: row.id },
-  });
-  if (fnErr) throw fnErr;
-
-  return {
-    present: data.status !== 'rejected',
-    eligible: data.status !== 'rejected',
-    category: 'wild_animal',
-    species: data.species,
-    sceneTags: data.sceneTags ?? [],
-    caption: data.caption ?? '',
-    dangerous: Boolean(data.dangerous),
-    idStatus: data.status as IdStatus,
-    points: data.points ?? undefined,
-    source: 'backend',
-  };
-}
-
-function decodeBase64(b64: string): Uint8Array {
-  const binary = globalThis.atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }

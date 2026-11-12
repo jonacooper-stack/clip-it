@@ -7,13 +7,13 @@
 // the list as needed; matching is whole-word, case-insensitive, and tolerant
 // of simple obfuscation (f.u.c.k, sh1t, repeated letters).
 
-const BLOCKED_TERMS = [
+export const BLOCKED_TERMS = [
   'fuck', 'fucker', 'fucking', 'motherfucker', 'shit', 'bullshit', 'bitch', 'bastard',
   'asshole', 'dick', 'dickhead', 'cock', 'cunt', 'pussy', 'whore', 'slut', 'twat', 'wanker',
   'porn', 'nude', 'nudes', 'rape', 'rapist', 'kys', 'killyourself',
 ];
 
-const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
+export const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
 
 function normalize(word: string): string {
   return word
