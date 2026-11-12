@@ -336,14 +336,18 @@ export function prefsToSend(cloud: CloudState | null | undefined): { backup?: 'y
 }
 
 // Take in what the server says the account's choices are. The account's
-// answer wins over this device's, with two exceptions: the account has no
-// answer yet (this device's, if any, is still to be sent), or the player
-// changed the choice here while the request was in the air (`sent` is what
-// this device had when it asked).
+// answer is followed, with three exceptions where this device's own choice
+// stands (and is sent to the server, which then records it):
+//   - the account has no answer yet;
+//   - this device holds a choice the account hadn't recorded when it was last
+//     heard from (the player has just answered, or changed their mind, here);
+//   - the player changed the choice here while the request was in the air
+//     (`sent` is what this device had when it asked).
 export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPrefs, sent?: { backup?: boolean; places?: boolean }): CloudState {
+  const unsent = prefsToSend(cloud) !== null;
   const next = mergeCloud(cloud, { saved: { backup: prefs.backup, places: prefs.places } });
   const changedMeanwhile = sent !== undefined && (next.backup !== sent.backup || next.places !== sent.places);
-  if (prefs.backup === null || changedMeanwhile) return next;
+  if (prefs.backup === null || unsent || changedMeanwhile) return next;
   return { ...next, backup: prefs.backup === 'yes', places: prefs.places };
 }
 

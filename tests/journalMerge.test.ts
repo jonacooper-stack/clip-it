@@ -207,6 +207,12 @@ test('the account\'s answer is followed on every device; one that has not answer
   // …and an answer just given here stands, and is still to be sent
   const answered = takePrefs(mergeCloud(null, { backup: true, places: true }), { backup: null, places: false, epoch: null });
   assert.deepEqual([answered.backup, answered.places, prefsToSend(answered)], [true, true, { backup: 'yes', places: true }]);
+  // "Not now" earlier (the account says no), then turned on in Profile on this device: the new yes stands, and is sent
+  const turnedOn = takePrefs(mergeCloud(null, { backup: true, places: false, saved: { backup: 'no', places: false } }), { backup: 'no', places: false, epoch: null });
+  assert.deepEqual([turnedOn.backup, prefsToSend(turnedOn)], [true, { backup: 'yes' }]);
+  // once the server has recorded it, its answer is the same and nothing is left to send
+  const recorded = takePrefs(turnedOn, { backup: 'yes', places: false, epoch: null });
+  assert.deepEqual([recorded.backup, prefsToSend(recorded)], [true, null]);
   // a choice changed here while a request was in the air is not overwritten by that request's answer
   const before = { backup: true, places: true };
   const toggled = mergeCloud(mergeCloud(null, { ...before, saved: { backup: 'yes', places: true } }), { places: false });
