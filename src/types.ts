@@ -12,22 +12,8 @@ export type IdStatus =
   | 'ineligible'
   | 'rejected';
 
-export interface ScoreBreakdown {
-  basePoints: number;
-  behaviorMultiplier: number;
-  /** <1 when this species was already photographed (diminishing returns); 0 for an
-   * exact-duplicate photo. Absent on scores from before this rule (treat as 1). */
-  repeatMultiplier?: number;
-  bonuses: {
-    firstOfSpecies: number;
-    quest: number;
-    streak: number;
-    /** Bonus for answering optional science questions about the sighting. */
-    fieldNotes: number;
-  };
-  totalPoints: number;
-  ruleVersion: string;
-}
+export type { ScoreBreakdown } from '../shared/scoring';
+import type { ScoreBreakdown } from '../shared/scoring';
 
 export interface SpeciesGuess {
   scientificName: string;
@@ -103,14 +89,6 @@ export interface CrewNotes {
   fetchedAt: number;
 }
 
-export interface Quest {
-  id: string;
-  title: string;
-  description: string;
-  goal: number;
-  rewardPoints: number;
-  /** Optional broad taxon filter for matching sightings (dev heuristic). */
-  group?: 'bird' | 'mammal' | 'any';
-}
+export type { Quest } from '../shared/quests';
 
 export type AgeBracket = 'under_13' | '13_17' | 'adult';
