@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '@/components/ScreenContainer';
@@ -9,17 +9,11 @@ import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore, syncAccountNow } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import type { AgeBracket } from '@/types';
+import { ageFrom, bracketFor, MONTHS, MONTH_NAMES } from '@/lib/age';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const MAX_YEAR = CURRENT_YEAR - 4; // youngest year accepted as input (under-13s are then turned away)
 const MIN_YEAR = CURRENT_YEAR - 100;
-
-function bracketFor(age: number): AgeBracket {
-  if (age < 13) return 'under_13';
-  if (age < 18) return '13_17';
-  return 'adult';
-}
 
 // How long the gate stays closed on this device after an under-13 year.
 const BLOCK_MS = 24 * 3600_000;
@@ -33,15 +27,20 @@ export default function AgeGate() {
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const [text, setText] = useState('');
+  const [month, setMonth] = useState<number | null>(null); // 1–12
 
   const year = /^\d{4}$/.test(text) ? Number(text) : null;
-  const valid = year != null && year >= MIN_YEAR && year <= MAX_YEAR;
-  const outOfRange = year != null && !valid; // four digits entered, but not a viable year
-  const age = valid ? CURRENT_YEAR - year! : null;
+  const yearOk = year != null && year >= MIN_YEAR && year <= MAX_YEAR;
+  const outOfRange = year != null && !yearOk; // four digits entered, but not a viable year
+  const valid = yearOk && month != null;
+  // The month is asked of everyone (not only when the year is a borderline
+  // one): a year alone would let in a 12-year-old who turns 13 later this
+  // year, and asking only some people would give the cut-off away.
+  const age = valid ? ageFrom(year!, month!) : null;
   const bracket = age != null ? bracketFor(age) : null;
   // ClipIt is 13+. The question is asked neutrally (no hint about the cut-off
   // while typing); an under-13 answer closes the gate on this device for a
-  // day, so a different year can't just be entered straight afterwards.
+  // day, so a different date can't just be entered straight afterwards.
   const blocked = blockedUntil != null && Date.now() < blockedUntil;
 
   // Numbers only, capped at four digits.
@@ -71,12 +70,32 @@ export default function AgeGate() {
         <View style={styles.iconBadge}>
           <Ionicons name="calendar-outline" size={26} color={colors.accent} />
         </View>
-        <Text style={styles.title}>What year were you born?</Text>
+        <Text style={styles.title}>When were you born?</Text>
         <Text style={styles.subtitle}>
-          Type the four digits of your birth year. We store your age range, never your full birth
-          date.
+          Pick the month and type the year. We store your age range, never your birth date.
         </Text>
       </View>
+
+      {!blocked && (
+        <View style={styles.months} accessibilityRole="radiogroup" accessibilityLabel="Birth month">
+          {MONTHS.map((label, i) => {
+            const on = month === i + 1;
+            return (
+              <Pressable
+                key={label}
+                onPress={() => setMonth(i + 1)}
+                style={[styles.month, on && styles.monthOn]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={MONTH_NAMES[i]}
+                hitSlop={4}
+              >
+                <Text style={[styles.monthText, on && styles.monthTextOn]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       {!blocked && (
         <View style={[styles.readout, valid && styles.readoutActive]}>
@@ -90,7 +109,6 @@ export default function AgeGate() {
             placeholder="YYYY"
             placeholderTextColor={colors.faint}
             style={[styles.input, valid && styles.inputActive, webInputReset]}
-            autoFocus
             returnKeyType="done"
             onSubmitEditing={onContinue}
             accessibilityLabel="Birth year, four digits"
@@ -147,6 +165,21 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: font.title + 2, fontFamily: fonts.heading, color: colors.text },
   subtitle: { fontSize: font.small, color: colors.muted, marginTop: spacing.sm, lineHeight: 21 },
+
+  months: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.md },
+  month: {
+    flexBasis: '22%',
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  monthOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  monthText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
+  monthTextOn: { color: colors.onPrimary },
 
   readout: {
     alignItems: 'center',

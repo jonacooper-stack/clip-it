@@ -679,6 +679,7 @@ export const REPORT_REASONS = [
   'Nudity or sexual content',
   'Harm to animals or people',
   'Spam or scam',
+  'Not their own photo (AI-made, stock or copied)',
   'Shares someone’s location or private info',
   'Something else',
 ] as const;
