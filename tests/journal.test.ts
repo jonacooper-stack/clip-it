@@ -634,16 +634,16 @@ test('nothing is stored for an account that has not said yes; saying yes is reco
   existing(A, 0, 5000);
   const item = { id: 'legacy-000001', legacy: claim() };
   const before = await syncJournal(jdb, A, { tz: 'Europe/Paris', items: [item] }, { now: NOW });
-  assert.deepEqual([before.rows, before.prefs, before.ready, rows.size], [{}, { backup: null, places: false, epoch: null }, false, 0]);
+  assert.deepEqual([before.rows, before.prefs, before.ready, rows.size], [{}, { backup: null, places: false, placesSet: false, epoch: null }, false, 0]);
   assert.equal(state(A).tz, null); // not even the time zone
   const after = await syncJournal(jdb, A, { tz: 'Europe/Paris', prefs: { backup: 'yes', places: false }, items: [item] }, { now: NOW });
-  assert.deepEqual(after.prefs, { backup: 'yes', places: false, epoch: null });
+  assert.deepEqual(after.prefs, { backup: 'yes', places: false, placesSet: true, epoch: null }); // "off" was said, and is on record as said
   assert.equal(rows.size, 1);
   assert.deepEqual([state(A).backup, state(A).save_places === true, state(A).tz], ['yes', false, 'Europe/Paris']);
   // places off: the sighting is saved without where it was taken
   assert.deepEqual([[...rows.values()][0].lat, [...rows.values()][0].lng], [null, null]);
   // an answer that isn't yes or no changes nothing
-  assert.deepEqual((await syncJournal(jdb, A, { prefs: { backup: 'maybe', places: 'yes' } }, { now: NOW })).prefs, { backup: 'yes', places: false, epoch: null });
+  assert.deepEqual((await syncJournal(jdb, A, { prefs: { backup: 'maybe', places: 'yes' } }, { now: NOW })).prefs, { backup: 'yes', places: false, placesSet: true, epoch: null });
 });
 
 test('places: saved to two decimals when on; switching them off forgets the ones already saved', async () => {
@@ -670,9 +670,12 @@ test('turning the backup off stops new sightings being stored; a deletion is sti
   const late = sighting();
   const out = await syncJournal(jdb, A, { items: [{ id: late.sid, receipt: signReceipt(late) }] }, { now: NOW });
   assert.deepEqual([out.rows, rows.size], [{}, 1]); // what was saved stays; nothing new is added
-  const del = await syncJournal(jdb, A, { deletes: [kept.sid] }, { now: NOW });
-  assert.deepEqual(del.deleted, [kept.sid]);
+  const del = await syncJournal(jdb, A, { deletes: [kept.sid, 'never-seen-000001'] }, { now: NOW });
+  assert.deepEqual(del.deleted, [kept.sid, 'never-seen-000001']);
   assert.ok(row(A, kept.sid).deleted_at);
+  // …but no marker is left for a sighting the server never had: with the backup off, nothing is on its way
+  assert.equal(rows.has(`${A}/never-seen-000001`), false);
+  assert.equal(rows.size, 1);
 });
 
 test('erase removes everything saved to the account: rows, markers, notes, photos and the time zone', async () => {
@@ -689,7 +692,7 @@ test('erase removes everything saved to the account: rows, markers, notes, photo
   assert.deepEqual([[...rows.values()].filter((r) => r.user_id === A).length, photos.size, refusals.length], [0, 0, 0]);
   assert.deepEqual([state(A).tz, state(A).backup, state(A).save_places], [null, 'no', false]);
   // (the account's "epoch" changes, so other devices know to send their sightings afresh if the backup is ever turned on again)
-  assert.deepEqual(out.prefs, { backup: 'no', places: false, epoch: new Date(NOW).toISOString() });
+  assert.deepEqual(out.prefs, { backup: 'no', places: false, placesSet: true, epoch: new Date(NOW).toISOString() });
   // someone else's journal is untouched
   assert.equal([...rows.values()].filter((r) => r.user_id === B).length, 1);
   // the score falls back to what is left of the carried-over baseline, and never rises again by erasing

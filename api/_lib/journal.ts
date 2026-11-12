@@ -95,7 +95,10 @@ export interface JournalState {
 // The account's two choices, as the app is told them.
 export interface Prefs {
   backup: 'yes' | 'no' | null;
+  /** Places are saved with the journal (only ever true by the player's choice, or an adult's default once they allow location). */
   places: boolean;
+  /** The places choice has been made (either way); false: nobody has chosen yet, which counts as off. */
+  placesSet: boolean;
   /** Changes when the saved journal is erased: a device that synced before must send its sightings afresh. */
   epoch: string | null;
 }
@@ -566,7 +569,7 @@ export async function applyEdits(jdb: JournalDb, row: JournalRow, edits: Edits):
 // The stored photo is removed too. The marker goes on saying it has one until
 // storage confirms it is gone, so a removal that fails is tried again (by the
 // next request, or by the nightly job).
-export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[], now = Date.now()): Promise<string[]> {
+export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[], now = Date.now(), opts: { markers?: boolean } = {}): Promise<string[]> {
   const gone: string[] = [];
   const withPhoto: string[] = [];
   let newMarkers = 0;
@@ -577,6 +580,10 @@ export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[
       // The server has never seen this sighting. It may be on its way (the
       // player cancelled while the photo was still being identified): leave a
       // marker, so that when it arrives it is not recorded after all.
+      if (opts.markers === false) {
+        gone.push(sid);
+        continue;
+      }
       total ??= await jdb.countRows(uid);
       if (newMarkers < MAX_NEW_MARKERS && total + newMarkers < MAX_ROWS) {
         await jdb.insertRow(deletionMarker(uid, sid, now));
@@ -675,7 +682,12 @@ function readPrefs(v: unknown): { backup?: 'yes' | 'no'; places?: boolean } {
   };
 }
 
-export const prefsOf = (state: JournalState | null): Prefs => ({ backup: state?.backup ?? null, places: state?.save_places === true, epoch: state?.erased_at ?? null });
+export const prefsOf = (state: JournalState | null): Prefs => ({
+  backup: state?.backup ?? null,
+  places: state?.save_places === true,
+  placesSet: typeof state?.save_places === 'boolean',
+  epoch: state?.erased_at ?? null,
+});
 
 export const MAX_SYNC_ITEMS = 40;
 export const MAX_SYNC_DELETES = 100;
@@ -699,7 +711,7 @@ export async function syncJournal(
   };
   if (body.purge === true) {
     await jdb.purgePhotos(uid);
-    return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false, prefs: { backup: null, places: false, epoch: null } };
+    return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false, prefs: prefsOf(null) };
   }
   if (body.erase === true) {
     await eraseJournal(jdb, uid, now);
@@ -714,17 +726,19 @@ export async function syncJournal(
   const asked = readPrefs(body.prefs);
   const change: Partial<Pick<JournalState, 'backup' | 'save_places'>> = {};
   if (asked.backup && asked.backup !== (state?.backup ?? null)) change.backup = asked.backup;
-  if (asked.places !== undefined && asked.places !== (state?.save_places === true)) change.save_places = asked.places;
+  if (asked.places !== undefined && asked.places !== (state?.save_places ?? null)) change.save_places = asked.places;
   if (Object.keys(change).length) {
     await jdb.saveState(uid, change);
-    if (change.save_places === false) await jdb.clearPlaces(uid);
+    if (change.save_places === false && state?.save_places === true) await jdb.clearPlaces(uid);
     state = await jdb.getState(uid);
   }
   const prefs = prefsOf(state);
 
   // Something the player deleted is always removed, whatever the choice.
+  // (Markers for sightings the server has never seen are only left for an
+  // account whose journal is being saved: otherwise nothing is on its way.)
   const deletes = Array.isArray(body.deletes) ? body.deletes.filter(validSightingId).slice(0, MAX_SYNC_DELETES) : [];
-  const deleted = deletes.length ? await deleteSightings(jdb, uid, deletes, now) : [];
+  const deleted = deletes.length ? await deleteSightings(jdb, uid, deletes, now, { markers: prefs.backup === 'yes' }) : [];
 
   // Nothing is stored for an account that hasn't said yes.
   if (prefs.backup !== 'yes') {

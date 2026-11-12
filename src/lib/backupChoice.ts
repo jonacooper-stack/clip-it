@@ -27,24 +27,35 @@ export async function accountCreatedHere(createdAt: string | undefined): Promise
   }
 }
 
-// Whether places are saved with the journal when the backup is first turned
-// on. Off for ages 13–17 (they can switch it on in Profile), and off for
-// anyone who hasn't let the app use their location.
-export async function defaultPlaces(): Promise<boolean> {
+// Whether places are saved with the journal, when the player hasn't chosen:
+//   ages 13–17   off (they can switch it on in Profile);
+//   adults       on once the app is allowed to use their location, and not
+//                before. `undefined` here means "not yet": it counts as off.
+export async function defaultPlaces(): Promise<boolean | undefined> {
   if (useAppStore.getState().ageBracket !== 'adult') return false;
   try {
     const { status } = await Location.getForegroundPermissionsAsync();
-    return status === 'granted';
+    return status === 'granted' ? true : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+// An adult who hadn't allowed location when the backup was turned on, and
+// has since: places start being saved (the switch in Profile shows it, and
+// turns it off again).
+export async function applyPlacesDefault(uid: string): Promise<void> {
+  const cloud = useJournalStore.getState().cloud;
+  if (cloud?.backup !== true || cloud.places !== undefined || (cloud.saved && cloud.saved.places !== null)) return;
+  const places = await defaultPlaces();
+  if (places === true && useJournalStore.getState().owner === uid && useJournalStore.getState().cloud?.places === undefined) setCloudChoice({ places: true });
 }
 
 // Record the answer for the account whose journal is loaded.
 export async function chooseBackup(uid: string, yes: boolean): Promise<void> {
-  const places = yes ? await defaultPlaces() : false;
+  const places = yes ? await defaultPlaces() : undefined;
   if (useJournalStore.getState().owner !== uid) return;
-  setCloudChoice(yes ? { backup: true, places } : { backup: false, places: false });
+  setCloudChoice(yes ? { backup: true, places } : { backup: false });
 }
 
 let askedThisSession: string | null = null;

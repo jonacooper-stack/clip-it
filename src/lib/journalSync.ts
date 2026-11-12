@@ -30,8 +30,8 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, mergeCloud, patchCloud, setJournalChangeListener } from '@/state/useJournalStore';
 import {
-  applyPushAnswers, CLOUD_COLUMNS, forgetCloudCopies, mergeRows, needsPush, prefsToSend, pushItem, takePrefs, worthReidentifying,
-  type AccountPrefs, type CloudRow, type PushAnswer,
+  applyPushAnswers, CLOUD_COLUMNS, forgetCloudCopies, mergeRows, needsPush, nextPullCursor, prefsToSend, pushItem, takePrefs, worthReidentifying,
+  type AccountPrefs, type CloudRow, type PullCursor, type PushAnswer,
 } from './journalMerge';
 import { identifySighting, OfflineError, type IdentifyInput, type IdentifyOutcome } from './identify';
 import type { Sighting } from '@/types';
@@ -39,7 +39,7 @@ import { groupOf } from './quests';
 import { resizedBase64 } from './prepareImage';
 import { downloadPhoto, resolvePhoto } from './photoStore';
 import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
-import { accountCreatedHere, askAboutBackup, chooseBackup } from './backupChoice';
+import { accountCreatedHere, applyPlacesDefault, askAboutBackup, chooseBackup } from './backupChoice';
 import { ageIsSettled } from '../../shared/age';
 import { approxPlace } from '../../shared/place';
 
@@ -159,6 +159,7 @@ async function run({ force }: { force?: boolean }): Promise<void> {
     }
     useSyncStatus.setState({ state: 'syncing' });
     // 3. Tell the server anything it doesn't know about the choice.
+    await applyPlacesDefault(uid);
     await tell(uid);
     // 4. The journal itself, if it is being saved.
     if (cloudState()?.backup === true) {
@@ -188,8 +189,9 @@ function takeChoice(uid: string, prefs: AccountPrefs, sent?: { backup?: boolean;
     const cloud = takePrefs(st.cloud, prefs, sent);
     // The saved journal was erased since this device last synced (here or
     // elsewhere): the account no longer holds these sightings.
+    // (Deletions that were waiting to be passed on have nothing left to delete.)
     if (prefs.epoch && prefs.epoch !== (st.cloud?.epoch ?? null)) {
-      return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings) };
+      return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings), pendingDeletes: [] };
     }
     return { cloud: st.cloud?.epoch === undefined ? { ...cloud, epoch: prefs.epoch } : cloud };
   });
@@ -206,7 +208,7 @@ async function learnChoice(uid: string): Promise<boolean> {
     throw new Error(error.message);
   }
   const row = (data ?? {}) as { backup?: string | null; save_places?: boolean | null; erased_at?: string | null };
-  takeChoice(uid, { backup: row.backup === 'yes' || row.backup === 'no' ? row.backup : null, places: row.save_places === true, epoch: row.erased_at ?? null }, sent);
+  takeChoice(uid, { backup: row.backup === 'yes' || row.backup === 'no' ? row.backup : null, places: row.save_places === true, placesSet: typeof row.save_places === 'boolean', epoch: row.erased_at ?? null }, sent);
   return true;
 }
 
@@ -293,7 +295,7 @@ async function push(uid: string): Promise<void> {
 export async function turnOffBackup(opts: { erase: boolean }): Promise<void> {
   const uid = signedIn();
   if (!uid || !stillFor(uid)) return;
-  patchCloud({ backup: false, places: false, ...(opts.erase ? { erase: true } : {}) });
+  patchCloud({ backup: false, ...(opts.erase ? { erase: true } : {}) });
   await syncJournal({ force: true });
 }
 
@@ -325,12 +327,13 @@ async function pull(uid: string): Promise<void> {
   if (!supabase) return;
   const since = useJournalStore.getState().cloud?.pulledAt;
   let newest = since;
-  for (let from = 0; from < 100_000; from += PAGE) {
+  // From the last change seen, inclusive: reading a row twice is harmless, missing one is not.
+  let cursor: PullCursor = { from: since, skip: 0 };
+  for (let page = 0; page < 400; page++) {
     if (!stillFor(uid)) throw new SyncStop(0);
     let q = supabase.from('journal_sightings').select(CLOUD_COLUMNS).order('updated_at', { ascending: true }).order('id', { ascending: true });
-    // From the last change seen, inclusive: reading a row twice is harmless, missing one is not.
-    if (since) q = q.gte('updated_at', since);
-    const { data, error } = await q.range(from, from + PAGE - 1);
+    if (cursor.from) q = q.gte('updated_at', cursor.from);
+    const { data, error } = await q.range(cursor.skip, cursor.skip + PAGE - 1);
     if (error) {
       // The table isn't there yet (migration not run): nothing to pull.
       if (error.code === '42P01' || error.code === 'PGRST205' || error.code === 'PGRST204') return;
@@ -348,6 +351,7 @@ async function pull(uid: string): Promise<void> {
       });
     }
     if (rows.length < PAGE) break;
+    cursor = nextPullCursor(cursor, rows);
   }
   if (newest && newest !== since) {
     patchCloud({ pulledAt: newest });

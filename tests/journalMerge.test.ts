@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, forgetCloudCopies, fromCloudRow, mergeCloud, mergeRows, needsPush, prefsToSend, pushItem,
-  repairSighting, takePrefs, worthReidentifying, type CloudRow,
+  nextPullCursor, repairSighting, takePrefs, worthReidentifying, type CloudRow, type PullCursor,
 } from '../src/lib/journalMerge';
 import type { Sighting } from '../src/types';
 
@@ -185,13 +185,17 @@ test('a choice made on this device is sent until the account has it', () => {
   assert.equal(prefsToSend(null), null);
   assert.equal(prefsToSend(mergeCloud(null, {})), null); // not answered here: nothing to say
   assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: true })), { backup: 'yes', places: true });
-  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true })), { backup: 'yes', places: false }); // places not chosen counts as off
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true })), { backup: 'yes' }); // places not chosen: nothing said about them (the server takes that as off)
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: false })), { backup: 'yes', places: false });
   assert.deepEqual(prefsToSend(mergeCloud(null, { backup: false })), { backup: 'no' });
   // the account already has it
   assert.equal(prefsToSend(mergeCloud(null, { backup: true, places: false, saved: { backup: 'yes', places: false } })), null);
   assert.equal(prefsToSend(mergeCloud(null, { backup: false, saved: { backup: 'no', places: false } })), null);
   // only what differs is sent
   assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: true, saved: { backup: 'yes', places: false } })), { places: true });
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: true, saved: { backup: 'yes', places: null } })), { places: true });
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: false, saved: { backup: 'yes', places: null } })), { places: false }); // an explicit "off" is recorded as such
+  assert.equal(prefsToSend(mergeCloud(null, { backup: true, saved: { backup: 'yes', places: null } })), null);
   assert.deepEqual(prefsToSend(mergeCloud(null, { backup: false, saved: { backup: 'yes', places: true } })), { backup: 'no' });
 });
 
@@ -220,6 +224,11 @@ test('the account\'s answer is followed on every device; one that has not answer
   assert.deepEqual([afterAnswer.places, prefsToSend(afterAnswer)], [false, { places: false }]);
   // the same answer with nothing changed here is simply taken
   assert.equal(takePrefs(mergeCloud(null, { ...before, saved: { backup: 'yes', places: true } }), { backup: 'yes', places: false, epoch: null }, before).places, false);
+  // places nobody has chosen yet stay "not chosen" on the device (so an adult's default can still apply)…
+  const unchosen = takePrefs(null, { backup: 'yes', places: false, placesSet: false, epoch: null });
+  assert.deepEqual([unchosen.backup, unchosen.places, unchosen.saved, prefsToSend(unchosen)], [true, undefined, { backup: 'yes', places: null }, null]);
+  // …and when the default then turns them on, that is sent
+  assert.deepEqual(prefsToSend(mergeCloud(unchosen, { places: true })), { places: true });
 });
 
 test('after the saved journal is erased, sightings are no longer taken to be in the account', () => {
@@ -256,4 +265,43 @@ test('a place saved as text by an older version (iPhone camera-roll uploads) is 
   assert.equal(repairSighting(fine), fine);
   const none = local('d');
   assert.equal(repairSighting(none), none);
+});
+
+test('reading the cloud journal page by page misses nothing, even when rows change while it is being read', () => {
+  // A stand-in for the table: rows ordered by (updated_at, id), read with "changed at or after X, skip N, take PAGE".
+  const PAGE = 4;
+  const stamp = (n: number) => `2026-11-12T10:00:${String(n).padStart(2, '0')}+00:00`;
+  let table = Array.from({ length: 11 }, (_, i) => ({ id: `s${String(i).padStart(2, '0')}`, updated_at: stamp(i < 6 ? i : 6) })); // s06..s10 share one timestamp
+  const read = (c: PullCursor) =>
+    table
+      .filter((r) => !c.from || r.updated_at >= c.from)
+      .sort((a, b) => (a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : a.id < b.id ? -1 : 1))
+      .slice(c.skip, c.skip + PAGE);
+  const seen = new Set<string>();
+  let cursor: PullCursor = { from: undefined, skip: 0 };
+  for (let page = 0; page < 20; page++) {
+    const rows = read(cursor);
+    rows.forEach((r) => seen.add(r.id));
+    if (page === 0) {
+      // while the first page is on its way back, another device changes an early row: it moves to the end
+      table = table.map((r) => (r.id === 's01' ? { ...r, updated_at: stamp(30) } : r));
+    }
+    if (rows.length < PAGE) break;
+    cursor = nextPullCursor(cursor, rows);
+  }
+  assert.equal(seen.size, 11, [...seen].join(' '));
+  // (counting rows instead would have skipped one: after s01 moved, "skip 4" starts at s05)
+  const byCount = new Set<string>();
+  table = Array.from({ length: 11 }, (_, i) => ({ id: `s${String(i).padStart(2, '0')}`, updated_at: stamp(i < 6 ? i : 6) }));
+  for (let from = 0, page = 0; page < 20; from += PAGE, page++) {
+    const rows = read({ skip: from });
+    rows.forEach((r) => byCount.add(r.id));
+    if (page === 0) table = table.map((r) => (r.id === 's01' ? { ...r, updated_at: stamp(30) } : r));
+    if (rows.length < PAGE) break;
+  }
+  assert.equal(byCount.has('s04'), false);
+  // rows that share the last timestamp of a page are not read twice, and none of them is skipped
+  assert.deepEqual(nextPullCursor({ skip: 0 }, [{ updated_at: stamp(1) }, { updated_at: stamp(2) }, { updated_at: stamp(2) }]), { from: stamp(2), skip: 2 });
+  assert.deepEqual(nextPullCursor({ from: stamp(2), skip: 2 }, [{ updated_at: stamp(2) }, { updated_at: stamp(2) }]), { from: stamp(2), skip: 4 });
+  assert.deepEqual(nextPullCursor({ from: stamp(2), skip: 2 }, []), { from: stamp(2), skip: 2 });
 });

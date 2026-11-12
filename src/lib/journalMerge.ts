@@ -215,6 +215,25 @@ export function applyCloudRow(local: Sighting, r: CloudRow, now: number): Sighti
   return next;
 }
 
+// Reading the cloud journal a page at a time. Rows come ordered by when they
+// last changed (then by id), and the next page starts from the last change
+// seen rather than from a row count: a row that changes while the pages are
+// being read moves to the end and is simply read again, instead of pushing
+// another row across a page boundary where it would be missed.
+//   from  read rows changed at or after this moment (none: from the start)
+//   skip  of the rows changed at exactly that moment, how many are already read
+export interface PullCursor {
+  from?: string;
+  skip: number;
+}
+
+export function nextPullCursor(cursor: PullCursor, rows: { updated_at?: string }[]): PullCursor {
+  const last = rows[rows.length - 1]?.updated_at;
+  if (!last) return cursor;
+  const atLast = rows.filter((r) => r.updated_at === last).length;
+  return last === cursor.from ? { from: last, skip: cursor.skip + atLast } : { from: last, skip: atLast };
+}
+
 export interface MergeResult {
   sightings: Sighting[];
   pendingDeletes: string[];
@@ -301,15 +320,19 @@ export interface CloudState {
   pulledAt?: string;
   /** The player's answer to "save my journal to my account": yes, no, or not settled yet on this device. */
   backup?: boolean;
-  /** Save where each sighting was taken (approximately) with it. Off: places stay on this device. */
+  /**
+   * Save where each sighting was taken (approximately) with it. Off: places
+   * stay on this device. Not set: nobody has chosen yet, which counts as off
+   * (for an adult it turns on once the app is allowed to use their location).
+   */
   places?: boolean;
   /**
    * The two choices as the account has them recorded, when last heard from
-   * the server (null backup: never answered). The choices belong to the
-   * account; `backup` and `places` above are what this device last set or
-   * learned, and are sent to the server when they differ from this.
+   * the server (null: never answered). The choices belong to the account;
+   * `backup` and `places` above are what this device last set or learned,
+   * and are sent to the server when they differ from this.
    */
-  saved?: { backup: 'yes' | 'no' | null; places: boolean };
+  saved?: { backup: 'yes' | 'no' | null; places: boolean | null };
   /** The player asked for what is saved to the account to be deleted; still to be sent. */
   erase?: boolean;
   /** Which "edition" of the cloud journal this device has synced with (see Prefs.epoch on the server). */
@@ -320,6 +343,8 @@ export interface CloudState {
 export interface AccountPrefs {
   backup: 'yes' | 'no' | null;
   places: boolean;
+  /** False: the places choice has never been made (it then counts as off). */
+  placesSet?: boolean;
   /** Changes when the saved journal is erased. */
   epoch: string | null;
 }
@@ -328,10 +353,9 @@ export interface AccountPrefs {
 export function prefsToSend(cloud: CloudState | null | undefined): { backup?: 'yes' | 'no'; places?: boolean } | null {
   if (!cloud || cloud.backup === undefined) return null;
   const want = cloud.backup ? 'yes' : 'no';
-  const places = cloud.backup && cloud.places === true;
   const out: { backup?: 'yes' | 'no'; places?: boolean } = {};
   if (!cloud.saved || cloud.saved.backup !== want) out.backup = want;
-  if (cloud.backup && (!cloud.saved || cloud.saved.places !== places)) out.places = places;
+  if (cloud.backup && typeof cloud.places === 'boolean' && (!cloud.saved || cloud.saved.places !== cloud.places)) out.places = cloud.places;
   return Object.keys(out).length ? out : null;
 }
 
@@ -345,10 +369,11 @@ export function prefsToSend(cloud: CloudState | null | undefined): { backup?: 'y
 //     (`sent` is what this device had when it asked).
 export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPrefs, sent?: { backup?: boolean; places?: boolean }): CloudState {
   const unsent = prefsToSend(cloud) !== null;
-  const next = mergeCloud(cloud, { saved: { backup: prefs.backup, places: prefs.places } });
+  const places = prefs.placesSet === false ? null : prefs.places;
+  const next = mergeCloud(cloud, { saved: { backup: prefs.backup, places } });
   const changedMeanwhile = sent !== undefined && (next.backup !== sent.backup || next.places !== sent.places);
   if (prefs.backup === null || unsent || changedMeanwhile) return next;
-  return { ...next, backup: prefs.backup === 'yes', places: prefs.places };
+  return { ...next, backup: prefs.backup === 'yes', places: places ?? undefined };
 }
 
 // The saved journal was erased (here or on another device) since this device

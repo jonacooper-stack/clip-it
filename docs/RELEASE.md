@@ -392,8 +392,9 @@ are done.
   asked: it signed up under the new privacy policy.
 - *Two controls in Profile.* "Save places with my journal": on, the place of
   each sighting is saved to about a kilometre; off, places stay on the phone
-  and the ones already saved are removed. It starts off for ages 13–17 and for
-  anyone who hasn't let the app use their location. "Turn off journal backup"
+  and the ones already saved are removed. It starts off for ages 13–17. For an
+  adult it is on once they have let the app use their location (and comes on
+  by itself when they do, unless they have set the switch themselves). "Turn off journal backup"
   stops saving, and offers to delete what was saved.
 
 **The 30-day clock.** App versions from before this change score sightings

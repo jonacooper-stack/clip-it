@@ -135,7 +135,7 @@ function tidy(state: Record<string, unknown> | null): Pick<JournalState, 'sighti
           places: typeof c.places === 'boolean' ? c.places : undefined,
           saved:
             c.saved && typeof c.saved === 'object'
-              ? { backup: c.saved.backup === 'yes' || c.saved.backup === 'no' ? c.saved.backup : null, places: c.saved.places === true }
+              ? { backup: c.saved.backup === 'yes' || c.saved.backup === 'no' ? c.saved.backup : null, places: typeof c.saved.places === 'boolean' ? c.saved.places : null }
               : undefined,
           erase: c.erase === true ? true : undefined,
           epoch: typeof c.epoch === 'string' ? c.epoch : c.epoch === null ? null : undefined,
