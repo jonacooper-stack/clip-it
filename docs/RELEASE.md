@@ -356,7 +356,8 @@ are done.
    waiting on phones stop working if that key is ever changed. Check that
    `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` are set (they are needed
    already for Scout).
-3. **Merge the branch.** Vercel deploys the server and the web app.
+3. **Merge the pull request for this work** into the repository's default
+   branch. Vercel deploys the server and the web app.
 4. **App Store Connect → App Privacy: tick Gameplay Content and Product
    Interaction**, and update the reasons for Photos and Coarse Location
    ([APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md) has the exact entries).

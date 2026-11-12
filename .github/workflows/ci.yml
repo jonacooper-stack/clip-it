@@ -1,9 +1,10 @@
 name: CI
 
-# Runs on every pull request and on pushes to main: type checks (app and
-# server), the unit tests, the database rules and the server's journal code
-# against a real Postgres, and the same web build Vercel runs on deploy.
-# Nothing here deploys anything.
+# Runs on every pull request: type checks (app and server), the unit tests,
+# the database rules and the server's journal code against a real Postgres,
+# and the same web build Vercel runs on deploy. Nothing here deploys anything.
+# (It would also run on pushes to a branch called main; this repository's
+# default branch has another name, so in practice it runs on pull requests.)
 
 on:
   pull_request:

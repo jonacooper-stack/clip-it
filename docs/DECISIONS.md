@@ -28,7 +28,8 @@ about $7–13. Whether they name species as well has not been measured
 
 - **To run it:** add your Anthropic key as a repository secret named
   `ANTHROPIC_API_KEY` (GitHub → Settings → Secrets and variables → Actions),
-  merge the branch, then Actions → "Compare identifier models" → Run workflow,
+  merge this work (the workflow only shows up once it is on the default
+  branch), then Actions → "Compare identifier models" → Run workflow,
   and type `run` in the confirm box. Leave it empty first to see the plan and
   cost without spending anything. The result appears on the run's summary
   page: right-species rate, speed and cost per model, how many real photos
