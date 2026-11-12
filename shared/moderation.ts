@@ -57,3 +57,23 @@ export function cleanName(value: unknown, maxLength = 60): string | null {
   if (s.split(' ').length > 7 || hasBlockedLanguage(s)) return null;
   return s;
 }
+
+// A name from an old journal, made presentable rather than refused: older
+// app versions stored the identifier's names as they came ("Buteo
+// jamaicensis?", "Passer domesticus, female"). Anything outside the allowed
+// characters is dropped. Returns null only when nothing usable is left or
+// what is left is blocked language.
+export function tidyName(value: unknown, maxLength = 80): string | null {
+  if (typeof value !== 'string') return null;
+  const s = value
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{M}'’.×\- ]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 7)
+    .join(' ')
+    .slice(0, maxLength)
+    .trim();
+  return s.length >= 2 && /^\p{L}/u.test(s) && !hasBlockedLanguage(s) ? s : null;
+}

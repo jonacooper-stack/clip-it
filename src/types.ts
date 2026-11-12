@@ -80,6 +80,8 @@ export interface Sighting {
   cloudPhoto?: boolean;
   /** The server won't take this sighting (so don't keep sending it). */
   cloudSkip?: boolean;
+  /** What the server counts this sighting for (it can be less than `points` for one scored on the phone). */
+  cloudPoints?: number;
 }
 
 export interface CrewOtherPost {

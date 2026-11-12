@@ -12,16 +12,9 @@ import type { Sighting } from '@/types';
 import { deletePhoto } from '@/lib/photoStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { createJournalStorage, DEVICE_KEY, LOCAL_OWNER, type OpenResult } from './journalStorage';
+import { mergeCloud, type CloudState } from '@/lib/journalMerge';
 
-// Where the account stands with the cloud journal (lib/journalSync).
-export interface CloudState {
-  /** The server keeps this account's score (true from its first sync). */
-  ready: boolean;
-  /** The score as the server last worked it out. */
-  totals: { points: number; speciesCount: number } | null;
-  /** How far the device has read the cloud journal (the newest change it has seen). */
-  pulledAt?: string;
-}
+export { mergeCloud, type CloudState };
 
 interface JournalState {
   /** The first load has finished (true from then on, whoever is signed in). */
@@ -130,6 +123,8 @@ function tidy(state: Record<string, unknown> | null): Pick<JournalState, 'sighti
           ready: c.ready === true,
           totals: c.totals && typeof c.totals.points === 'number' && typeof c.totals.speciesCount === 'number' ? { points: c.totals.points, speciesCount: c.totals.speciesCount } : null,
           pulledAt: typeof c.pulledAt === 'string' ? c.pulledAt : undefined,
+          backup: typeof c.backup === 'boolean' ? c.backup : undefined,
+          places: typeof c.places === 'boolean' ? c.places : undefined,
         }
       : null;
   return { sightings, pendingDeletes, cloud };
@@ -165,3 +160,13 @@ export async function purgeJournal(uid: string | null): Promise<void> {
 // What counts toward the journal and score is decided in shared/quests.ts
 // (one copy for app and server).
 export { totalPoints, distinctSpecies } from '../../shared/quests';
+
+// Change part of the cloud state, keeping the rest (see mergeCloud).
+export function patchCloud(patch: Partial<CloudState>): void {
+  useJournalStore.getState().applySync((st) => ({ cloud: mergeCloud(st.cloud, patch) }));
+}
+
+// Record one of the player's choices about the cloud journal.
+export function setCloudChoice(choice: { backup?: boolean; places?: boolean }): void {
+  patchCloud(choice);
+}

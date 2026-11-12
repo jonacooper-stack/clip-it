@@ -9,7 +9,7 @@
 // ⚠️ Set these before submitting to the App Store.
 export const LEGAL_ENTITY = 'ClipIt';
 export const CONTACT_EMAIL = 'support@clipitwildlife.app';
-export const EFFECTIVE_DATE = 'November 8, 2026';
+export const EFFECTIVE_DATE = 'November 12, 2026';
 
 export const WEB_BASE = 'https://clipitwildlife.app';
 export const PRIVACY_URL = `${WEB_BASE}/legal/privacy`;
@@ -33,14 +33,15 @@ export interface GlanceRow {
 export const PRIVACY_GLANCE: { collected: GlanceRow[]; never: string[] } = {
   collected: [
     { icon: 'mail-outline', title: 'Contact info', detail: 'Your email address and display name, to run your account.' },
-    { icon: 'image-outline', title: 'Photos', detail: 'Photos you take are sent to our AI to identify the animal. Photos you share to the wall, and your profile picture, are stored so others can see them.' },
+    { icon: 'image-outline', title: 'Photos', detail: 'Photos you take are sent to our AI to identify the animal. A copy of each one that counts as a sighting is kept in your private journal. Photos you share to the wall, and your profile picture, are stored so others can see them.' },
+    { icon: 'book-outline', title: 'Your journal and where you took each sighting', detail: 'Your sightings (species, time, place, points and field notes) are saved to your account, so they follow you to a new phone. Only you can see them.' },
     { icon: 'chatbubble-outline', title: 'Your posts', detail: 'Captions, comments, likes, follows and reports you make.' },
     { icon: 'person-outline', title: 'Account ID, age range & home region', detail: 'An account ID, your age range (13–17 or adult) from sign-up, and the home region you pick for wildlife forecasts. We never store your birth date.' },
   ],
   never: [
     'We never share your location with other players, and wall posts never include where you were.',
     'We don’t sell your data, show ads, or track you across other apps and websites.',
-    'Your journal (sightings, places and times) stays on your device.',
+    'Your journal is private: nobody else can see your sightings, their photos or where you took them.',
   ],
 };
 
@@ -56,6 +57,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     bullets: [
       'Account details: your email address, a password (stored only in hashed form by our authentication provider), your display name, and the age range you choose. If you sign in with Apple or Google, we receive your name and email (or Apple’s private relay email if you choose to hide it) from them.',
       'Profile picture: if you add one, it is visible to other signed-in players.',
+      'Your field journal: the sightings that count (the species, when and where you took the photo, its points, your field-note answers and a copy of the photo). It is saved to your account so it survives a new phone or a reinstall. It is private: only you can read it.',
       'Things you share: sightings you post to the wall (photo, species, points and caption), comments, likes, follows, friend requests, and reports or blocks you make.',
       'Home region: the region you choose (for example “Northeast”), so Scout can post what animals are up to where you explore and suggest explorers near you. It is kept private: other players never see it. If you tap “use my current location”, your phone suggests a region on the device; your location is not sent to us.',
     ],
@@ -63,27 +65,29 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Photos and identification',
     paragraphs: [
-      'When you capture or upload a photo, a downscaled copy is sent to our server, which asks an AI service (Anthropic’s Claude) to identify the animal. The copy is sent only to produce the identification; we don’t keep it on our server, and our AI provider processes it under commercial terms that don’t allow it to use your photos to train its models.',
-      'Downscaling removes the photo’s embedded metadata (such as GPS coordinates) before anything leaves your device. Photos you share to the wall have the same metadata removed.',
+      'When you capture or upload a photo, a downscaled copy is sent to our server, which asks an AI service (Anthropic’s Claude) to identify the animal. Our AI provider processes it under commercial terms that don’t allow it to use your photos to train its models. If the photo counts as a sighting (a wild animal), we keep that copy with your journal, in private storage that only you can open. Photos that don’t count (a pet, a person, nothing found) are not kept on our server.',
+      'To keep the game fair, we check that a photo is your own. The AI looks for signs that it is a picture of a screen or a print, a screenshot, or a stock or computer-made image. For a photo uploaded from your camera roll, the app tells us whether the file carries a camera’s details (only yes or no, never the details themselves). And we keep a fingerprint of each sighting’s photo, and of photos posted to the wall: a short code worked out from the picture, from which the picture cannot be rebuilt, used to spot the same photo being handed in twice. If a photo is turned down as a copy, we keep a note of that so a mistake can be put right.',
+      'To prevent abuse, we keep a daily count of how many photos your account has had identified and scored. Counts are deleted after a week.',
+      'Downscaling removes the photo’s embedded metadata (such as GPS coordinates) before the photo leaves your device. Photos you share to the wall have the same metadata removed.',
     ],
   },
   {
     heading: 'Scout, your AI companion',
     paragraphs: [
-      'Scout is an AI companion made by the ClipIt team. It is not a real person and is always labeled “AI”. When you log a sighting, the species name (never your photo or location) is sent to our server so Scout can share facts about it and show other players’ wall posts of the same species. Facts and the daily and weekly posts are written by our AI provider and stored per species or per region, not per person. Some photos in Scout’s posts come from Wikimedia Commons and are credited on the photo; each one is checked by AI before it’s shown. If you report a photo (“Wrong photo?”), we store the photo’s address, the animal and where it appeared, linked to your account, so our team can review it. Weekly quests are worked out on your phone from your journal.',
+      'Scout is an AI companion made by the ClipIt team. It is not a real person and is always labeled “AI”. When you log a sighting, the species name (never your photo or location) is sent to our server so Scout can share facts about it and show other players’ wall posts of the same species. Facts and the daily and weekly posts are written by our AI provider and stored per species or per region, not per person. Some photos in Scout’s posts come from Wikimedia Commons and are credited on the photo; each one is checked by AI before it’s shown. If you report a photo (“Wrong photo?”), we store the photo’s address, the animal and where it appeared, linked to your account, so our team can review it. Quests and your score are worked out from your journal; so that weekly quests follow your own week, the app tells us your time zone.',
       'Scout also suggests explorers you might like: players whose public wall posts show the same animals you’ve found, or who explore the same home region (only if they allow it). To match finds, the names of the species in your journal are sent to our server and are not stored. Suggestions never show anyone’s region. To stop being suggested to others, turn off “Let Scout suggest me to others” in Profile; for ages 13–17 it starts off.',
     ],
   },
   {
     heading: 'Location',
     paragraphs: [
-      'If you allow location access, ClipIt tags each sighting with where you took it so it appears correctly in your field journal. That location is saved on your device, in your journal. It is not included when a photo is sent for identification, and it is never shown to other players or included in wall posts. You can turn off location access at any time in your device settings; the app still works without it.',
+      'If you allow location access, ClipIt tags each sighting with where you took it so it appears correctly in your field journal. That location is saved with the sighting in your journal, on your device and in your account, so your journal is complete on any device you sign in to. Only you can see it: it is never shown to other players, never included in wall posts, and never sent to our AI provider. You can turn off location access at any time in your device settings; the app still works without it.',
     ],
   },
   {
     heading: 'Information stored on your device',
     paragraphs: [
-      'Your field journal, points, streaks, quest progress and settings are stored locally on your device. If you choose “Save photos to camera roll”, your photos are also saved to your photo library, where they’re yours to keep or delete.',
+      'Your settings are stored on your device, along with a copy of your journal and its full-size photos, so the app works without a signal. If more than one person signs in on the same device, each account has its own journal there. If you choose “Save photos to camera roll”, your photos are also saved to your photo library, where they’re yours to keep or delete.',
     ],
   },
   {
@@ -91,6 +95,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     bullets: [
       'To create and secure your account and keep you signed in.',
       'To identify wildlife in your photos and score your sightings.',
+      'To keep your journal saved to your account, and to keep the game fair by checking that photos are a player’s own.',
       'To run the community features: the wall, comments, likes, follows, friends and the leaderboard (your display name, profile picture, points and species count are visible to other signed-in players).',
       'To keep the community safe: reviewing reports, removing content that breaks our rules, and suspending accounts.',
       'To respond to you when you contact us.',
@@ -115,13 +120,13 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Children',
     paragraphs: [
-      'ClipIt is for people aged 13 and over. We ask for your birth year at sign-up (and keep only an age range) and don’t let anyone under 13 create an account. We don’t knowingly collect personal information from children under 13. If you’re a parent and believe your child has given us information, contact us and we will delete it.',
+      'ClipIt is for people aged 13 and over. We ask for the month and year you were born at sign-up (and keep only an age range) and don’t let anyone under 13 create an account. We don’t knowingly collect personal information from children under 13. If you’re a parent and believe your child has given us information, contact us and we will delete it.',
     ],
   },
   {
     heading: 'How long we keep it',
     paragraphs: [
-      'We keep your account information for as long as your account exists. When you delete your account, your profile, posts, photos, comments, likes, follows and friendships are deleted right away. Reports you filed about other people’s content may be kept, without your name attached, so we can keep the community safe. Information in routine backups ages out within 30 days.',
+      'We keep your account information for as long as your account exists. When you delete your account, your profile, journal, posts, photos, comments, likes, follows and friendships are deleted right away (stored photo copies within a day at most). When you delete a single sighting, its photo and details are removed; we keep only a marker with the species and the photo’s fingerprint, so that the same photo can’t be scored again. Reports you filed about other people’s content may be kept, without your name attached, so we can keep the community safe. Information in routine backups ages out within 30 days.',
     ],
   },
   {
@@ -242,7 +247,15 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Who can see my location?',
-    a: 'Only you. Locations are saved in your journal on your device and are never shown to other players or included in wall posts.',
+    a: 'Only you. Locations are saved with your journal, on your device and in your account, and are never shown to other players or included in wall posts.',
+  },
+  {
+    q: 'I have a new phone. Is my journal gone?',
+    a: 'No. Sign in and your journal comes back: sightings, points and photos are saved to your account. (Photos from before journals were saved to accounts are added as your old phone uploads them, on Wi-Fi.)',
+  },
+  {
+    q: 'Why didn’t my photo score?',
+    a: 'Only your own photos of wild animals score. Pets and people don’t count. A photo also won’t score if it looks like a picture of a screen or a print, a screenshot, a stock or computer-made image, a photo someone has already logged, or an upload from your camera roll that doesn’t carry a camera’s details (a saved picture, for example). Photos taken with the ClipIt camera always count. If we got it wrong, tell us from Help & Support and we’ll put it right.',
   },
   {
     q: 'How do I report a post, comment or person?',
@@ -254,7 +267,7 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do I delete my account?',
-    a: 'In the app, go to Profile → Delete account. This permanently deletes your account, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
+    a: 'In the app, go to Profile → Delete account. This permanently deletes your account, journal, posts, photos, comments, likes, follows and friends. If you can’t access the app, email us from the address on your account and we’ll delete it for you.',
   },
   {
     q: 'Who is Scout?',

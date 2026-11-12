@@ -12,10 +12,10 @@ import { fetchCrewNotes } from './crew/api';
 import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
-import { useJournalStore } from '@/state/useJournalStore';
+import { useJournalStore, patchCloud } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from './supabase';
-import { scheduleJournalSync } from './journalSync';
+import { cloudFieldsFor, scheduleJournalSync } from './journalSync';
 import { dueForRetry, nextRetry, retryWaitMs } from './retry';
 
 export { MAX_AUTO_RETRIES } from './retry';
@@ -35,7 +35,7 @@ export function hashPhotoBase64(base64: string): string {
 // Shared by the capture screen and the offline retry queue so both score identically.
 // `photoHash` (when provided) drives exact-duplicate and repeat-species scoring.
 export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photoHash?: string): void {
-  const { updateSighting, removeSighting, applySync } = useJournalStore.getState();
+  const { updateSighting, removeSighting } = useJournalStore.getState();
 
   // The server recorded it in the cloud journal: `row` is what it wrote.
   const row = outcome.recorded ? outcome.journal : undefined;
@@ -120,10 +120,7 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
       ? { cloudAt: Date.now(), verified: row.verified, cloudPhoto: row.has_photo, receipt: undefined }
       : { receipt: outcome.receipt }),
   });
-  if (outcome.totals) {
-    const totals = outcome.totals;
-    applySync((st) => ({ cloud: { ready: st.cloud?.ready ?? false, pulledAt: st.cloud?.pulledAt, totals } }));
-  }
+  if (outcome.totals) patchCloud({ totals: outcome.totals });
   scheduleJournalSync(); // send it (or just catch up) shortly
   // Scout looks it up in the background (facts, other players' photos).
   // Best-effort; real AI results only.
@@ -168,13 +165,8 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
         lng: s.lng,
         accuracyM: s.accuracyM,
         observedAt: s.observedAt,
-        sightingId: s.id,
-        loggedAt: s.createdAt,
-        account: owner ?? undefined,
-        // (A capture queued by an older version doesn't say how it was taken.
-        // Only the in-app camera queues captures; uploads are identified at once.)
-        capture: s.capture ?? 'camera',
-        evidence: s.evidence,
+        // For the cloud journal (nothing, while the player hasn't agreed to it).
+        ...cloudFieldsFor(s),
       };
       try {
         const outcome = await identifySighting(input);

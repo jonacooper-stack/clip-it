@@ -104,6 +104,11 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       check(insertError, 'create profile');
     },
 
+    async setWallPostFacts(uid, postId, facts) {
+      // Best effort: the post may have been removed since.
+      await db.from('feed_posts').update(facts).eq('id', postId).eq('user_id', uid);
+    },
+
     async legacyUntil() {
       if (legacyCache && Date.now() - legacyCache.at < 60_000) return legacyCache.until;
       const { data, error } = await db.from('app_settings').select('value').eq('key', 'legacy_import_until').maybeSingle();

@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
-import { useAuthStore } from '@/state/useAuthStore';
+import { cloudFieldsFor } from '@/lib/journalSync';
 import { identifySighting, isPermanentFailure, OfflineError } from '@/lib/identify';
 import { applyIdentifyOutcome, processAnalysisQueue, hashPhotoBase64 } from '@/lib/analysis';
 import { savePhotoBase64, resolvePhoto } from '@/lib/photoStore';
@@ -62,11 +62,8 @@ export default function Identifying() {
           lng: current?.lng,
           accuracyM: current?.accuracyM,
           observedAt: current?.observedAt ?? Date.now(),
-          sightingId: id,
-          loggedAt: current?.createdAt,
-          account: useAuthStore.getState().session?.user?.id,
-          capture: current?.capture,
-          evidence: current?.evidence,
+          // For the cloud journal (nothing, while the player hasn't agreed to it).
+          ...(current ? cloudFieldsFor(current) : {}),
         });
         if (cancelled.current) return;
         applyIdentifyOutcome(id, outcome, base64 ? hashPhotoBase64(base64) : undefined);

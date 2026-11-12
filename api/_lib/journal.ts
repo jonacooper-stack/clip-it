@@ -15,7 +15,7 @@ import { createHash } from 'crypto';
 import { applyFieldNotesBonus, MAX_TOTAL_POINTS, scoreSighting, type ScoreBreakdown } from '../../shared/scoring';
 import { playerTotals, type QuestSighting } from '../../shared/quests';
 import { canonicalTimeZone, ianaZone } from '../../shared/zone';
-import { cleanName, hasBlockedLanguage } from '../../shared/moderation';
+import { cleanName, hasBlockedLanguage, tidyName } from '../../shared/moderation';
 import { cleanFieldNotes } from '../../shared/fieldNotes';
 import { SCENE_TAG_CODES, TAXON_GROUPS } from './identifyCore';
 import { COPY_BITS, informative, mirrorHash, RESAVE_BITS, samePhoto } from './phash';
@@ -121,7 +121,9 @@ export interface JournalDb {
   getState(uid: string): Promise<JournalState | null>;
   saveState(uid: string, patch: Partial<Omit<JournalState, 'user_id'>>): Promise<void>;
   setProfileTotals(uid: string, points: number, speciesCount: number): Promise<void>;
-  /** When the legacy window closes (ms), or null if it isn't set. */
+  /** Put a sighting's points and species on the wall post that shares it (the account's own post only). */
+  setWallPostFacts(uid: string, postId: string, facts: { points: number; common_name: string | null; scientific_name: string | null }): Promise<void>;
+  /** When the legacy window closes (ms), or null while no date has been set (the window is then open). */
   legacyUntil(): Promise<number | null>;
   putPhoto(uid: string, sid: string, bytes: Buffer): Promise<boolean>;
   removePhotos(uid: string, sids: string[]): Promise<void>;
@@ -284,8 +286,10 @@ export type RecordOutcome =
 export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBase64?: string | null): Promise<RecordOutcome> {
   // Already recorded (a retry), or already deleted by the player (the photo
   // was still being identified when they cancelled): nothing more to do.
+  // A row that so far rests on the phone's word is different: the server has
+  // now identified that photo itself, so its own result replaces the claim.
   const existing = await jdb.getRow(p.uid, p.sid);
-  if (existing) return { kind: 'recorded', row: existing, created: false };
+  if (existing && (existing.deleted_at || existing.verified)) return { kind: 'recorded', row: existing, created: false };
 
   // A photo can only score if it can be compared with the ones already
   // known. Without a look-alike fingerprint (not a JPEG, or one that
@@ -307,7 +311,7 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
   // Earlier sightings of the species, deleted ones included (so deleting and
   // re-adding can't bring back the first-time bonus).
   const priorSameSpecies = await jdb.speciesCount(p.uid, p.id.sci, p.sid);
-  const score = scoreSighting({
+  let score = scoreSighting({
     rarityScore: p.id.rarity,
     // No behaviour multipliers for animals that could hurt someone: getting
     // close to a bear with cubs must never be worth more.
@@ -316,6 +320,8 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     priorSameSpecies,
     duplicatePhoto,
   });
+  // Field notes the player had already added to it keep their bonus.
+  if (existing?.science) score = applyFieldNotesBonus(score, Object.keys(existing.science).length).score;
 
   const where = saneCoord(p.lat, p.lng);
   const row: JournalRow = {
@@ -328,7 +334,7 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     lat: where.lat,
     lng: where.lng,
     accuracy_m: where.lat != null ? num(p.accuracyM) : null,
-    status: p.id.status,
+    status: existing?.proposed_species ? 'disputed' : p.id.status,
     common_name: p.id.common,
     scientific_name: p.id.sci,
     taxon_group: p.id.group,
@@ -343,13 +349,17 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     flags: null,
     photo_sha: p.sha,
     photo_phash: p.phash,
-    has_photo: false,
-    science: null,
-    proposed_species: null,
-    wall_post_id: null,
+    has_photo: existing?.has_photo ?? false,
+    science: existing?.science ?? null,
+    proposed_species: existing?.proposed_species ?? null,
+    wall_post_id: existing?.wall_post_id ?? null,
     model: p.model,
   };
-  if (!(await jdb.insertRow(row))) {
+  if (existing) {
+    const { user_id: _u, id: _i, ...fields } = row;
+    await jdb.updateRow(p.uid, p.sid, { ...fields, claimed_points: existing.claimed_points ?? null });
+    if (row.wall_post_id) await jdb.setWallPostFacts(p.uid, row.wall_post_id, { points: row.points, common_name: row.common_name, scientific_name: row.scientific_name });
+  } else if (!(await jdb.insertRow(row))) {
     const now = await jdb.getRow(p.uid, p.sid);
     if (now) return { kind: 'recorded', row: now, created: false };
     throw new JournalUnavailable('sighting could not be written');
@@ -412,14 +422,17 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
   const existing = await jdb.getRow(uid, sid);
   if (existing) return { kind: 'recorded', row: existing, created: false };
 
-  const sci = cleanName(claim.sci, 80);
-  const common = cleanName(claim.common, 80) ?? sci;
-  if (!sci || !common) return { kind: 'invalid', error: 'a sighting needs a species name' };
+  // An old journal's names are tidied, never a reason to turn the sighting
+  // away: older app versions stored the identifier's names as they came.
+  const tidy = (v: unknown) => cleanName(v, 80) ?? tidyName(v, 80);
+  const common = tidy(claim.common) ?? tidy(claim.sci) ?? 'Unidentified animal';
+  const sci = tidy(claim.sci) ?? common;
   if (typeof claim.status !== 'string' || !STATUSES.includes(claim.status)) return { kind: 'invalid', error: 'not a sighting that counts' };
 
+  // (With no end date set yet, the window is open.)
   const until = await jdb.legacyUntil();
   const state = await jdb.getState(uid);
-  const open = until != null && now < until && (state?.legacy_allowance ?? 0) > 0;
+  const open = (until == null || now < until) && (state?.legacy_allowance ?? 0) > 0;
   const claimed = typeof claim.points === 'number' && Number.isFinite(claim.points) ? clamp(Math.round(claim.points), 0, MAX_TOTAL_POINTS) : 0;
 
   const observedAt = saneTime(claim.observedAt, now, now, APP_START);
@@ -506,7 +519,13 @@ export async function applyEdits(jdb: JournalDb, row: JournalRow, edits: Edits):
   }
   if (!Object.keys(patch).length) return row;
   await jdb.updateRow(row.user_id, row.id, patch);
-  return { ...row, ...patch };
+  const next = { ...row, ...patch };
+  // The wall post that shares this sighting shows the journal's facts: set
+  // them when the post is linked, and again whenever the points change.
+  if (next.wall_post_id && (patch.wall_post_id !== undefined || patch.points !== undefined)) {
+    await jdb.setWallPostFacts(next.user_id, next.wall_post_id, { points: next.points, common_name: next.common_name, scientific_name: next.scientific_name });
+  }
+  return next;
 }
 
 // ---------- deleting ----------
@@ -606,9 +625,12 @@ export async function syncJournal(
   jdb: JournalDb,
   uid: string,
   body: SyncBody,
-  opts: { now?: number; fingerprint?: (b64: string) => { phash: string | null }; onBadReceipt?: (sid: string) => void } = {},
+  opts: { now?: number; fingerprint?: (b64: string) => { phash: string | null }; onBadReceipt?: (sid: string) => void; budgetMs?: number } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? Date.now();
+  // Stop taking items when time is nearly up (the account's lock frees itself
+  // after 15 seconds); what wasn't reached is simply sent again next time.
+  const stopAt = Date.now() + (opts.budgetMs ?? 12_000);
   if (body.purge === true) {
     await jdb.purgePhotos(uid);
     return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false };
@@ -624,6 +646,7 @@ export async function syncJournal(
   let total: number | null = null;
   let photos = 0;
   for (const item of items) {
+    if (Date.now() > stopAt) break;
     if (!item || !validSightingId(item.id)) continue;
     const sid = item.id;
     const photo = typeof item.photoBase64 === 'string' && item.photoBase64.length < 1_000_000 && photos++ < MAX_SYNC_PHOTOS ? item.photoBase64 : null;
@@ -664,5 +687,5 @@ export async function syncJournal(
 
   const totals = await refreshTotals(jdb, uid, now);
   const until = await jdb.legacyUntil();
-  return { rows, deleted, totals, ready: totals !== null, legacyOpen: until != null && now < until };
+  return { rows, deleted, totals, ready: totals !== null, legacyOpen: until == null || now < until };
 }

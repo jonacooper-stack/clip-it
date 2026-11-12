@@ -79,6 +79,45 @@ export async function sweepOrphanPhotos(db: SupabaseClient, opts: { maxFolders?:
   return removed;
 }
 
+// Accounts whose deletion left a note (public.journal_photo_cleanup): remove
+// their stored photos, then the note. The same care as the sweep above: the
+// photos go only when the account is definitely gone.
+export async function clearDeletedAccounts(db: SupabaseClient, opts: { deadline: number }): Promise<number> {
+  const { data, error } = await db.from('journal_photo_cleanup').select('user_id').order('queued_at', { ascending: true }).limit(50);
+  if (error) return 0; // migration 0011 not run yet
+  let cleared = 0;
+  for (const { user_id: uid } of (data ?? []) as { user_id: string }[]) {
+    if (Date.now() > opts.deadline) break;
+    const { data: found, error: lookupError } = await db.auth.admin.getUserById(uid);
+    const gone = !found?.user && lookupError && ((lookupError as { status?: number }).status === 404 || (lookupError as { code?: string }).code === 'user_not_found');
+    if (!found?.user && !gone) break; // unclear answer: leave everything as it is
+    if (gone) {
+      for (let round = 0; round < 20; round++) {
+        const { data: files, error: listError } = await db.storage.from(BUCKET).list(uid, { limit: 1000 });
+        if (listError || !files?.length) break;
+        const { error: removeError } = await db.storage.from(BUCKET).remove(files.map((f) => `${uid}/${f.name}`));
+        if (removeError) break;
+      }
+    }
+    // (If the account still exists, only its leaderboard row was removed: nothing to clear.)
+    await db.from('journal_photo_cleanup').delete().eq('user_id', uid);
+    cleared++;
+  }
+  return cleared;
+}
+
+// The legacy window (see migration 0011) starts counting the first time the
+// updated server runs this job: 30 days from then. Until a date is set the
+// window is open. Leaves an existing date alone.
+export async function startLegacyClock(db: SupabaseClient): Promise<boolean> {
+  const { data, error } = await db.from('app_settings').select('key').eq('key', 'legacy_import_until').maybeSingle();
+  if (error || data) return false;
+  const until = new Date(Date.now() + 30 * 86_400_000).toISOString();
+  const { error: insertError } = await db.from('app_settings').insert({ key: 'legacy_import_until', value: until });
+  if (!insertError) log('legacy_window_set', { until });
+  return !insertError;
+}
+
 // See public.settle_legacy_scores in migration 0011. Does nothing while the
 // legacy window is open.
 export async function settleLegacyScores(db: SupabaseClient): Promise<number> {

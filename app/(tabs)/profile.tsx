@@ -9,7 +9,8 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, distinctSpecies, purgeJournal } from '@/state/useJournalStore';
+import { useJournalStore, distinctSpecies, purgeJournal, setCloudChoice } from '@/state/useJournalStore';
+import { askAboutBackup } from '@/lib/useJournalLoader';
 import { playerPoints } from '@/lib/quests';
 import { pendingCount, syncJournal, useSyncStatus } from '@/lib/journalSync';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -61,10 +62,15 @@ export default function Profile() {
   const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
   const syncState = useSyncStatus((s) => s.state);
   const backupLabel =
-    syncState === 'syncing' ? 'Journal backup: saving…'
+    cloud?.backup === false ? 'Journal backup: off. Tap to turn on'
+    : syncState === 'syncing' ? 'Journal backup: saving…'
     : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
     : cloud?.ready ? 'Journal backup: up to date'
     : 'Journal backup: not started yet';
+  const onBackupRow = () => {
+    if (cloud?.backup === true) void syncJournal({ force: true });
+    else if (uid) askAboutBackup(uid);
+  };
   const streak = useMemo(() => currentStreak(sightings), [sightings]);
   // Sightings in the journal: photos that turned out not to be wildlife (or
   // found no animal) aren't kept there, so they aren't counted here either.
@@ -202,8 +208,20 @@ export default function Profile() {
               />
               <Divider />
               {/* The journal is kept in the cloud, private to this account. Tap to save now. */}
-              <Row icon="cloud-done-outline" label={backupLabel} onPress={() => void syncJournal({ force: true })} />
+              <Row icon="cloud-done-outline" label={backupLabel} onPress={onBackupRow} />
               <Divider />
+              {cloud?.backup === true && (
+                <>
+                  {/* Off: where each photo was taken stays on this phone and isn't saved with the journal. */}
+                  <ToggleRow
+                    icon="location-outline"
+                    label="Save places with my journal"
+                    value={cloud.places !== false}
+                    onValueChange={(v) => setCloudChoice({ places: v })}
+                  />
+                  <Divider />
+                </>
+              )}
               <ToggleRow
                 icon="sparkles"
                 label="Show Scout in my feed"

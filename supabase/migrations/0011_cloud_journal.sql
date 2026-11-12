@@ -28,15 +28,19 @@ create table if not exists public.app_settings (
 alter table public.app_settings enable row level security;
 
 -- The legacy window. Apps that haven't updated yet still score sightings on
--- the phone and report their own totals. That is accepted until this moment,
--- and so is the one-time upload of each player's existing on-device journal.
--- Afterwards only server-scored sightings count. To close it early or extend
--- it:  update public.app_settings set value = to_jsonb(now() + interval '14 days')
---        where key = 'legacy_import_until';
-insert into public.app_settings (key, value)
-values ('legacy_import_until', to_jsonb(now() + interval '30 days'))
-on conflict (key) do nothing;
-
+-- the phone and report their own totals. That stays accepted until the time
+-- stored under 'legacy_import_until', and so does the one-time upload of
+-- each player's existing on-device journal. Afterwards only server-scored
+-- sightings count.
+--
+-- This file does not start the clock: with no date set the window is open,
+-- which is exactly how things were before. The clock starts when the updated
+-- server first runs its nightly job (it sets the date to 30 days from then),
+-- so it can't run out before players have been able to get the update. To set
+-- it yourself, or change it later:
+--   insert into public.app_settings (key, value)
+--   values ('legacy_import_until', to_jsonb(now() + interval '30 days'))
+--   on conflict (key) do update set value = excluded.value, updated_at = now();
 create or replace function private.legacy_open()
 returns boolean
 language sql
@@ -46,7 +50,7 @@ set search_path = public
 as $$
   select coalesce(
     (select now() < (value #>> '{}')::timestamptz from public.app_settings where key = 'legacy_import_until'),
-    false);
+    true);
 $$;
 revoke all on function private.legacy_open() from public;
 grant execute on function private.legacy_open() to authenticated, service_role;
@@ -236,6 +240,34 @@ as $$
 $$;
 revoke all on function public.wall_posts_without_prints(integer) from public, anon, authenticated;
 grant execute on function public.wall_posts_without_prints(integer) to service_role;
+
+-- Accounts that have been deleted and may still have stored journal photos.
+-- An app build from before the cloud journal doesn't know to have them
+-- removed, so the deletion itself leaves a note here and the nightly job
+-- does it. (Fires for delete_my_account() and for a deletion from the
+-- dashboard alike, since both remove the profile row.) RLS on, no policies.
+create table if not exists public.journal_photo_cleanup (
+  user_id uuid primary key,
+  queued_at timestamptz not null default now()
+);
+alter table public.journal_photo_cleanup enable row level security;
+
+create or replace function public.queue_journal_photo_cleanup()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.journal_photo_cleanup (user_id) values (old.id) on conflict (user_id) do nothing;
+  return old;
+end;
+$$;
+
+drop trigger if exists profiles_queue_photo_cleanup on public.profiles;
+create trigger profiles_queue_photo_cleanup
+  after delete on public.profiles
+  for each row execute function public.queue_journal_photo_cleanup();
 
 -- Photos that were turned down as copies: who, which sighting, and what they
 -- matched. Kept so that a wrong call can be looked at and put right.
@@ -485,7 +517,9 @@ begin
     if v is not null
        and (tg_op = 'INSERT' or v is distinct from (to_jsonb(old) ->> tg_argv[i]))
        and private.has_blocked_language(v) then
-      raise exception 'That language isn''t allowed on ClipIt.' using errcode = 'check_violation';
+      -- (The wording starts the way the app's own message does, which every
+      -- app version shows to the player as written.)
+      raise exception 'That contains language that isn’t allowed on ClipIt.' using errcode = 'check_violation';
     end if;
   end loop;
   return new;

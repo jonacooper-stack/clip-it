@@ -58,9 +58,15 @@ const LIMIT_MESSAGES = {
   refused: 'Several photos today couldn’t be confirmed as your own, so scoring is paused until tomorrow. You can still identify animals.',
 };
 
-// How long recording a sighting may hold up the answer. The app gives up on
-// the whole request after 28 s and the model may take 24 of them.
-const RECORD_BUDGET_MS = 3000;
+// The app gives up on the whole request after 28 s (and then queues the
+// capture and asks again). So everything here works to one deadline counted
+// from the start of the request: the model may take up to 24 s of it, and
+// recording the sighting gets what is left, at most RECORD_BUDGET_MS. If
+// there isn't time, the answer goes out with a receipt and the sighting is
+// recorded on the app's next sync.
+const ANSWER_BY_MS = 26_500;
+const RECORD_BUDGET_MS = 2500;
+const LOOKUP_BUDGET_MS = 700;
 
 // What the app said about the capture, checked and tidied. Everything here
 // is optional: older app builds send none of it.
@@ -134,6 +140,8 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+  const started = Date.now();
+  const timeLeft = () => ANSWER_BY_MS - (Date.now() - started);
 
   const userId = await verifyUser(req.headers.authorization, logFailure);
   if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
@@ -165,15 +173,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const meta = readMeta(body, Date.now());
 
-  // A sighting the journal already holds (the app was closed before the
-  // answer arrived, and is asking again): answer from the journal. The model
-  // isn't called twice, and the answer can't disagree with what was recorded.
+  // A sighting the server has already identified and recorded (the app was
+  // closed before the answer arrived, and is asking again), or one the player
+  // has deleted since: answer from the journal. The model isn't called
+  // twice, and the answer can't disagree with what was recorded. (A row that
+  // only rests on the phone's word is identified now, and takes its place.)
   if (meta.sid && journalOn()) {
     const db = adminClient();
     if (db) {
       try {
-        const known = await within(supabaseJournalDb(db).getRow(userId, meta.sid), 2000);
-        if (known) return res.status(200).json(fromJournal(known));
+        const known = await within(supabaseJournalDb(db).getRow(userId, meta.sid), LOOKUP_BUDGET_MS);
+        if (known && (known.verified || known.deleted_at)) return res.status(200).json(fromJournal(known));
       } catch {
         // can't tell: carry on and identify it
       }
@@ -205,8 +215,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     // While the model looks at the photo, take its fingerprints (used to spot
     // the same picture handed in twice). Only needed when it may be recorded.
+    // (Yield first: the request to the model leaves on the next turn of the
+    // event loop, and fingerprinting keeps the loop busy for a moment.)
     let print: Fingerprint = { sha: '', phash: null };
     if (meta.sid) {
+      await new Promise((resolve) => setImmediate(resolve));
       try {
         print = photoFingerprint(imageBase64);
       } catch {
@@ -250,18 +263,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         model: usage.model,
       };
       journal = { receipt: signReceipt(payload) ?? undefined, recorded: false };
-      if (db) {
+      const budget = Math.min(RECORD_BUDGET_MS, timeLeft());
+      if (db && budget > 500) {
         try {
           const jdb = supabaseJournalDb(db);
           // One request at a time per account (see withJournalLock), and not
           // for longer than the answer can wait.
           const done = await within(
-            withJournalLock(jdb, userId, RECORD_BUDGET_MS - 500, async () => {
+            withJournalLock(jdb, userId, budget - 400, async () => {
               await noteTimeZone(jdb, userId, meta.tz);
               const out = await recordSighting(jdb, payload, imageBase64);
               return { out, totals: out.kind === 'recorded' && out.created ? await refreshTotals(jdb, userId) : null };
             }),
-            RECORD_BUDGET_MS,
+            budget,
           );
           if (done?.out.kind === 'refused') {
             id = refuse(id, done.out.reason, done.out.message);

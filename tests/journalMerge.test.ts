@@ -4,7 +4,7 @@
 // deleted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, fromCloudRow, mergeRows, needsPush, pushItem, type CloudRow } from '../src/lib/journalMerge';
+import { applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, fromCloudRow, mergeCloud, mergeRows, needsPush, pushItem, worthReidentifying, type CloudRow } from '../src/lib/journalMerge';
 import type { Sighting } from '../src/types';
 
 const NOW = Date.parse('2026-11-12T15:00:00Z');
@@ -138,4 +138,30 @@ test('a change made while a sync was in the air is not lost: it is still waiting
   // a sighting that wasn't part of the request is left exactly as it is
   const other = local('c');
   assert.deepEqual(applyPushAnswers([other], { c: cloud('c') }, new Map(), NOW), [other]);
+});
+
+test('places can stay on the phone: a sighting then goes up without where it was taken', () => {
+  const s = local('a', { lat: 44.1, lng: -72.5, accuracyM: 8 });
+  assert.deepEqual([(pushItem(s, groupOf) as any).legacy.lat, (pushItem(s, groupOf) as any).legacy.lng], [44.1, -72.5]);
+  const without = (pushItem(s, groupOf, { places: false }) as any).legacy;
+  assert.equal('lat' in without || 'lng' in without || 'accuracyM' in without, false);
+});
+
+test('a phone-scored sighting the server counts for nothing is offered to the server to identify itself', () => {
+  const uploaded = applyCloudRow(local('a', { points: 11 }), cloud('a', { verified: false, points: 0, score: null }), NOW);
+  assert.deepEqual([uploaded.points, uploaded.cloudPoints, worthReidentifying(uploaded)], [11, 0, true]);
+  // one the server already counts, one it identified itself, and one not uploaded yet are left alone
+  assert.equal(worthReidentifying(applyCloudRow(local('b', { points: 11 }), cloud('b', { verified: false, points: 11 }), NOW)), false);
+  assert.equal(worthReidentifying(applyCloudRow(local('c'), cloud('c', { verified: true, points: 0 }), NOW)), false);
+  assert.equal(worthReidentifying(local('d')), false);
+});
+
+test('a sync answer never wipes the player\'s choices (backup on or off, places on the phone)', () => {
+  const chosen = mergeCloud(null, { backup: true, places: false });
+  assert.deepEqual(chosen, { ready: false, totals: null, backup: true, places: false });
+  const afterSync = mergeCloud(chosen, { ready: true, totals: { points: 40, speciesCount: 3 } });
+  assert.deepEqual(afterSync, { ready: true, totals: { points: 40, speciesCount: 3 }, backup: true, places: false });
+  const afterPull = mergeCloud(afterSync, { pulledAt: '2026-11-12T15:00:00Z' });
+  assert.deepEqual([afterPull.backup, afterPull.places, afterPull.ready, afterPull.pulledAt], [true, false, true, '2026-11-12T15:00:00Z']);
+  assert.equal(mergeCloud(mergeCloud(null, { backup: false }), { totals: null }).backup, false); // "Not now" stays "Not now"
 });

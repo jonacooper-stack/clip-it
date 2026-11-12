@@ -7,7 +7,7 @@ import { prewarmStories } from './_lib/stories';
 import { dailyPick } from './_lib/library';
 import { weekOf } from '../shared/crew';
 import { cleanName } from '../shared/moderation';
-import { printWallPhotos, settleLegacyScores, sweepOrphanPhotos } from './_lib/journalUpkeep';
+import { clearDeletedAccounts, printWallPhotos, settleLegacyScores, startLegacyClock, sweepOrphanPhotos } from './_lib/journalUpkeep';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
@@ -92,10 +92,12 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
   }
 
   // The cloud journal's housekeeping (each step bounded; none of it calls a model).
-  const journal = { wallPrints: 0, orphanFolders: 0, settled: 0 };
+  const journal = { clockStarted: false, wallPrints: 0, deletedAccounts: 0, orphanFolders: 0, settled: 0 };
   if (!dry) {
     try {
-      journal.wallPrints = await printWallPhotos(db, { deadline: started + 18_000 });
+      journal.clockStarted = await startLegacyClock(db);
+      journal.wallPrints = await printWallPhotos(db, { deadline: started + 16_000 });
+      journal.deletedAccounts = await clearDeletedAccounts(db, { deadline: started + 20_000 });
       journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: started + 24_000 });
       journal.settled = await settleLegacyScores(db);
     } catch (err: any) {

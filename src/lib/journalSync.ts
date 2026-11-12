@@ -20,8 +20,10 @@ import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { API_BASE, authHeaders, deviceTimeZone, hasServer } from './apiBase';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, setJournalChangeListener } from '@/state/useJournalStore';
-import { applyPushAnswers, CLOUD_COLUMNS, mergeRows, needsPush, pushItem, type CloudRow, type PushAnswer } from './journalMerge';
+import { useJournalStore, mergeCloud, patchCloud, setJournalChangeListener } from '@/state/useJournalStore';
+import { applyPushAnswers, CLOUD_COLUMNS, mergeRows, needsPush, pushItem, worthReidentifying, type CloudRow, type PushAnswer } from './journalMerge';
+import { identifySighting, OfflineError, type IdentifyInput, type IdentifyOutcome } from './identify';
+import type { Sighting } from '@/types';
 import { groupOf } from './quests';
 import { resizedBase64 } from './prepareImage';
 import { downloadPhoto, resolvePhoto } from './photoStore';
@@ -58,6 +60,28 @@ const photosTried = new Set<string>(); // photo uploads the server didn't take t
 const cloudOn = () => isSupabaseConfigured && Boolean(supabase) && hasServer;
 const signedIn = () => useAuthStore.getState().session?.user?.id ?? null;
 
+// The player has agreed to have their journal saved to their account. Until
+// they have, nothing is sent: identifications carry the photo only (as they
+// always did) and there is no sync.
+export const backupOn = () => cloudOn() && useJournalStore.getState().cloud?.backup === true;
+const placesOn = () => useJournalStore.getState().cloud?.places !== false;
+
+// What an identify request says about the sighting, for the cloud journal:
+// which sighting it is, whose, when and (unless the player keeps places on
+// the phone) where. Nothing at all while the journal isn't being saved.
+export function cloudFieldsFor(s: Pick<Sighting, 'id' | 'createdAt' | 'lat' | 'lng' | 'accuracyM' | 'capture' | 'evidence'>): Partial<IdentifyInput> {
+  const uid = signedIn();
+  if (!backupOn() || !uid || useJournalStore.getState().owner !== uid) return {};
+  return {
+    sightingId: s.id,
+    loggedAt: s.createdAt,
+    account: uid,
+    capture: s.capture ?? 'camera', // only the in-app camera leaves a capture without saying how it was taken
+    evidence: s.evidence,
+    ...(placesOn() ? { lat: s.lat, lng: s.lng, accuracyM: s.accuracyM } : { lat: undefined, lng: undefined, accuracyM: undefined }),
+  };
+}
+
 // A job belongs to the account it started for. This is checked before every
 // request and before every change to the journal: if the player has signed
 // out, or someone else has signed in, the job stops where it is.
@@ -66,7 +90,7 @@ function stillFor(uid: string): boolean {
 }
 
 export function scheduleJournalSync(delayMs = 1500): void {
-  if (!cloudOn()) return;
+  if (!backupOn()) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
@@ -92,7 +116,7 @@ export function syncJournal(opts: { force?: boolean } = {}): Promise<void> {
 
 async function run({ force }: { force?: boolean }): Promise<void> {
   const uid = signedIn();
-  if (!cloudOn() || !uid || !stillFor(uid)) return;
+  if (!backupOn() || !uid || !stillFor(uid)) return;
   if (!force && Date.now() < notBefore) return;
   useSyncStatus.setState({ state: 'syncing' });
   try {
@@ -100,6 +124,7 @@ async function run({ force }: { force?: boolean }): Promise<void> {
     await pull(uid);
     await downloadPhotos(uid);
     await uploadPhotos(uid);
+    await reidentify(uid);
     failures = 0;
     notBefore = 0;
     useSyncStatus.setState({ state: 'idle', lastSyncedAt: Date.now() });
@@ -133,6 +158,7 @@ async function post(uid: string, body: Record<string, unknown>): Promise<SyncAns
   const retryAfter = Number(res.headers.get('Retry-After'));
   // 404: the server hasn't been updated yet. 503: the journal isn't available
   // (database not migrated, or switched off). Neither is this device's fault.
+  if (res.status === 503 && retryAfter > 0) throw new SyncStop(Math.min(Math.max(retryAfter, 3), 900) * 1000); // busy: the server says when
   if (res.status === 404 || res.status === 503) throw new SyncStop(15 * 60_000);
   if (res.status === 429) throw new SyncStop(Math.min(Math.max(retryAfter || 60, 60), 86_400) * 1000);
   if (res.status === 401 || res.status === 409) throw new SyncStop(2 * 60_000);
@@ -145,7 +171,7 @@ function takeAnswer(uid: string, answer: SyncAnswer, sentRevs: ReadonlyMap<strin
   useJournalStore.getState().applySync((st) => ({
     sightings: applyPushAnswers(st.sightings, answer.rows ?? {}, sentRevs, now),
     pendingDeletes: answer.deleted?.length ? st.pendingDeletes.filter((id) => !answer.deleted!.includes(id)) : st.pendingDeletes,
-    cloud: { ready: answer.ready === true, totals: answer.totals ?? st.cloud?.totals ?? null, pulledAt: st.cloud?.pulledAt },
+    cloud: mergeCloud(st.cloud, { ready: answer.ready === true, totals: answer.totals ?? st.cloud?.totals ?? null }),
   }));
 }
 
@@ -159,7 +185,7 @@ async function push(uid: string): Promise<void> {
     // switches the account to server-kept scores and brings back its totals.
     if (!todo.length && !deletes.length && (st.cloud?.ready || round > 0)) return;
     const sentRevs = new Map(todo.map((s) => [s.id, s.rev ?? 0] as const));
-    const answer = await post(uid, { items: todo.map((s) => pushItem(s, groupOf)), deletes });
+    const answer = await post(uid, { items: todo.map((s) => pushItem(s, groupOf, { places: placesOn() })), deletes });
     takeAnswer(uid, answer, sentRevs);
     const progressed = todo.some((s) => answer.rows?.[s.id]) || (answer.deleted?.length ?? 0) > 0;
     if (!progressed) return;
@@ -195,7 +221,7 @@ async function pull(uid: string): Promise<void> {
     if (rows.length < PAGE) break;
   }
   if (newest && newest !== since) {
-    useJournalStore.getState().applySync((st) => ({ cloud: { ready: st.cloud?.ready ?? false, totals: st.cloud?.totals ?? null, pulledAt: newest } }));
+    patchCloud({ pulledAt: newest });
   }
 }
 
@@ -271,6 +297,61 @@ export async function purgeCloudPhotos(): Promise<void> {
     }).finally(() => clearTimeout(timeout));
   } catch {
     // the nightly job removes them
+  }
+}
+
+// Sightings the phone scored that the server counts for nothing: ones that
+// reached it after the cut-off for phone-scored sightings, or from an account
+// with no allowance for them (every new install plays its first session on
+// the app version it shipped with). While the photo is still on this phone
+// nothing is lost: the server identifies it now, under the same sighting id,
+// and from then on it is a sighting the server scored itself. A few per sync;
+// each one is a normal identification and counts toward the daily limits.
+const reidentified = new Set<string>();
+async function reidentify(uid: string): Promise<void> {
+  if (Platform.OS === 'web') return; // a browser tab's photos don't outlive the page
+  const todo = useJournalStore
+    .getState()
+    .sightings.filter((s) => worthReidentifying(s) && s.photoUri && !isCloudRef(s.photoUri) && !reidentified.has(s.id))
+    .slice(0, 3);
+  for (const s of todo) {
+    if (!stillFor(uid)) throw new SyncStop(0);
+    reidentified.add(s.id); // once per session
+    const uri = resolvePhoto(s.photoUri);
+    const photoBase64 = uri ? await resizedBase64(uri) : undefined;
+    if (!photoBase64) continue;
+    let outcome: IdentifyOutcome;
+    try {
+      outcome = await identifySighting({ photoBase64, observedAt: s.observedAt, ...cloudFieldsFor(s) });
+    } catch (err) {
+      // Signed out, over a limit, or offline: leave the rest for another day.
+      if (err instanceof OfflineError) return;
+      continue;
+    }
+    if (!stillFor(uid)) throw new SyncStop(0);
+    if (outcome.source !== 'ai') continue; // a stand-in result (development builds): not the server's word
+    const row = outcome.recorded ? outcome.journal : undefined;
+    useJournalStore.getState().applySync((st) => ({
+      sightings: st.sightings.map((x) => {
+        if (x.id !== s.id) return x;
+        if (row && !row.deleted_at) {
+          return {
+            ...x,
+            species: outcome.species ?? x.species,
+            sceneTags: outcome.sceneTags,
+            dangerous: outcome.dangerous,
+            points: row.points,
+            score: row.score ?? undefined,
+            verified: row.verified,
+            cloudPoints: row.points,
+            cloudPhoto: row.has_photo,
+          };
+        }
+        // The server looked and says it can't score (not a wild animal, or not the player's own photo).
+        if (outcome.present && !outcome.eligible) return { ...x, idStatus: 'ineligible' as const, ineligibleReason: outcome.ineligibleReason, points: undefined, score: undefined, cloudSkip: true };
+        return x;
+      }),
+    }));
   }
 }
 

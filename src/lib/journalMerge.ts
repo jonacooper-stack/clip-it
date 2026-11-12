@@ -82,7 +82,8 @@ function scienceLists(science: Record<string, unknown> | undefined): Record<stri
 // needs the player's own additions; a new one needs the server's receipt or,
 // for a sighting scored on the phone before journals moved to the cloud, what
 // the phone knows about it.
-export function pushItem(s: Sighting, groupOf: (s: Sighting) => string | undefined): Record<string, unknown> {
+export function pushItem(s: Sighting, groupOf: (s: Sighting) => string | undefined, opts: { places?: boolean } = {}): Record<string, unknown> {
+  const where = opts.places === false ? {} : { lat: s.lat, lng: s.lng, accuracyM: s.accuracyM }; // the player may keep places on the phone
   const item: Record<string, unknown> = {
     id: s.id,
     science: scienceLists(s.science),
@@ -96,9 +97,7 @@ export function pushItem(s: Sighting, groupOf: (s: Sighting) => string | undefin
     legacy: {
       observedAt: s.observedAt,
       loggedAt: s.createdAt,
-      lat: s.lat,
-      lng: s.lng,
-      accuracyM: s.accuracyM,
+      ...where,
       status: s.idStatus,
       common: s.species?.commonName,
       sci: s.species?.scientificName,
@@ -143,6 +142,7 @@ export function fromCloudRow(r: CloudRow, now: number): Sighting {
     cloudAt: now,
     verified: r.verified,
     cloudPhoto: r.has_photo,
+    cloudPoints: r.points,
     // Its photo is in the cloud, not on this device (see lib/cloudPhotos).
     photoUri: r.has_photo ? `cloud:${r.id}` : undefined,
   };
@@ -155,6 +155,7 @@ export function applyCloudRow(local: Sighting, r: CloudRow, now: number): Sighti
     cloudAt: local.cloudAt ?? now,
     verified: r.verified,
     cloudPhoto: r.has_photo,
+    cloudPoints: r.points,
     receipt: undefined, // the server has it now
     // No photo on this device, but the cloud has one: show that.
     photoUri: local.photoUri ?? (r.has_photo ? `cloud:${r.id}` : undefined),
@@ -233,6 +234,14 @@ export function mergeRows(sightings: Sighting[], pendingDeletes: string[], rows:
   return { sightings: all, pendingDeletes: [...waiting], added, removed };
 }
 
+// A sighting the phone scored that the server counts for nothing (it arrived
+// after the cut-off for phone-scored sightings, or the account has no
+// allowance for them). If its photo is still on this device, the app can
+// have the server identify it now, which makes it count: see lib/journalSync.
+export function worthReidentifying(s: Sighting): boolean {
+  return Boolean(s.cloudAt) && s.verified === false && s.cloudPoints === 0 && (s.points ?? 0) > 0 && !s.cloudSkip;
+}
+
 // The server's answer for one pushed sighting.
 export type PushAnswer = CloudRow | { error: string } | { refused: string };
 
@@ -261,4 +270,26 @@ export function applyPushAnswers(
     const next = applyPushAnswer({ ...s, sentRev: sentRevs.get(s.id) }, answer, now);
     return next ? [next] : [];
   });
+}
+
+// Where the account stands with the cloud journal, as kept on the device.
+export interface CloudState {
+  /** The server keeps this account's score (true from its first sync). */
+  ready: boolean;
+  /** The score as the server last worked it out. */
+  totals: { points: number; speciesCount: number } | null;
+  /** How far the device has read the cloud journal (the newest change it has seen). */
+  pulledAt?: string;
+  /** The player's answer to "save my journal to my account": yes, not now, or not asked yet. */
+  backup?: boolean;
+  /** Save where each sighting was taken with it (default yes). Off: places stay on this device. */
+  places?: boolean;
+}
+
+
+// Change part of the cloud state, keeping the rest. Every change goes through
+// here: rebuilding the object by hand somewhere would drop whatever that
+// place forgot to carry over (the player's backup choice, for one).
+export function mergeCloud(cloud: CloudState | null | undefined, patch: Partial<CloudState>): CloudState {
+  return { ready: false, totals: null, ...cloud, ...patch };
 }

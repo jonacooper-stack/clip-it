@@ -125,7 +125,7 @@ insert into auth.users (id) values (:'F');
 -- 10. rows from before the migration are untouched
 select t.is('legacy profile kept its name and score', (select display_name || '/' || points || '/' || species_count from public.profiles where id = :'E'), 'Old shit name/420/9');
 select t.is('legacy post and comment kept', (select caption from public.feed_posts where id = '10000000-0000-4000-8000-0000000000e0') || '|' || (select body from public.post_comments where id = '30000000-0000-4000-8000-0000000000e0'), 'holy shit a fox|what the fuck');
-select t.is('the legacy window starts open, about 30 days long', (select (private.legacy_open() and (value #>> '{}')::timestamptz between now() + interval '29 days' and now() + interval '31 days')::text from public.app_settings where key = 'legacy_import_until'), 'true');
+select t.is('the migration does not start the clock: the window is open and has no end date yet', (select private.legacy_open()::text) || '/' || (select count(*)::text from public.app_settings where key = 'legacy_import_until'), 'true/0');
 
 -- 11. the journal: the owner reads it, only the server writes it
 select t.is('server records a sighting for A', t.try('service', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, common_name, scientific_name, points, verified, lat, lng) values (%L, 'sight-a-1', now(), now(), 'ai_confident', 'Osprey', 'Pandion haliaetus', 7, true, 44.1, -72.5), (%L, 'sight-a-2', now(), now(), 'ai_confident', 'Red fox', 'Vulpes vulpes', 3, true, null, null)$q$, :'A', :'A')), 'ok:2');
@@ -236,6 +236,8 @@ select t.is('A cannot delete B''s journal photo', t.try(:'A', format($q$delete f
 select t.is('a player cannot remove the server''s copies either (the server does, when a sighting or account is deleted)', t.try(:'A', $q$delete from storage.objects where bucket_id = 'journal-photos'$q$), 'ok:0');
 
 -- 17. after the legacy window closes
+select t.try('service', $q$insert into public.app_settings (key, value) values ('legacy_import_until', to_jsonb(now() + interval '30 days')) on conflict (key) do update set value = excluded.value$q$);
+select t.is('with a date in the future the window is still open', (select private.legacy_open()::text), 'true');
 select t.try('service', $q$update public.app_settings set value = to_jsonb(now() - interval '1 minute') where key = 'legacy_import_until'$q$);
 select t.is('the window is closed', (select private.legacy_open()::text), 'false');
 select t.is('window closed: an app that never updated can no longer report a score', t.then_(:'B', format('update public.profiles set points = 777 where id = %L', :'B'), format($r$select points::text from public.profiles where id = %L$r$, :'B')), 'ok:1/55');
@@ -247,8 +249,7 @@ select t.is('unswitched accounts are settled…', (select public.settle_legacy_s
 select t.is('…back to what they had at the migration (D: 9999 reported, 12 then; B: 55 reported, 0 then)', (select points::text from public.profiles where id = :'B') || '/' || (select points::text from public.profiles where id = :'D'), '0/12');
 select t.is('a switched account keeps the score the server gave it', (select points::text from public.profiles where id = :'A'), '10');
 select t.is('settling twice changes nothing more', (select public.settle_legacy_scores()::text), '0');
-select t.try('service', $q$delete from public.app_settings where key = 'legacy_import_until'$q$);
-select t.is('no setting at all counts as closed', (select private.legacy_open()::text), 'false');
+select t.is('a deleted account is noted for photo clean-up, however it was deleted', (select count(*)::text from public.journal_photo_cleanup where user_id = :'E') || '/' || t.try(:'A', 'select * from public.journal_photo_cleanup'), '1/ok:0');
 
 -- 18. deleting an account removes its journal
 select t.try('service', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, points) values (%L, 'sight-c-1', now(), now(), 'ai_confident', 4)$q$, :'C'));

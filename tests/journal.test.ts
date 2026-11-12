@@ -31,6 +31,7 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
   const photos = new Map<string, Buffer>();
   const wall: { post_id: string; user_id: string; photo_sha: string | null; photo_phash: string | null }[] = [];
   const refusals: Refusal[] = [];
+  const wallFacts = new Map<string, { points: number; common_name: string | null; scientific_name: string | null }>();
   const locks = new Set<string>();
   const key = (uid: string, sid: string) => `${uid}/${sid}`;
   const state = (uid: string): JournalState => states.get(uid) ?? { user_id: uid, tz: null, ready_at: null, baseline_points: 0, carryover_points: 0, legacy_allowance: 0 };
@@ -61,6 +62,7 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
     async getState(uid) { await tick(); return states.get(uid) ?? null; },
     async saveState(uid, patch) { await tick(); states.set(uid, { ...state(uid), ...patch }); },
     async setProfileTotals(uid, points, species_count) { await tick(); profiles.set(uid, { points, species_count }); },
+    async setWallPostFacts(_uid, postId, facts) { wallFacts.set(postId, facts); },
     async legacyUntil() { return legacyUntil; },
     async putPhoto(uid, sid, bytes) { photos.set(key(uid, sid), bytes); return true; },
     async removePhotos(uid, sids) { for (const s of sids) photos.delete(key(uid, s)); },
@@ -71,7 +73,7 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
   };
   // An account that existed when the migration ran: the database gave it a baseline and an allowance.
   const existing = (uid: string, baseline: number, allowance: number) => states.set(uid, { ...state(uid), baseline_points: baseline, carryover_points: baseline, legacy_allowance: allowance });
-  return { jdb, rows, states, profiles, photos, wall, refusals, existing, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
+  return { jdb, rows, states, profiles, photos, wall, refusals, wallFacts, existing, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
 }
 
 // Fingerprints with a real pattern, far apart from each other, and copies a few bits away.
@@ -309,14 +311,61 @@ test('what the phone claims is bounded per sighting, and by what a name may be',
   existing(A, 0, 5000);
   await importLegacy(jdb, A, 'legacy-big1', claim({ points: 999_999 }), null, NOW);
   assert.equal(row(A, 'legacy-big1').points, 500);
-  assert.equal((await importLegacy(jdb, A, 'legacy-bad1', claim({ sci: '<script>alert(1)</script>' }), null, NOW)).kind, 'invalid');
-  assert.equal((await importLegacy(jdb, A, 'legacy-bad2', claim({ sci: 'Fuck', common: 'x' }), null, NOW)).kind, 'invalid');
   assert.equal((await importLegacy(jdb, A, 'legacy-bad3', claim({ status: 'ineligible' }), null, NOW)).kind, 'invalid');
+  // An old journal's names are tidied, never a reason to lose the sighting
+  // (older app versions stored the identifier's names as they came).
+  for (const [i, [given, sci, common]] of ([
+    [{ sci: 'Buteo jamaicensis?', common: 'Red-tailed hawk' }, 'Buteo jamaicensis', 'Red-tailed hawk'],
+    [{ sci: 'Passer domesticus, female', common: 'House sparrow (female)' }, 'Passer domesticus female', 'House sparrow (female)'],
+    [{ sci: 'Corvus brachyrhynchos/ossifragus', common: 'Crow' }, 'Corvus brachyrhynchos ossifragus', 'Crow'],
+    [{ sci: '<script>alert(1)</script>', common: 'Fuck' }, 'script alert script', 'script alert script'],
+    [{ sci: '12345', common: '!!!' }, 'Unidentified animal', 'Unidentified animal'],
+    [{ sci: 'Fuck', common: 'shit' }, 'Unidentified animal', 'Unidentified animal'],
+  ] as const).entries()) {
+    const out = await importLegacy(jdb, A, `legacy-name${i}`, claim(given), null, NOW);
+    assert.equal(out.kind, 'recorded', JSON.stringify(given));
+    assert.deepEqual([row(A, `legacy-name${i}`).scientific_name, row(A, `legacy-name${i}`).common_name], [sci, common]);
+  }
   await importLegacy(jdb, A, 'legacy-cap1', claim({ caption: 'what the fuck' }), null, NOW);
   assert.equal(row(A, 'legacy-cap1').caption, null);
   // a sighting scored on a phone can't be older than the app
   await importLegacy(jdb, A, 'legacy-old1', claim({ observedAt: Date.UTC(2015, 0, 5) }), null, NOW);
   assert.ok(Date.parse(row(A, 'legacy-old1').observed_at) >= Date.UTC(2026, 5, 1));
+});
+
+test('until an end date is set the legacy window is open (the clock starts with the server\'s first nightly job, not with the migration)', async () => {
+  const { jdb, row, existing } = fakeDb(null);
+  existing(A, 0, 5000);
+  await importLegacy(jdb, A, 'legacy-nodate', claim(), null, NOW);
+  assert.equal(row(A, 'legacy-nodate').points, 12);
+  assert.equal((await syncJournal(jdb, A, {}, { now: NOW })).legacyOpen, true);
+});
+
+test('a phone-scored sighting the server then identifies itself becomes a server-scored one, keeping the player\'s additions', async () => {
+  const { jdb, row, wallFacts } = fakeDb(NOW - DAY); // after the window: the phone's word counts for nothing
+  await importLegacy(jdb, A, 'upgrade-0001', claim({ points: 40 }), null, NOW);
+  await applyEdits(jdb, row(A, 'upgrade-0001'), { science: { count: ['1'] }, wallPostId: '20000000-0000-4000-8000-0000000000a1' });
+  assert.deepEqual([row(A, 'upgrade-0001').points, row(A, 'upgrade-0001').verified], [0, false]);
+  // the app sends the photo through the identifier again, under the same sighting id
+  const out = await recordSighting(jdb, sighting({ sid: 'upgrade-0001', id: { sci: 'Vulpes vulpes', common: 'Red fox', group: 'mammal', rarity: 0.5 } }));
+  assert.ok(out.kind === 'recorded' && out.created);
+  const r = row(A, 'upgrade-0001');
+  assert.deepEqual([r.verified, r.points, r.science, r.wall_post_id, r.claimed_points], [true, 12, { count: ['1'] }, '20000000-0000-4000-8000-0000000000a1', 40]); // 6 + 5 first of species + 1 field note
+  assert.deepEqual(wallFacts.get('20000000-0000-4000-8000-0000000000a1'), { points: 12, common_name: 'Red fox', scientific_name: 'Vulpes vulpes' });
+  // and doing it again changes nothing
+  const again = await recordSighting(jdb, sighting({ sid: 'upgrade-0001', id: { rarity: 1 } }));
+  assert.ok(again.kind === 'recorded' && !again.created);
+  assert.equal(row(A, 'upgrade-0001').points, 12);
+});
+
+test('a wall post shows its sighting\'s points, also after field notes change them', async () => {
+  const { jdb, row, wallFacts } = fakeDb();
+  const p = sighting({ id: { rarity: 0.5 } });
+  await recordSighting(jdb, p);
+  await applyEdits(jdb, row(A, p.sid), { wallPostId: '20000000-0000-4000-8000-0000000000b2' });
+  assert.equal(wallFacts.get('20000000-0000-4000-8000-0000000000b2')!.points, 11);
+  await applyEdits(jdb, row(A, p.sid), { science: { count: ['1'], habitat: ['forest'] } });
+  assert.equal(wallFacts.get('20000000-0000-4000-8000-0000000000b2')!.points, 13);
 });
 
 test('an account created after the switch cannot claim phone-scored points at all', async () => {
