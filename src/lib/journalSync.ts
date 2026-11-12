@@ -14,20 +14,34 @@
 //
 // Nothing here ever blocks the app: if the server can't be reached the
 // journal on the device simply stays as it is, and the sync tries again later.
+//
+// Nothing is sent at all until two things are settled:
+//   - the age question has been answered for the signed-in account (ClipIt
+//     is for ages 13 and up: see shared/age.ts), and
+//   - the player has said yes to having their journal saved to their account.
+//     That choice belongs to the account: the server records it, and each
+//     run here starts by reading it, so every device follows the same answer.
 import { Platform } from 'react-native';
 import * as Network from 'expo-network';
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { API_BASE, authHeaders, deviceTimeZone, hasServer } from './apiBase';
 import { useAuthStore } from '@/state/useAuthStore';
+import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, mergeCloud, patchCloud, setJournalChangeListener } from '@/state/useJournalStore';
-import { applyPushAnswers, CLOUD_COLUMNS, mergeRows, needsPush, pushItem, worthReidentifying, type CloudRow, type PushAnswer } from './journalMerge';
+import {
+  applyPushAnswers, CLOUD_COLUMNS, forgetCloudCopies, mergeRows, needsPush, prefsToSend, pushItem, takePrefs, worthReidentifying,
+  type AccountPrefs, type CloudRow, type PushAnswer,
+} from './journalMerge';
 import { identifySighting, OfflineError, type IdentifyInput, type IdentifyOutcome } from './identify';
 import type { Sighting } from '@/types';
 import { groupOf } from './quests';
 import { resizedBase64 } from './prepareImage';
 import { downloadPhoto, resolvePhoto } from './photoStore';
 import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
+import { accountCreatedHere, askAboutBackup, chooseBackup } from './backupChoice';
+import { ageIsSettled } from '../../shared/age';
+import { approxPlace } from '../../shared/place';
 
 const PUSH_BATCH = 40;
 const PHOTO_BATCH = 4; // photos per request (each is a few hundred KB)
@@ -42,6 +56,7 @@ interface SyncAnswer {
   deleted?: string[];
   totals?: { points: number; speciesCount: number } | null;
   ready?: boolean;
+  prefs?: AccountPrefs;
 }
 
 class SyncStop extends Error {
@@ -59,26 +74,39 @@ const photosTried = new Set<string>(); // photo uploads the server didn't take t
 
 const cloudOn = () => isSupabaseConfigured && Boolean(supabase) && hasServer;
 const signedIn = () => useAuthStore.getState().session?.user?.id ?? null;
+const cloudState = () => useJournalStore.getState().cloud;
+
+// The age question is settled for whoever is signed in (13 and up).
+function ageSettled(): boolean {
+  const { ageBracket, ageCheck } = useAppStore.getState();
+  return ageIsSettled(ageBracket, ageCheck);
+}
+
+// The journal may talk to the server at all.
+const journalAllowed = () => cloudOn() && ageSettled();
 
 // The player has agreed to have their journal saved to their account. Until
-// they have, nothing is sent: identifications carry the photo only (as they
-// always did) and there is no sync.
-export const backupOn = () => cloudOn() && useJournalStore.getState().cloud?.backup === true;
-const placesOn = () => useJournalStore.getState().cloud?.places !== false;
+// they have, identifications carry the photo and nothing else (as they
+// always did), and no sighting is sent.
+export const backupOn = () => journalAllowed() && cloudState()?.backup === true;
+const placesOn = () => cloudState()?.places === true;
 
 // What an identify request says about the sighting, for the cloud journal:
-// which sighting it is, whose, when and (unless the player keeps places on
-// the phone) where. Nothing at all while the journal isn't being saved.
-export function cloudFieldsFor(s: Pick<Sighting, 'id' | 'createdAt' | 'lat' | 'lng' | 'accuracyM' | 'capture' | 'evidence'>): Partial<IdentifyInput> {
+// which sighting it is, whose, when, and (only if the player saves places)
+// roughly where: to two decimals, about a kilometre. The exact spot never
+// leaves the phone. Nothing at all while the journal isn't being saved.
+export function cloudFieldsFor(s: Pick<Sighting, 'id' | 'createdAt' | 'observedAt' | 'lat' | 'lng' | 'capture' | 'evidence'>): Partial<IdentifyInput> {
   const uid = signedIn();
   if (!backupOn() || !uid || useJournalStore.getState().owner !== uid) return {};
   return {
     sightingId: s.id,
+    observedAt: s.observedAt,
     loggedAt: s.createdAt,
     account: uid,
+    tz: deviceTimeZone(),
     capture: s.capture ?? 'camera', // only the in-app camera leaves a capture without saying how it was taken
     evidence: s.evidence,
-    ...(placesOn() ? { lat: s.lat, lng: s.lng, accuracyM: s.accuracyM } : { lat: undefined, lng: undefined, accuracyM: undefined }),
+    ...(placesOn() ? approxPlace(s.lat, s.lng) ?? {} : {}),
   };
 }
 
@@ -90,7 +118,7 @@ function stillFor(uid: string): boolean {
 }
 
 export function scheduleJournalSync(delayMs = 1500): void {
-  if (!backupOn()) return;
+  if (!journalAllowed()) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
@@ -116,15 +144,30 @@ export function syncJournal(opts: { force?: boolean } = {}): Promise<void> {
 
 async function run({ force }: { force?: boolean }): Promise<void> {
   const uid = signedIn();
-  if (!backupOn() || !uid || !stillFor(uid)) return;
+  if (!journalAllowed() || !uid || !stillFor(uid)) return;
   if (!force && Date.now() < notBefore) return;
-  useSyncStatus.setState({ state: 'syncing' });
   try {
-    await push(uid);
-    await pull(uid);
-    await downloadPhotos(uid);
-    await uploadPhotos(uid);
-    await reidentify(uid);
+    // 1. What has the account answered? (Read every time: the answer may
+    //    have been given, or changed, on another device.)
+    if (!(await learnChoice(uid))) return; // the journal isn't set up on the server yet
+    // 2. An account that has never answered: a brand-new one is saved by
+    //    default; anyone else is asked, and nothing is sent meanwhile.
+    if (cloudState()?.backup === undefined) {
+      if (await accountCreatedHere(useAuthStore.getState().session?.user?.created_at)) await chooseBackup(uid, true);
+      else askAboutBackup(uid, { then: () => scheduleJournalSync(300) });
+      if (!stillFor(uid) || cloudState()?.backup === undefined) return;
+    }
+    useSyncStatus.setState({ state: 'syncing' });
+    // 3. Tell the server anything it doesn't know about the choice.
+    await tell(uid);
+    // 4. The journal itself, if it is being saved.
+    if (cloudState()?.backup === true) {
+      await push(uid);
+      await pull(uid);
+      await downloadPhotos(uid);
+      await uploadPhotos(uid);
+      await reidentify(uid);
+    }
     failures = 0;
     notBefore = 0;
     useSyncStatus.setState({ state: 'idle', lastSyncedAt: Date.now() });
@@ -137,31 +180,69 @@ async function run({ force }: { force?: boolean }): Promise<void> {
   }
 }
 
+// Take the account's choices (from the server) into this device's state.
+// `sent`: what this device's own choice was when it asked.
+function takeChoice(uid: string, prefs: AccountPrefs, sent?: { backup?: boolean; places?: boolean }): void {
+  if (!stillFor(uid)) throw new SyncStop(0);
+  useJournalStore.getState().applySync((st) => {
+    const cloud = takePrefs(st.cloud, prefs, sent);
+    // The saved journal was erased since this device last synced (here or
+    // elsewhere): the account no longer holds these sightings.
+    if (prefs.epoch && prefs.epoch !== (st.cloud?.epoch ?? null)) {
+      return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings) };
+    }
+    return { cloud: st.cloud?.epoch === undefined ? { ...cloud, epoch: prefs.epoch } : cloud };
+  });
+}
+
+// Read the account's choices straight from its row (players can read their
+// own). False when the cloud journal isn't there yet (migration not run).
+async function learnChoice(uid: string): Promise<boolean> {
+  if (!supabase) return false;
+  const sent = { backup: cloudState()?.backup, places: cloudState()?.places };
+  const { data, error } = await supabase.from('journal_state').select('backup, save_places, erased_at').eq('user_id', uid).maybeSingle();
+  if (error) {
+    if (error.code === '42P01' || error.code === 'PGRST205' || error.code === 'PGRST204' || error.code === '42703') return false;
+    throw new Error(error.message);
+  }
+  const row = (data ?? {}) as { backup?: string | null; save_places?: boolean | null; erased_at?: string | null };
+  takeChoice(uid, { backup: row.backup === 'yes' || row.backup === 'no' ? row.backup : null, places: row.save_places === true, epoch: row.erased_at ?? null }, sent);
+  return true;
+}
+
 async function post(uid: string, body: Record<string, unknown>): Promise<SyncAnswer> {
   if (!stillFor(uid)) throw new SyncStop(0);
   const auth = await authHeaders();
   if (!auth) throw new SyncStop(60_000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
+  // A choice the server hasn't recorded yet goes along with whatever is sent.
+  const sent = { backup: cloudState()?.backup, places: cloudState()?.places };
+  const prefs = prefsToSend(cloudState());
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/api/journal/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth },
-      body: JSON.stringify({ account: uid, tz: deviceTimeZone(), ...body }),
+      body: JSON.stringify({ account: uid, tz: deviceTimeZone(), ...(prefs ? { prefs } : {}), ...body }),
       signal: controller.signal,
     });
   } finally {
     clearTimeout(timeout);
   }
-  if (res.ok) return (await res.json()) as SyncAnswer;
+  if (res.ok) {
+    const answer = (await res.json()) as SyncAnswer;
+    if (answer.prefs) takeChoice(uid, answer.prefs, sent);
+    return answer;
+  }
   const retryAfter = Number(res.headers.get('Retry-After'));
   // 404: the server hasn't been updated yet. 503: the journal isn't available
   // (database not migrated, or switched off). Neither is this device's fault.
   if (res.status === 503 && retryAfter > 0) throw new SyncStop(Math.min(Math.max(retryAfter, 3), 900) * 1000); // busy: the server says when
   if (res.status === 404 || res.status === 503) throw new SyncStop(15 * 60_000);
   if (res.status === 429) throw new SyncStop(Math.min(Math.max(retryAfter || 60, 60), 86_400) * 1000);
-  if (res.status === 401 || res.status === 409) throw new SyncStop(2 * 60_000);
+  // 403: the account doesn't carry the age answer yet (it is saved a moment after the question is answered).
+  if (res.status === 401 || res.status === 409 || res.status === 403) throw new SyncStop(2 * 60_000);
   throw new Error(`sync ${res.status}`);
 }
 
@@ -175,10 +256,24 @@ function takeAnswer(uid: string, answer: SyncAnswer, sentRevs: ReadonlyMap<strin
   }));
 }
 
+// Things the server must hear whether or not the journal is being saved: a
+// changed choice, a request to delete what is saved, and (while the backup is
+// off) sightings deleted here that the account still holds.
+async function tell(uid: string): Promise<void> {
+  const st = useJournalStore.getState();
+  const erase = st.cloud?.erase === true;
+  const deletes = st.cloud?.backup !== true && st.cloud?.ready ? st.pendingDeletes.slice(0, 100) : [];
+  if (!erase && !prefsToSend(st.cloud) && !deletes.length) return;
+  const answer = await post(uid, { ...(erase ? { erase: true } : {}), ...(deletes.length ? { deletes } : {}) });
+  takeAnswer(uid, answer, new Map());
+  if (erase) patchCloud({ erase: undefined });
+}
+
 async function push(uid: string): Promise<void> {
   // Bounded: each round must make progress, or the loop ends.
   for (let round = 0; round < 200; round++) {
     const st = useJournalStore.getState();
+    if (st.cloud?.backup !== true) return; // switched off meanwhile (here or on another device)
     const todo = st.sightings.filter(needsPush).slice(0, PUSH_BATCH);
     const deletes = st.pendingDeletes.slice(0, 100);
     // The first sync also goes out with nothing to send: that is what
@@ -189,6 +284,40 @@ async function push(uid: string): Promise<void> {
     takeAnswer(uid, answer, sentRevs);
     const progressed = todo.some((s) => answer.rows?.[s.id]) || (answer.deleted?.length ?? 0) > 0;
     if (!progressed) return;
+  }
+}
+
+// Stop saving the journal to the account. `erase`: also delete what is saved
+// there. The choice takes effect on this device at once; the server is told
+// straight away, or as soon as it can be reached.
+export async function turnOffBackup(opts: { erase: boolean }): Promise<void> {
+  const uid = signedIn();
+  if (!uid || !stillFor(uid)) return;
+  patchCloud({ backup: false, places: false, ...(opts.erase ? { erase: true } : {}) });
+  await syncJournal({ force: true });
+}
+
+// The account turned out to belong to someone under 13: have the server
+// delete anything saved to its journal, before the app signs out. Best
+// effort, with a short wait (the server refuses to save anything for an
+// account that hasn't answered the age question, so normally there is
+// nothing to delete).
+export async function eraseForUnder13(): Promise<void> {
+  const uid = signedIn();
+  if (!cloudOn() || !uid) return;
+  try {
+    const auth = await authHeaders();
+    if (!auth) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    await fetch(`${API_BASE}/api/journal/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ account: uid, erase: true, why: 'under13' }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+  } catch {
+    // nothing more can be done from here
   }
 }
 
@@ -322,7 +451,7 @@ async function reidentify(uid: string): Promise<void> {
     if (!photoBase64) continue;
     let outcome: IdentifyOutcome;
     try {
-      outcome = await identifySighting({ photoBase64, observedAt: s.observedAt, ...cloudFieldsFor(s) });
+      outcome = await identifySighting({ photoBase64, ...cloudFieldsFor(s) });
     } catch (err) {
       // Signed out, over a limit, or offline: leave the rest for another day.
       if (err instanceof OfflineError) return;

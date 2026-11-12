@@ -7,20 +7,23 @@ import { prewarmStories } from './_lib/stories';
 import { dailyPick } from './_lib/library';
 import { weekOf } from '../shared/crew';
 import { cleanName } from '../shared/moderation';
-import { clearDeletedAccounts, printWallPhotos, settleLegacyScores, startLegacyClock, sweepOrphanPhotos } from './_lib/journalUpkeep';
+import { clearDeletedAccounts, expireRefusalNotes, printWallPhotos, retryDeletedPhotos, settleLegacyScores, startLegacyClock, sweepOrphanPhotos } from './_lib/journalUpkeep';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
 // ?dry=1 previews without writing.
 //
-// 1. Creates Scout's account on first run, and removes the earlier Field Crew
+// 1. Looks after the cloud journal, first, so it always gets its turn:
+//    removes stored photos of deleted accounts and deleted sightings, drops
+//    old notes about refused photos, fingerprints new wall photos (so a photo
+//    copied from the wall is recognised), and settles scores once the legacy
+//    window has closed. None of it calls a model; each step has its own time
+//    limit.
+// 2. Creates Scout's account on first run, and removes the earlier Field Crew
 //    bot accounts (their comments go with them).
-// 2. Recent wall posts get at most one Scout comment each: a welcome on a
+// 3. Recent wall posts get at most one Scout comment each: a welcome on a
 //    player's very first post, otherwise a fun fact about the species
 //    (catching posts shared from older app versions or while facts were down).
-// 3. Looks after the cloud journal: fingerprints new wall photos (so a photo
-//    copied from the wall is recognised), removes stored photos of deleted
-//    accounts, and settles scores once the legacy window has closed.
 // 4. Writes upcoming stories ahead of time (this week's themes, today's and
 //    tomorrow's animal of the day), so "Read the story" opens instantly.
 //
@@ -33,6 +36,24 @@ const MAX_NEW_FACTS_PER_RUN = 12;
 export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } = {}) {
   const started = Date.now();
   const dry = Boolean(opts.dry);
+
+  // The cloud journal's housekeeping. Deletions come first: a player who
+  // deleted their account was told their photos go within a day.
+  const journal = { clockStarted: false, deletedAccounts: 0, deletedPhotos: 0, orphanFolders: 0, wallPrints: 0, settled: 0 };
+  if (!dry) {
+    try {
+      journal.clockStarted = await startLegacyClock(db);
+      journal.deletedAccounts = await clearDeletedAccounts(db, { deadline: Date.now() + 6000 });
+      journal.deletedPhotos = await retryDeletedPhotos(db, { deadline: Date.now() + 3000 });
+      journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: Date.now() + 5000 });
+      await expireRefusalNotes(db);
+      journal.settled = await settleLegacyScores(db);
+      journal.wallPrints = await printWallPhotos(db, { deadline: Date.now() + 8000 });
+    } catch (err: any) {
+      log('crew_daily_journal_error', { detail: String(err?.message ?? err).slice(0, 200) });
+    }
+  }
+
   const retired = await retireOldCrew(db, { dry });
   const crew = await ensureCrew(db, { dry });
   const scout = crew.scout;
@@ -48,6 +69,7 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
       .limit(200);
     let newFacts = 0;
     for (const p of recent ?? []) {
+      if (Date.now() > started + 40_000) break; // the rest gets its comment tomorrow
       if (await hasCrewComment(db, p.id, [scout.id])) continue;
       const { count } = await db.from('feed_posts').select('id', { count: 'exact', head: true }).eq('user_id', p.user_id);
       // Post and profile text is written by players' apps. Scout only repeats
@@ -89,20 +111,6 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
     const cutoff = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
     const { error } = await db.from('usage_counters').delete().lt('day', cutoff);
     if (error && !/usage_counters/.test(error.message)) log('crew_daily_cleanup_error', { detail: error.message.slice(0, 160) });
-  }
-
-  // The cloud journal's housekeeping (each step bounded; none of it calls a model).
-  const journal = { clockStarted: false, wallPrints: 0, deletedAccounts: 0, orphanFolders: 0, settled: 0 };
-  if (!dry) {
-    try {
-      journal.clockStarted = await startLegacyClock(db);
-      journal.wallPrints = await printWallPhotos(db, { deadline: started + 16_000 });
-      journal.deletedAccounts = await clearDeletedAccounts(db, { deadline: started + 20_000 });
-      journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: started + 24_000 });
-      journal.settled = await settleLegacyScores(db);
-    } catch (err: any) {
-      log('crew_daily_journal_error', { detail: String(err?.message ?? err).slice(0, 200) });
-    }
   }
 
   let stories: string[] = [];

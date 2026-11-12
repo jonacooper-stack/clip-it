@@ -3,6 +3,7 @@
 import { createHash, timingSafeEqual } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { publicStorageUrl } from '../../shared/storage';
+import { ageIsSettled } from '../../shared/age';
 
 // The app's public project URL + publishable key (also in eas.json),
 // overridable via Vercel env vars.
@@ -34,15 +35,33 @@ export function safeEqual(a: string, b: string): boolean {
 // Tokens checked in the last minute (by hash, never the token itself), so a
 // burst of requests from one player (a rapid-fire queue draining) asks
 // Supabase once instead of once per request.
-const verified = new Map<string, { userId: string; until: number }>();
+const verified = new Map<string, { userId: string; ageCleared: boolean; until: number }>();
 const VERIFY_TTL_MS = 60_000;
 
-// Returns the user id for a valid Supabase access token, or null. `onFail`
-// receives a short reason for logging.
-export async function verifyUser(
+// ClipIt is for ages 13 and up, and nothing from a journal is saved to an
+// account until the account carries the answer to the age question (the rule
+// is in shared/age.ts). The app writes the answer to the account when the
+// question is answered.
+export function ageCleared(metadata: unknown): boolean {
+  const m = (metadata ?? {}) as { ageBracket?: unknown; ageCheck?: unknown };
+  return ageIsSettled(m.ageBracket, m.ageCheck);
+}
+
+export interface Player {
+  userId: string;
+  /** The account has answered the age question (see ageCleared). */
+  ageCleared: boolean;
+}
+
+// The account a valid Supabase access token belongs to, or null. `onFail`
+// receives a short reason for logging. `freshAge`: don't settle for a
+// remembered "hasn't answered the age question" (the app may just have
+// saved the answer).
+export async function verifyPlayer(
   authHeader: string | string[] | undefined,
   onFail: (reason: string, extra?: Record<string, unknown>) => void = () => {},
-): Promise<string | null> {
+  opts: { freshAge?: boolean } = {},
+): Promise<Player | null> {
   const token = bearer(authHeader);
   if (!token) {
     onFail('auth_missing_token');
@@ -51,7 +70,7 @@ export async function verifyUser(
   const key = createHash('sha256').update(token).digest('base64');
   const now = Date.now();
   const hit = verified.get(key);
-  if (hit && hit.until > now) return hit.userId;
+  if (hit && hit.until > now && (hit.ageCleared || !opts.freshAge)) return { userId: hit.userId, ageCleared: hit.ageCleared };
   try {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
@@ -60,15 +79,24 @@ export async function verifyUser(
       onFail('auth_rejected', { status: r.status });
       return null;
     }
-    const user = (await r.json()) as { id?: string };
+    const user = (await r.json()) as { id?: string; user_metadata?: unknown };
     if (!user?.id) return null;
+    const player: Player = { userId: user.id, ageCleared: ageCleared(user.user_metadata) };
     if (verified.size > 5000) for (const [k, v] of verified) if (v.until <= now) verified.delete(k);
-    verified.set(key, { userId: user.id, until: now + VERIFY_TTL_MS });
-    return user.id;
+    verified.set(key, { ...player, until: now + VERIFY_TTL_MS });
+    return player;
   } catch (err: any) {
     onFail('auth_check_error', { detail: String(err?.message ?? err).slice(0, 200) });
     return null;
   }
+}
+
+// Returns the user id for a valid Supabase access token, or null.
+export async function verifyUser(
+  authHeader: string | string[] | undefined,
+  onFail: (reason: string, extra?: Record<string, unknown>) => void = () => {},
+): Promise<string | null> {
+  return (await verifyPlayer(authHeader, onFail))?.userId ?? null;
 }
 
 // Simple per-key burst limit (per warm serverless instance — a speed bump

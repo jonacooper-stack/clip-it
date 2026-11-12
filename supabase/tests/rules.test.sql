@@ -29,6 +29,22 @@ begin
   raise notice '% %   (%)', case when got = want then 'PASS' else 'FAIL' end, label, got;
 end $$;
 
+-- Ask a question as a signed-in player and return the single value that comes back.
+create function t.ask(who text, query text) returns text language plpgsql as $$
+declare v text;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', who, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  begin
+    execute query into v;
+    reset role;
+    return coalesce(v, '<NULL>');
+  exception when others then
+    reset role;
+    return 'error:' || sqlstate;
+  end;
+end $$;
+
 -- Run a statement as someone, then read back what is in the table now. (The
 -- two can't share one SELECT: a query doesn't see changes made by a function
 -- it calls itself.)
@@ -147,6 +163,9 @@ select t.is('A reads their own state', t.try(:'A', 'select * from public.journal
 select t.is('B cannot read A''s state', t.try(:'B', format('select * from public.journal_state where user_id = %L', :'A')), 'ok:0');
 select t.is('a player cannot mark their own journal ready', t.try(:'A', 'update public.journal_state set ready_at = now(), carryover_points = 99999'), 'error:42501');
 select t.is('a player cannot create their own state', t.try(:'B', format('insert into public.journal_state (user_id, carryover_points) values (%L, 5000)', :'B')), 'error:42501');
+select t.is('a player cannot switch their own backup on behind the server''s back', t.try(:'A', $q$update public.journal_state set backup = 'yes', save_places = true$q$), 'error:42501');
+select t.is('the server records the player''s choices; only yes or no', t.try('service', format($q$update public.journal_state set backup = 'yes', save_places = false where user_id = %L$q$, :'A')) || '/' || t.try('service', format($q$update public.journal_state set backup = 'maybe' where user_id = %L$q$, :'A')), 'ok:1/error:23514');
+select t.is('a journal row has no column for GPS accuracy', (select count(*)::text from information_schema.columns where table_schema = 'public' and table_name = 'journal_sightings' and column_name = 'accuracy_m'), '0');
 select t.is('settings, photo fingerprints and the refusal log are invisible to players', t.try(:'A', 'select * from public.app_settings') || '/' || t.try(:'A', 'select * from public.wall_prints') || '/' || t.try(:'A', 'select * from public.journal_refusals'), 'ok:0/ok:0/ok:0');
 select t.is('a player cannot move the legacy window', t.try(:'A', $q$update public.app_settings set value = to_jsonb(now() + interval '10 years')$q$), 'ok:0');
 select t.is('the window check is not in the API schema', (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.proname in ('legacy_open', 'has_blocked_language') and n.nspname = 'public'), '0');
@@ -208,6 +227,8 @@ select t.is('a player cannot run the comparison (it would reveal who has which p
 -- 14. wall posts take their facts from the journal
 select t.is('a post that shares a sighting gets the journal''s points and species, not the app''s', t.then_(:'A', format($q$insert into public.feed_posts (id, user_id, common_name, scientific_name, points, sighting_id) values ('20000000-0000-4000-8000-0000000000a1', %L, 'Dragon', 'Draco fictus', 499, 'sight-a-1')$q$, :'A'), $r$select points || '/' || common_name || '/' || scientific_name from public.feed_posts where id = '20000000-0000-4000-8000-0000000000a1'$r$), 'ok:1/7/Osprey/Pandion haliaetus');
 select t.is('the same sighting cannot be shared twice', t.try(:'A', format($q$insert into public.feed_posts (user_id, common_name, points, sighting_id) values (%L, 'Osprey', 7, 'sight-a-1')$q$, :'A')), 'error:23505');
+select t.is('what other players can read on the post is a one-way code, not the sighting''s id', (select (sighting_id <> 'sight-a-1' and sighting_id ~ '^[0-9a-f]{64}$')::text from public.feed_posts where id = '20000000-0000-4000-8000-0000000000a1'), 'true');
+select t.is('the poster can ask which of their posts shares a sighting; nobody else can', t.ask(:'A', $r$select public.my_wall_post('sight-a-1')::text$r$) || '/' || t.ask(:'B', $r$select public.my_wall_post('sight-a-1')::text$r$), '20000000-0000-4000-8000-0000000000a1/<NULL>');
 select t.is('someone else''s sighting id earns nothing extra: the app''s (bounded) value is kept during the window', t.then_(:'A', format($q$insert into public.feed_posts (id, user_id, common_name, points, sighting_id) values ('20000000-0000-4000-8000-0000000000a2', %L, 'Bald eagle', 30, 'sight-b-1')$q$, :'A'), $r$select points::text from public.feed_posts where id = '20000000-0000-4000-8000-0000000000a2'$r$), 'ok:1/30');
 select t.is('a sighting id must be a plain token', t.try(:'A', format($q$insert into public.feed_posts (user_id, common_name, sighting_id) values (%L, 'Fox', 'x y')$q$, :'A')), 'error:23514');
 select t.try('service', format($q$update public.journal_sightings set deleted_at = now(), common_name = null, scientific_name = null, points = 0 where user_id = %L and id = 'sight-a-2'$q$, :'A'));
@@ -254,8 +275,11 @@ select t.is('a deleted account is noted for photo clean-up, however it was delet
 -- 18. deleting an account removes its journal
 select t.try('service', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, points) values (%L, 'sight-c-1', now(), now(), 'ai_confident', 4)$q$, :'C'));
 select t.try('service', format('insert into public.journal_state (user_id) values (%L)', :'C'));
+select t.try('service', format($q$insert into public.journal_refusals (user_id, sighting_id, reason, matched_user, matched_ref) values (%L, 'sight-a-9', 'copied', %L, 'journal:sight-c-1')$q$, :'A', :'C'));
 
 -- 9. existing features still work
 select t.is('account deletion still works', t.try(:'C', 'select public.delete_my_account()'), 'ok:1');
 select t.is('…and removed the account''s rows', (select count(*)::text from public.profiles where id = :'C'), '0');
 select t.is('…including its journal and state', (select count(*)::text from public.journal_sightings where user_id = :'C') || '/' || (select count(*)::text from public.journal_state where user_id = :'C'), '0/0');
+select t.is('…and left a note to remove its stored photos', (select count(*)::text from public.journal_photo_cleanup where user_id = :'C'), '1');
+select t.is('…and its ids are gone from the note about another player''s refused photo', (select coalesce(matched_user::text, 'none') || '/' || coalesce(matched_ref, 'none') from public.journal_refusals where sighting_id = 'sight-a-9'), 'none/none');

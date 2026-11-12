@@ -6,9 +6,8 @@
 import { Platform } from 'react-native';
 import * as Network from 'expo-network';
 import type { IdSource, IdStatus, ScoreBreakdown, SpeciesGuess } from '@/types';
-import type { PhotoEvidence } from '../../shared/photoEvidence';
 import type { CloudRow } from './journalMerge';
-import { deviceTimeZone } from './apiBase';
+import { identifyRequestBody, type SightingDetails } from './identifyRequest';
 import { supabase } from './supabase';
 import { mockIdentify } from './mockSpecies';
 
@@ -83,21 +82,12 @@ async function deviceIsOnline(): Promise<boolean> {
   }
 }
 
-export interface IdentifyInput {
+// The photo, plus (only when the sighting is being saved to the player's
+// account: see lib/journalSync cloudFieldsFor) which sighting it is, whose,
+// when and roughly where. With those the server records a result that counts
+// and scores it.
+export interface IdentifyInput extends SightingDetails {
   photoBase64?: string | null;
-  lat?: number;
-  lng?: number;
-  accuracyM?: number;
-  observedAt: number;
-  // For the cloud journal: which sighting this photo is for, and whose. With
-  // these the server records a result that counts and scores it.
-  sightingId?: string;
-  loggedAt?: number;
-  account?: string;
-  /** Taken with the in-app camera, or uploaded from the camera roll. */
-  capture?: 'camera' | 'library';
-  /** For an upload: whether the photo carries a camera's details. */
-  evidence?: PhotoEvidence;
 }
 
 export interface IdentifyOutcome {
@@ -126,6 +116,8 @@ export interface IdentifyOutcome {
   // ----- the cloud journal -----
   /** The server recorded the sighting; `journal` is its row (score included). */
   recorded?: boolean;
+  /** The server says this account's journal isn't being saved (the choice changed on another device). */
+  journalOff?: boolean;
   journal?: CloudRow;
   /** The server's signed note for a result it couldn't record right now. */
   receipt?: string;
@@ -209,22 +201,7 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     resp = await fetch(IDENTIFY_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        imageBase64: input.photoBase64,
-        mediaType: 'image/jpeg',
-        // Which sighting this is, and when and where it was taken: the server
-        // keeps the journal now. (An older server ignores these.)
-        sightingId: input.sightingId,
-        account: input.account,
-        observedAt: input.observedAt,
-        loggedAt: input.loggedAt,
-        lat: input.lat,
-        lng: input.lng,
-        accuracyM: input.accuracyM,
-        capture: input.capture,
-        evidence: input.evidence,
-        tz: deviceTimeZone(),
-      }),
+      body: JSON.stringify(identifyRequestBody(input.photoBase64 ?? '', input)),
       signal: controller.signal,
     });
   } catch (err: any) {
@@ -268,6 +245,7 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     idStatus: (data.idStatus as IdStatus) ?? 'ai_confident',
     source: 'ai',
     recorded: data.recorded === true,
+    journalOff: data.journalOff === true,
     journal: data.journal && typeof data.journal === 'object' ? (data.journal as CloudRow) : undefined,
     receipt: typeof data.receipt === 'string' ? data.receipt : undefined,
     totals: data.totals && typeof data.totals.points === 'number' ? data.totals : undefined,

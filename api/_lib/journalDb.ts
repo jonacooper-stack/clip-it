@@ -83,7 +83,7 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
     },
 
     async getState(uid) {
-      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, carryover_points, legacy_allowance').eq('user_id', uid).maybeSingle();
+      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, carryover_points, legacy_allowance, backup, save_places, erased_at').eq('user_id', uid).maybeSingle();
       check(error, 'read journal state');
       return (data as JournalState | null) ?? null;
     },
@@ -123,11 +123,20 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       return !error; // a missing photo is not fatal: the app offers it again on a later sync
     },
 
+    // (The storage client reports a failure in its answer; it doesn't throw.)
     async removePhotos(uid, sids) {
       try {
-        await db.storage.from(BUCKET).remove(sids.map((sid) => `${uid}/${sid}.jpg`));
+        const { error } = await db.storage.from(BUCKET).remove(sids.map((sid) => `${uid}/${sid}.jpg`));
+        return !error;
       } catch {
-        // the nightly sweep and account deletion clear leftovers
+        return false;
+      }
+    },
+
+    async clearPhotoFlags(uid, sids) {
+      for (let i = 0; i < sids.length; i += 100) {
+        const { error } = await db.from(SIGHTINGS).update({ has_photo: false }).eq('user_id', uid).in('id', sids.slice(i, i + 100));
+        check(error, 'update sightings');
       }
     },
 
@@ -138,6 +147,18 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
         const { error: removeError } = await db.storage.from(BUCKET).remove(data.map((f) => `${uid}/${f.name}`));
         if (removeError) return;
       }
+    },
+
+    async clearPlaces(uid) {
+      const { error } = await db.from(SIGHTINGS).update({ lat: null, lng: null, updated_at: stamp() }).eq('user_id', uid).not('lat', 'is', null);
+      check(error, 'forget places');
+    },
+
+    async deleteJournal(uid) {
+      const { error } = await db.from(SIGHTINGS).delete().eq('user_id', uid);
+      check(error, 'erase journal');
+      const { error: notesError } = await db.from('journal_refusals').delete().eq('user_id', uid);
+      check(notesError, 'erase notes');
     },
 
     async logRefusal(entry) {

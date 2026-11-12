@@ -125,6 +125,12 @@ function tidy(state: Record<string, unknown> | null): Pick<JournalState, 'sighti
           pulledAt: typeof c.pulledAt === 'string' ? c.pulledAt : undefined,
           backup: typeof c.backup === 'boolean' ? c.backup : undefined,
           places: typeof c.places === 'boolean' ? c.places : undefined,
+          saved:
+            c.saved && typeof c.saved === 'object'
+              ? { backup: c.saved.backup === 'yes' || c.saved.backup === 'no' ? c.saved.backup : null, places: c.saved.places === true }
+              : undefined,
+          erase: c.erase === true ? true : undefined,
+          epoch: typeof c.epoch === 'string' ? c.epoch : c.epoch === null ? null : undefined,
         }
       : null;
   return { sightings, pendingDeletes, cloud };

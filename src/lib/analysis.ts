@@ -37,6 +37,10 @@ export function hashPhotoBase64(base64: string): string {
 export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photoHash?: string): void {
   const { updateSighting, removeSighting } = useJournalStore.getState();
 
+  // This device thought the journal was being saved to the account and the
+  // server says it isn't: read the account's choice again.
+  if (outcome.journalOff) scheduleJournalSync(500);
+
   // The server recorded it in the cloud journal: `row` is what it wrote.
   const row = outcome.recorded ? outcome.journal : undefined;
   if (row?.deleted_at) {
@@ -161,11 +165,8 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
       if (!base64) continue; // couldn't read/resize; leave it queued for next time
       const input: IdentifyInput = {
         photoBase64: base64,
-        lat: s.lat,
-        lng: s.lng,
-        accuracyM: s.accuracyM,
-        observedAt: s.observedAt,
-        // For the cloud journal (nothing, while the player hasn't agreed to it).
+        // For the cloud journal (nothing, while the player hasn't agreed to it:
+        // then the photo is all that is sent).
         ...cloudFieldsFor(s),
       };
       try {

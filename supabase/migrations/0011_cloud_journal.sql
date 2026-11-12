@@ -5,7 +5,10 @@
 -- its own score. After this migration (and the matching server and app
 -- update):
 --   * each account's sightings are stored here, readable only by that account,
---     written only by the server;
+--     written only by the server, and only for an account that has said yes
+--     to having its journal saved (journal_state.backup);
+--   * a sighting's place is kept only if the player chose to save places, and
+--     then only to two decimals (about a kilometre);
 --   * the leaderboard score is worked out by the server from those sightings;
 --   * a wall post takes its points and species from the sighting it shares;
 --   * comments, captions and display names are checked for blocked language
@@ -69,12 +72,14 @@ create table if not exists public.journal_sightings (
   updated_at timestamptz not null default now(),
   -- Set when the player deletes the sighting. The row stays so the player's
   -- other devices learn it is gone instead of uploading it again. Everything
-  -- personal is emptied; the species and the photo's fingerprints are kept, so
-  -- deleting and re-adding can't make the same photo or species score afresh.
+  -- personal is emptied (the dates become the time of deletion); the species
+  -- and the photo's fingerprints are kept, so deleting and re-adding can't
+  -- make the same photo or species score afresh.
   deleted_at timestamptz,
+  -- Where it was taken, to two decimals (about a kilometre), and only if the
+  -- player saves places with their journal. The exact spot stays on the phone.
   lat double precision check (lat between -90 and 90),
   lng double precision check (lng between -180 and 180),
-  accuracy_m real,
   status text check (status in ('ai_confident', 'needs_review', 'disputed', 'human_confirmed')),
   common_name text check (char_length(common_name) <= 80),
   scientific_name text check (char_length(scientific_name) <= 80),
@@ -103,9 +108,13 @@ create table if not exists public.journal_sightings (
   model text,                                 -- which model identified it
   primary key (user_id, id)
 );
+-- (An earlier draft of this file had a column for GPS accuracy.)
+alter table public.journal_sightings drop column if exists accuracy_m;
 create index if not exists journal_sightings_user_time_idx on public.journal_sightings (user_id, observed_at desc);
 create index if not exists journal_sightings_species_idx on public.journal_sightings (scientific_name, recorded_at desc);
 create index if not exists journal_sightings_sha_idx on public.journal_sightings (photo_sha) where photo_sha is not null;
+-- (For the nightly job: deleted sightings whose stored photo is still to be removed.)
+create index if not exists journal_sightings_marker_photo_idx on public.journal_sightings (user_id) where deleted_at is not null and has_photo;
 
 -- A player can read their own journal and nothing else. Nobody but the
 -- server writes: there are no insert, update or delete rules, and the table
@@ -118,7 +127,7 @@ create policy journal_sightings_read_own on public.journal_sightings
   for select using (user_id = auth.uid());
 revoke all on public.journal_sightings from anon, authenticated;
 grant select (
-  user_id, id, observed_at, logged_at, recorded_at, updated_at, deleted_at, lat, lng, accuracy_m, status, common_name,
+  user_id, id, observed_at, logged_at, recorded_at, updated_at, deleted_at, lat, lng, status, common_name,
   scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo,
   science, proposed_species, wall_post_id
 ) on public.journal_sightings to authenticated;
@@ -135,8 +144,18 @@ grant select (
 --   legacy_allowance  the most that sightings scored on the phone (before
 --                     scores moved to the server) may add to the score
 --   busy_until        a short lock: one journal request at a time per account
+--   backup            the player's answer to "save my journal to my account":
+--                     'yes', 'no', or empty (not answered). The server stores
+--                     sightings only while it is 'yes'
+--   save_places       whether a sighting's (approximate) place is stored with
+--                     it. Empty counts as no
+--   erased_at         when the player last had everything saved to the journal
+--                     deleted. A device that synced before then knows from
+--                     this that the account no longer holds its sightings
 -- The baseline and the allowance are set once, below, by this file. They are
 -- never taken from an app afterwards, and an account created later has none.
+-- The two choices are written by the server when the player makes them in the
+-- app; they belong to the account, so every device follows the same answer.
 create table if not exists public.journal_state (
   user_id uuid primary key references auth.users (id) on delete cascade,
   tz text check (char_length(tz) <= 64),
@@ -145,8 +164,14 @@ create table if not exists public.journal_state (
   carryover_points integer not null default 0 check (carryover_points between 0 and 10000),
   legacy_allowance integer not null default 0 check (legacy_allowance between 0 and 20000),
   busy_until timestamptz,
+  backup text check (backup in ('yes', 'no')),
+  save_places boolean,
+  erased_at timestamptz,
   updated_at timestamptz not null default now()
 );
+alter table public.journal_state add column if not exists backup text check (backup in ('yes', 'no'));
+alter table public.journal_state add column if not exists save_places boolean;
+alter table public.journal_state add column if not exists erased_at timestamptz;
 alter table public.journal_state enable row level security;
 drop policy if exists journal_state_read_own on public.journal_state;
 create policy journal_state_read_own on public.journal_state
@@ -241,11 +266,29 @@ $$;
 revoke all on function public.wall_posts_without_prints(integer) from public, anon, authenticated;
 grant execute on function public.wall_posts_without_prints(integer) to service_role;
 
+-- Photos that were turned down as copies: who, which sighting, and what they
+-- matched. Kept for 90 days (the nightly job removes older ones) so that a
+-- wrong call can be looked at and put right. RLS on, no policies.
+create table if not exists public.journal_refusals (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  sighting_id text not null,
+  reason text not null,
+  matched_user uuid,
+  matched_ref text,
+  created_at timestamptz not null default now()
+);
+create index if not exists journal_refusals_user_idx on public.journal_refusals (user_id, created_at desc);
+create index if not exists journal_refusals_matched_idx on public.journal_refusals (matched_user) where matched_user is not null;
+alter table public.journal_refusals enable row level security;
+
 -- Accounts that have been deleted and may still have stored journal photos.
 -- An app build from before the cloud journal doesn't know to have them
 -- removed, so the deletion itself leaves a note here and the nightly job
 -- does it. (Fires for delete_my_account() and for a deletion from the
--- dashboard alike, since both remove the profile row.) RLS on, no policies.
+-- dashboard alike: both remove the profile row and the journal state row,
+-- and either is enough.) The same moment clears the account's ids out of
+-- notes about other players' refused photos. RLS on, no policies.
 create table if not exists public.journal_photo_cleanup (
   user_id uuid primary key,
   queued_at timestamptz not null default now()
@@ -258,8 +301,12 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  -- profiles rows are keyed by id, journal_state rows by user_id
+  gone uuid := coalesce(to_jsonb(old) ->> 'user_id', to_jsonb(old) ->> 'id')::uuid;
 begin
-  insert into public.journal_photo_cleanup (user_id) values (old.id) on conflict (user_id) do nothing;
+  insert into public.journal_photo_cleanup (user_id) values (gone) on conflict (user_id) do nothing;
+  update public.journal_refusals set matched_user = null, matched_ref = null where matched_user = gone;
   return old;
 end;
 $$;
@@ -269,20 +316,10 @@ create trigger profiles_queue_photo_cleanup
   after delete on public.profiles
   for each row execute function public.queue_journal_photo_cleanup();
 
--- Photos that were turned down as copies: who, which sighting, and what they
--- matched. Kept so that a wrong call can be looked at and put right.
--- RLS on, no policies.
-create table if not exists public.journal_refusals (
-  id bigint generated always as identity primary key,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  sighting_id text not null,
-  reason text not null,
-  matched_user uuid,
-  matched_ref text,
-  created_at timestamptz not null default now()
-);
-create index if not exists journal_refusals_user_idx on public.journal_refusals (user_id, created_at desc);
-alter table public.journal_refusals enable row level security;
+drop trigger if exists journal_state_queue_photo_cleanup on public.journal_state;
+create trigger journal_state_queue_photo_cleanup
+  after delete on public.journal_state
+  for each row execute function public.queue_journal_photo_cleanup();
 
 -- Stored pictures that are, or look like, the one being recorded: sightings
 -- the server identified itself (any account), wall photos (any account), and
@@ -401,6 +438,19 @@ revoke all on function public.settle_legacy_scores() from public, anon, authenti
 grant execute on function public.settle_legacy_scores() to service_role;
 
 -- ---------- 4. a wall post takes its facts from the sighting it shares ----------
+-- feed_posts.sighting_id says which sighting a post shares. Every signed-in
+-- player can read wall posts, and a sighting's own id begins with the time it
+-- was logged, so what is stored is a one-way code of (account, sighting id):
+-- enough to allow one post per sighting, and it tells a reader nothing.
+create or replace function private.wall_sighting_code(p_user uuid, p_sighting text)
+returns text
+language sql
+immutable
+as $$
+  select encode(sha256(convert_to(p_user::text || ':' || p_sighting, 'UTF8')), 'hex');
+$$;
+revoke all on function private.wall_sighting_code(uuid, text) from public;
+
 alter table public.feed_posts add column if not exists sighting_id text;
 alter table public.feed_posts drop constraint if exists feed_posts_sighting_id_shape;
 alter table public.feed_posts add constraint feed_posts_sighting_id_shape
@@ -422,16 +472,22 @@ as $$
 declare
   claims_role text := coalesce(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role', '');
   j record;
+  in_journal boolean;
 begin
   if claims_role not in ('anon', 'authenticated') then
     return new;
   end if;
   if new.sighting_id is not null then
+    if new.sighting_id !~ '^[A-Za-z0-9_-]{6,64}$' then
+      raise exception 'not a sighting id' using errcode = 'check_violation';
+    end if;
     -- (Looked up as the person asking, not as whoever the row names.)
     select s.points, s.common_name, s.scientific_name into j
       from public.journal_sightings s
       where s.user_id = auth.uid() and s.id = new.sighting_id and s.deleted_at is null;
-    if found then
+    in_journal := found;
+    new.sighting_id := private.wall_sighting_code(auth.uid(), new.sighting_id);
+    if in_journal then
       new.points := j.points;
       new.common_name := j.common_name;
       new.scientific_name := j.scientific_name;
@@ -449,6 +505,22 @@ drop trigger if exists feed_posts_from_journal on public.feed_posts;
 create trigger feed_posts_from_journal
   before insert on public.feed_posts
   for each row execute function public.feed_post_from_journal();
+
+-- The caller's own wall post that shares this sighting, if there is one (the
+-- app asks when a second device tries to share the same sighting).
+create or replace function public.my_wall_post(p_sighting text)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id from public.feed_posts p
+  where p.user_id = auth.uid() and p.sighting_id = private.wall_sighting_code(auth.uid(), p_sighting)
+  limit 1;
+$$;
+revoke all on function public.my_wall_post(text) from public, anon;
+grant execute on function public.my_wall_post(text) to authenticated;
 
 -- ---------- 5. blocked language, checked here as well as in the app ----------
 -- >>> generated by scripts/gen-moderation-sql.ts from shared/moderation.ts: do not edit by hand >>>

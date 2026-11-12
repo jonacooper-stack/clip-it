@@ -13,6 +13,7 @@
 //     doesn't mention is left alone.
 import type { Sighting, IdStatus } from '@/types';
 import type { ScoreBreakdown } from '../../shared/scoring';
+import { approxPlace } from '../../shared/place';
 
 // A row of the cloud journal, as the server sends it and as the app reads it
 // from the table (public.journal_sightings).
@@ -22,9 +23,9 @@ export interface CloudRow {
   logged_at: string;
   updated_at?: string;
   deleted_at: string | null;
+  /** To two decimals (about a kilometre), and only if the player saves places. */
   lat: number | null;
   lng: number | null;
-  accuracy_m: number | null;
   status: string | null;
   common_name: string | null;
   scientific_name: string | null;
@@ -45,7 +46,7 @@ export interface CloudRow {
 
 // The columns the app reads (everything above; not the photo fingerprints or review notes).
 export const CLOUD_COLUMNS =
-  'id, observed_at, logged_at, updated_at, deleted_at, lat, lng, accuracy_m, status, common_name, scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo, science, proposed_species, wall_post_id';
+  'id, observed_at, logged_at, updated_at, deleted_at, lat, lng, status, common_name, scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo, science, proposed_species, wall_post_id';
 
 // Sightings that count: these are the ones kept in the cloud. Photos that
 // didn't count (a pet, a person, nothing found) stay on the device only.
@@ -83,7 +84,9 @@ function scienceLists(science: Record<string, unknown> | undefined): Record<stri
 // for a sighting scored on the phone before journals moved to the cloud, what
 // the phone knows about it.
 export function pushItem(s: Sighting, groupOf: (s: Sighting) => string | undefined, opts: { places?: boolean } = {}): Record<string, unknown> {
-  const where = opts.places === false ? {} : { lat: s.lat, lng: s.lng, accuracyM: s.accuracyM }; // the player may keep places on the phone
+  // Where it was taken leaves the phone only if the player saves places, and
+  // then only to two decimals (the exact spot stays here).
+  const where = (opts.places === true ? approxPlace(s.lat, s.lng) : null) ?? {};
   const item: Record<string, unknown> = {
     id: s.id,
     science: scienceLists(s.science),
@@ -124,7 +127,6 @@ export function fromCloudRow(r: CloudRow, now: number): Sighting {
     observedAt: Date.parse(r.observed_at) || now,
     lat: r.lat ?? undefined,
     lng: r.lng ?? undefined,
-    accuracyM: r.accuracy_m ?? undefined,
     species: r.scientific_name
       ? { scientificName: r.scientific_name, commonName: r.common_name ?? r.scientific_name, confidence: r.confidence ?? 0, group: r.taxon_group ?? undefined }
       : undefined,
@@ -280,12 +282,65 @@ export interface CloudState {
   totals: { points: number; speciesCount: number } | null;
   /** How far the device has read the cloud journal (the newest change it has seen). */
   pulledAt?: string;
-  /** The player's answer to "save my journal to my account": yes, not now, or not asked yet. */
+  /** The player's answer to "save my journal to my account": yes, no, or not settled yet on this device. */
   backup?: boolean;
-  /** Save where each sighting was taken with it (default yes). Off: places stay on this device. */
+  /** Save where each sighting was taken (approximately) with it. Off: places stay on this device. */
   places?: boolean;
+  /**
+   * The two choices as the account has them recorded, when last heard from
+   * the server (null backup: never answered). The choices belong to the
+   * account; `backup` and `places` above are what this device last set or
+   * learned, and are sent to the server when they differ from this.
+   */
+  saved?: { backup: 'yes' | 'no' | null; places: boolean };
+  /** The player asked for what is saved to the account to be deleted; still to be sent. */
+  erase?: boolean;
+  /** Which "edition" of the cloud journal this device has synced with (see Prefs.epoch on the server). */
+  epoch?: string | null;
 }
 
+// The account's choices as the server reports them.
+export interface AccountPrefs {
+  backup: 'yes' | 'no' | null;
+  places: boolean;
+  /** Changes when the saved journal is erased. */
+  epoch: string | null;
+}
+
+// Do the player's choices on this device still need telling to the server?
+export function prefsToSend(cloud: CloudState | null | undefined): { backup?: 'yes' | 'no'; places?: boolean } | null {
+  if (!cloud || cloud.backup === undefined) return null;
+  const want = cloud.backup ? 'yes' : 'no';
+  const places = cloud.backup && cloud.places === true;
+  const out: { backup?: 'yes' | 'no'; places?: boolean } = {};
+  if (!cloud.saved || cloud.saved.backup !== want) out.backup = want;
+  if (cloud.backup && (!cloud.saved || cloud.saved.places !== places)) out.places = places;
+  return Object.keys(out).length ? out : null;
+}
+
+// Take in what the server says the account's choices are. The account's
+// answer wins over this device's, with two exceptions: the account has no
+// answer yet (this device's, if any, is still to be sent), or the player
+// changed the choice here while the request was in the air (`sent` is what
+// this device had when it asked).
+export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPrefs, sent?: { backup?: boolean; places?: boolean }): CloudState {
+  const next = mergeCloud(cloud, { saved: { backup: prefs.backup, places: prefs.places } });
+  const changedMeanwhile = sent !== undefined && (next.backup !== sent.backup || next.places !== sent.places);
+  if (prefs.backup === null || changedMeanwhile) return next;
+  return { ...next, backup: prefs.backup === 'yes', places: prefs.places };
+}
+
+// The saved journal was erased (here or on another device) since this device
+// last synced: the account no longer holds any of these sightings. Forget
+// that they were ever sent, so that if the backup is turned on again they go
+// up afresh; a photo that existed only in the account is gone.
+export function forgetCloudCopies(sightings: Sighting[]): Sighting[] {
+  return sightings.map((s) => {
+    if (!s.cloudAt && !s.cloudSkip && !s.cloudPhoto) return s;
+    const { cloudAt: _a, cloudPhoto: _p, cloudPoints: _c, cloudSkip: _s, sentRev: _r, ...rest } = s;
+    return { ...rest, photoUri: typeof s.photoUri === 'string' && s.photoUri.startsWith('cloud:') ? undefined : s.photoUri };
+  });
+}
 
 // Change part of the cloud state, keeping the rest. Every change goes through
 // here: rebuilding the object by hand somewhere would drop whatever that

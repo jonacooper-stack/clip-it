@@ -10,9 +10,10 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { useJournalStore, distinctSpecies, purgeJournal, setCloudChoice } from '@/state/useJournalStore';
-import { askAboutBackup } from '@/lib/useJournalLoader';
+import { askAboutBackup } from '@/lib/backupChoice';
+import { askYesNo } from '@/lib/dialogs';
 import { playerPoints } from '@/lib/quests';
-import { pendingCount, syncJournal, useSyncStatus } from '@/lib/journalSync';
+import { pendingCount, scheduleJournalSync, syncJournal, turnOffBackup, useSyncStatus } from '@/lib/journalSync';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -62,14 +63,33 @@ export default function Profile() {
   const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
   const syncState = useSyncStatus((s) => s.state);
   const backupLabel =
-    cloud?.backup === false ? 'Journal backup: off. Tap to turn on'
+    cloud?.backup !== true ? 'Journal backup: off. Tap to turn on'
     : syncState === 'syncing' ? 'Journal backup: saving…'
     : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
     : cloud?.ready ? 'Journal backup: up to date'
     : 'Journal backup: not started yet';
   const onBackupRow = () => {
     if (cloud?.backup === true) void syncJournal({ force: true });
-    else if (uid) askAboutBackup(uid);
+    else if (uid) askAboutBackup(uid, { again: true, then: () => void syncJournal({ force: true }) });
+  };
+  // Stop saving the journal to the account, and offer to delete what is there.
+  const onTurnOffBackup = () => {
+    askYesNo(
+      'Turn off journal backup?',
+      'New sightings will stay on this phone only, and your score will stop counting on the leaderboard. You can turn the backup on again at any time.',
+      'Turn off',
+      'Cancel',
+      () =>
+        askYesNo(
+          'Delete what is saved to your account?',
+          'This deletes the copy of your journal that is saved to your account, including the copies of its photos. The sightings on this phone stay.',
+          'Delete it',
+          'Keep it',
+          () => void turnOffBackup({ erase: true }),
+          () => void turnOffBackup({ erase: false }),
+        ),
+      () => {},
+    );
   };
   const streak = useMemo(() => currentStreak(sightings), [sightings]);
   // Sightings in the journal: photos that turned out not to be wildlife (or
@@ -212,13 +232,19 @@ export default function Profile() {
               <Divider />
               {cloud?.backup === true && (
                 <>
-                  {/* Off: where each photo was taken stays on this phone and isn't saved with the journal. */}
+                  {/* On: roughly where each photo was taken (to about a kilometre) is saved with the journal.
+                      Off: places stay on this phone, and the ones already saved are removed. */}
                   <ToggleRow
                     icon="location-outline"
                     label="Save places with my journal"
-                    value={cloud.places !== false}
-                    onValueChange={(v) => setCloudChoice({ places: v })}
+                    value={cloud.places === true}
+                    onValueChange={(v) => {
+                      setCloudChoice({ places: v });
+                      scheduleJournalSync(300);
+                    }}
                   />
+                  <Divider />
+                  <Row icon="cloud-offline-outline" label="Turn off journal backup" onPress={onTurnOffBackup} />
                   <Divider />
                 </>
               )}

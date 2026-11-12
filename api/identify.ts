@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
-import { adminClient, DAILY_LIMITS, dailyLimitReached, rateLimited, secondsToUtcMidnight, usedToday, verifyUser } from './_lib/server';
+import { adminClient, DAILY_LIMITS, dailyLimitReached, rateLimited, secondsToUtcMidnight, usedToday, verifyPlayer } from './_lib/server';
 import { askText, ConfigError, ModelRefusal } from './_lib/claude';
 import {
   detectMediaType, IDENTIFY_SYSTEM, IDENTIFY_USER, MAX_IMAGE_BASE64, normalizeIdentification, parseModelJson, refuse, stripDataUrl,
@@ -14,6 +14,7 @@ import { supabaseJournalDb } from './_lib/journalDb';
 import { photoFingerprint, type Fingerprint } from './_lib/phash';
 import { signReceipt, type ReceiptPayload } from './_lib/receipt';
 import { importLooksGenuine, type PhotoEvidence } from '../shared/photoEvidence';
+import { approxPlace } from '../shared/place';
 
 // Real Claude identification. The app POSTs a base64 photo; we return species +
 // behavior tags + a rarity estimate, and the app's scoring engine turns that
@@ -25,11 +26,14 @@ import { importLooksGenuine, type PhotoEvidence } from '../shared/photoEvidence'
 // credit per request), within a per-minute burst limit and a daily allowance.
 //
 // When the app says which sighting the photo is for (`sightingId`, with when
-// and where it was taken), a result that counts is also written to the
-// player's cloud journal and scored here: the answer then carries the points.
-// If that can't be done right now, the answer carries a signed `receipt`
-// instead and the app has the sighting recorded on its next sync. App builds
-// that send only the photo get exactly the answer they always did.
+// and roughly where it was taken), a result that counts is also written to
+// the player's cloud journal and scored here: the answer then carries the
+// points. That happens only for an account that has answered the age question
+// and said yes to having its journal saved; the app sends those details only
+// then. If the sighting can't be recorded right now, the answer carries a
+// signed `receipt` instead and the app has it recorded on its next sync. A
+// request with only the photo gets exactly the answer it always did, and
+// nothing about it is kept.
 //
 // What the app says about a photo (taken with the camera or uploaded, whether
 // it carries camera details) is a hint, not proof: anyone can call this
@@ -74,9 +78,9 @@ interface CaptureMeta {
   sid: string | null;
   observedAt: number;
   loggedAt: number;
+  /** To two decimals: the exact spot is never kept, or put in a receipt. */
   lat: number | null;
   lng: number | null;
-  accuracyM: number | null;
   capture: 'camera' | 'library' | null;
   evidence: PhotoEvidence | null;
   tz: unknown;
@@ -88,18 +92,15 @@ function readMeta(b: Record<string, unknown>, now: number): CaptureMeta {
     const t = n(v);
     return t != null && t > Date.UTC(2015, 0, 1) && t < now + 86_400_000 ? t : fallback;
   };
-  const lat = n(b.lat);
-  const lng = n(b.lng);
-  const placed = lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const place = approxPlace(b.lat, b.lng);
   const e = b.evidence && typeof b.evidence === 'object' ? (b.evidence as Record<string, unknown>) : null;
   const observedAt = time(b.observedAt, now);
   return {
     sid: validSightingId(b.sightingId) ? b.sightingId : null,
     observedAt,
     loggedAt: time(b.loggedAt, now),
-    lat: placed ? lat : null,
-    lng: placed ? lng : null,
-    accuracyM: placed ? n(b.accuracyM) : null,
+    lat: place?.lat ?? null,
+    lng: place?.lng ?? null,
     capture: b.capture === 'camera' || b.capture === 'library' ? b.capture : null,
     evidence: e ? { camera: e.camera === true, screenshot: e.screenshot === true, generator: e.generator === true } : null,
     tz: b.tz,
@@ -143,8 +144,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const started = Date.now();
   const timeLeft = () => ANSWER_BY_MS - (Date.now() - started);
 
-  const userId = await verifyUser(req.headers.authorization, logFailure);
-  if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
+  const player = await verifyPlayer(req.headers.authorization, logFailure);
+  if (!player) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
+  const userId = player.userId;
   if (rateLimited(`identify:${userId}`, RATE_MAX)) {
     logFailure('rate_limited', { userId });
     res.setHeader('Retry-After', '60');
@@ -172,6 +174,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const meta = readMeta(body, Date.now());
+  // Nothing is recorded for an account that hasn't answered the age question
+  // (13 and up only): the photo is identified, and that is all.
+  if (!player.ageCleared) meta.sid = null;
 
   // A sighting the server has already identified and recorded (the app was
   // closed before the answer arrived, and is asking again), or one the player
@@ -241,7 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Record it in the player's journal and score it.
-    let journal: { receipt?: string; recorded: boolean; journal?: PublicRow; totals?: Totals | null } | undefined;
+    let journal: { receipt?: string; recorded: boolean; journal?: PublicRow; totals?: Totals | null; journalOff?: boolean } | undefined;
     const db = meta.sid && journalOn() ? adminClient() : null;
     // Two daily brakes that don't rest on anything the app says: a cap on
     // sightings that may score, and a pause once several photos in one day
@@ -253,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (id.eligible && meta.sid && id.idStatus !== 'rejected' && id.idStatus !== 'ineligible') {
       const payload: ReceiptPayload = {
         v: 1, uid: userId, sid: meta.sid, at: Date.now(), observedAt: meta.observedAt, loggedAt: meta.loggedAt,
-        lat: meta.lat, lng: meta.lng, accuracyM: meta.accuracyM, capture: meta.capture,
+        lat: meta.lat, lng: meta.lng, capture: meta.capture,
         cameraEvidence: meta.capture === 'library' && meta.evidence ? importLooksGenuine(meta.evidence) : null,
         id: {
           status: id.idStatus, common: id.species.commonName, sci: id.species.scientificName, group: id.species.group,
@@ -271,13 +276,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // for longer than the answer can wait.
           const done = await within(
             withJournalLock(jdb, userId, budget - 400, async () => {
+              // Only for an account that has said yes to having its journal
+              // saved (the choice is the account's: see journal_state.backup).
+              const state = await jdb.getState(userId);
+              if (state?.backup !== 'yes') return null;
               await noteTimeZone(jdb, userId, meta.tz);
-              const out = await recordSighting(jdb, payload, imageBase64);
+              const out = await recordSighting(jdb, payload, imageBase64, { places: state.save_places === true });
               return { out, totals: out.kind === 'recorded' && out.created ? await refreshTotals(jdb, userId) : null };
             }),
             budget,
           );
-          if (done?.out.kind === 'refused') {
+          if (done === null) {
+            journal = { ...journal, journalOff: true }; // the app's idea of the choice is out of date: it asks again
+          } else if (done?.out.kind === 'refused') {
             id = refuse(id, done.out.reason, done.out.message);
             journal = undefined;
           } else if (done?.out.kind === 'recorded') {

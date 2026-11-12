@@ -15,9 +15,9 @@ export interface ReceiptPayload {
   at: number; // when it was identified (ms)
   observedAt: number;
   loggedAt: number;
+  /** Where it was taken, to two decimals (see shared/place.ts), or null. */
   lat: number | null;
   lng: number | null;
-  accuracyM: number | null;
   capture: 'camera' | 'library' | null;
   /** For camera-roll photos: did the photo carry a camera's details? */
   cameraEvidence: boolean | null;

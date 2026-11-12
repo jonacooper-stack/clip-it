@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,8 @@ import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore, syncAccountNow } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { ageFrom, bracketFor, MONTHS, MONTH_NAMES } from '@/lib/age';
+import { eraseForUnder13, scheduleJournalSync } from '@/lib/journalSync';
+import { AGE_CHECK_VERSION } from '../../shared/age';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const MAX_YEAR = CURRENT_YEAR - 4; // youngest year accepted as input (under-13s are then turned away)
@@ -24,6 +26,9 @@ export default function AgeGate() {
   const blockedUntil = useAppStore((s) => s.ageBlockedUntil);
   const setBlockedUntil = useAppStore((s) => s.setAgeBlockedUntil);
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
+  // Someone who answered an earlier version of this question (the year only)
+  // and was filed as 13–17 is asked once more, with the month.
+  const askedBefore = useAppStore((s) => s.ageBracket === '13_17');
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const [text, setText] = useState('');
@@ -43,6 +48,17 @@ export default function AgeGate() {
   // day, so a different date can't just be entered straight afterwards.
   const blocked = blockedUntil != null && Date.now() < blockedUntil;
 
+  // An account can't be used from behind a closed gate (someone signed in
+  // with Google or Apple after an under-13 answer on this device): anything
+  // saved to its journal is deleted, and it is signed out.
+  const leave = () => {
+    void eraseForUnder13().finally(() => signOut().catch(() => {}));
+  };
+  useEffect(() => {
+    if (blocked && session) leave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocked, Boolean(session)]);
+
   // Numbers only, capped at four digits.
   const onChangeText = (t: string) => setText(t.replace(/[^0-9]/g, '').slice(0, 4));
 
@@ -50,16 +66,18 @@ export default function AgeGate() {
     if (!bracket || blocked) return;
     if (bracket === 'under_13') {
       setBlockedUntil(Date.now() + BLOCK_MS);
-      // Someone who got an account another way (Google / Apple sign-in) can't keep using it.
-      if (session) signOut().catch(() => {});
+      // Someone who got an account another way (Google / Apple sign-in, or an
+      // earlier version of this question) can't keep using it.
+      if (session) leave();
       return;
     }
-    setAge(bracket, false);
+    setAge(bracket, false, AGE_CHECK_VERSION);
     if (!isSupabaseConfigured) return router.push('/onboarding/ethos');
     // Not signed in yet: create an account / sign in next. Already signed in
     // (asked here after a Google or Apple sign-in): carry on where they were headed.
     if (!session) return router.push('/onboarding/account');
     syncAccountNow(); // save the age range on the account
+    scheduleJournalSync(2500); // the journal waits for this answer (and for it to reach the account)
     if (hasOnboarded) return router.replace('/feed');
     router.replace(useAppStore.getState().homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos');
   };
@@ -72,7 +90,9 @@ export default function AgeGate() {
         </View>
         <Text style={styles.title}>When were you born?</Text>
         <Text style={styles.subtitle}>
-          Pick the month and type the year. We store your age range, never your birth date.
+          {askedBefore && session
+            ? 'We now ask for the month as well as the year. Pick the month and type the year. We store your age range, never your birth date.'
+            : 'Pick the month and type the year. We store your age range, never your birth date.'}
         </Text>
       </View>
 

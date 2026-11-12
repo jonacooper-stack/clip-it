@@ -512,11 +512,13 @@ export async function shareToWall(input: {
   // A database that hasn't had migration 0011 has no sighting_id column: post without it.
   if (error && input.sightingId && missingColumn(error)) ({ data: inserted, error } = await insert(post));
   if (error?.code === '23505' && input.sightingId) {
-    // Already shared (from another device, or a double tap): hand back that post.
-    const { data: existing } = await supabase.from('feed_posts').select('id').eq('user_id', uid).eq('sighting_id', input.sightingId).maybeSingle();
-    if ((existing as any)?.id) {
+    // Already shared (from another device, or a double tap): hand back that
+    // post. (The post doesn't carry the sighting's id in a readable form, so
+    // the database is asked which of my posts it is.)
+    const { data: existing } = await supabase.rpc('my_wall_post', { p_sighting: input.sightingId });
+    if (typeof existing === 'string' && existing) {
       if (photoUrl) void removeWallPhoto(photoUrl);
-      return { postId: (existing as any).id as string };
+      return { postId: existing };
     }
   }
   return error ? { error: error.message } : { postId: (inserted as any)?.id as string | undefined };

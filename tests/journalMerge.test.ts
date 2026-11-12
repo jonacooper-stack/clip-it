@@ -4,7 +4,10 @@
 // deleted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, fromCloudRow, mergeCloud, mergeRows, needsPush, pushItem, worthReidentifying, type CloudRow } from '../src/lib/journalMerge';
+import {
+  applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, forgetCloudCopies, fromCloudRow, mergeCloud, mergeRows, needsPush, prefsToSend, pushItem,
+  takePrefs, worthReidentifying, type CloudRow,
+} from '../src/lib/journalMerge';
 import type { Sighting } from '../src/types';
 
 const NOW = Date.parse('2026-11-12T15:00:00Z');
@@ -14,7 +17,7 @@ const local = (id: string, over: Partial<Sighting> = {}): Sighting => ({
   species: { scientificName: 'Pandion haliaetus', commonName: 'Osprey', confidence: 0.9, group: 'bird' }, photoUri: `photos/${id}.jpg`, ...over,
 });
 const cloud = (id: string, over: Partial<CloudRow> = {}): CloudRow => ({
-  id, observed_at: new Date(NOW - 6000).toISOString(), logged_at: new Date(NOW - 5000).toISOString(), deleted_at: null, lat: 44.1, lng: -72.5, accuracy_m: 10,
+  id, observed_at: new Date(NOW - 6000).toISOString(), logged_at: new Date(NOW - 5000).toISOString(), deleted_at: null, lat: 44.1, lng: -72.5,
   status: 'ai_confident', common_name: 'Osprey', scientific_name: 'Pandion haliaetus', taxon_group: 'bird', confidence: 0.9, scene_tags: ['in_flight'], caption: 'An osprey.',
   dangerous: false, points: 14, score: score(14), verified: true, capture: 'camera', has_photo: true, science: null, proposed_species: null, wall_post_id: null, ...over,
 });
@@ -40,7 +43,7 @@ test('a sighting is sent when the cloud has never seen it, or the player changed
 test('what is sent: the receipt when there is one, the phone\'s own record for an older sighting, only the edits once it is in the cloud', () => {
   const withReceipt = pushItem(local('a', { receipt: 'body.sig', science: { count: ['2'] } }), groupOf);
   assert.deepEqual(withReceipt, { id: 'a', science: { count: ['2'] }, wallPostId: null, receipt: 'body.sig' });
-  const legacy = pushItem(local('b', { lat: 1, lng: 2, caption: 'hi', capture: 'library' }), groupOf) as any;
+  const legacy = pushItem(local('b', { lat: 1, lng: 2, caption: 'hi', capture: 'library' }), groupOf, { places: true }) as any;
   assert.equal(legacy.receipt, undefined);
   assert.deepEqual([legacy.legacy.sci, legacy.legacy.common, legacy.legacy.group, legacy.legacy.points, legacy.legacy.status, legacy.legacy.lat, legacy.legacy.capture], ['Pandion haliaetus', 'Osprey', 'bird', 11, 'ai_confident', 1, 'library']);
   const edits = pushItem(local('c', { cloudAt: NOW - 10, rev: 1, proposedSpecies: 'Bald eagle', wallPostId: 'p1', receipt: 'stale' }), groupOf);
@@ -140,11 +143,22 @@ test('a change made while a sync was in the air is not lost: it is still waiting
   assert.deepEqual(applyPushAnswers([other], { c: cloud('c') }, new Map(), NOW), [other]);
 });
 
-test('places can stay on the phone: a sighting then goes up without where it was taken', () => {
-  const s = local('a', { lat: 44.1, lng: -72.5, accuracyM: 8 });
-  assert.deepEqual([(pushItem(s, groupOf) as any).legacy.lat, (pushItem(s, groupOf) as any).legacy.lng], [44.1, -72.5]);
-  const without = (pushItem(s, groupOf, { places: false }) as any).legacy;
-  assert.equal('lat' in without || 'lng' in without || 'accuracyM' in without, false);
+test('where a sighting was taken leaves the phone only if the player saves places, and then only roughly', () => {
+  const s = local('a', { lat: 44.123456, lng: -72.987654, accuracyM: 8 });
+  // saving places: two decimals (about a kilometre), never the exact spot, never the GPS accuracy
+  const withPlaces = (pushItem(s, groupOf, { places: true }) as any).legacy;
+  assert.deepEqual([withPlaces.lat, withPlaces.lng, 'accuracyM' in withPlaces], [44.12, -72.99, false]);
+  // not saving places (also when the choice hasn't been made): nothing about where
+  for (const opts of [{ places: false }, {}, undefined]) {
+    const without = (pushItem(s, groupOf, opts) as any).legacy;
+    assert.equal('lat' in without || 'lng' in without || 'accuracyM' in without, false);
+  }
+  // the journal on the phone keeps the exact spot
+  assert.deepEqual([s.lat, s.lng], [44.123456, -72.987654]);
+  // a sighting restored from the account shows the rough place it was saved with
+  assert.deepEqual([fromCloudRow(cloud('z', { lat: 44.12, lng: -72.99 }), NOW).lat, fromCloudRow(cloud('z', { lat: null, lng: null }), NOW).lat], [44.12, undefined]);
+  // and syncing never replaces the phone's exact spot with the rough one
+  assert.deepEqual([applyCloudRow(s, cloud('a', { lat: 44.12, lng: -72.99 }), NOW).lat, applyCloudRow(s, cloud('a', { lat: null, lng: null }), NOW).lat], [44.123456, 44.123456]);
 });
 
 test('a phone-scored sighting the server counts for nothing is offered to the server to identify itself', () => {
@@ -164,4 +178,57 @@ test('a sync answer never wipes the player\'s choices (backup on or off, places 
   const afterPull = mergeCloud(afterSync, { pulledAt: '2026-11-12T15:00:00Z' });
   assert.deepEqual([afterPull.backup, afterPull.places, afterPull.ready, afterPull.pulledAt], [true, false, true, '2026-11-12T15:00:00Z']);
   assert.equal(mergeCloud(mergeCloud(null, { backup: false }), { totals: null }).backup, false); // "Not now" stays "Not now"
+});
+
+// ---------- the player's choices belong to the account ----------
+test('a choice made on this device is sent until the account has it', () => {
+  assert.equal(prefsToSend(null), null);
+  assert.equal(prefsToSend(mergeCloud(null, {})), null); // not answered here: nothing to say
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: true })), { backup: 'yes', places: true });
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true })), { backup: 'yes', places: false }); // places not chosen counts as off
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: false })), { backup: 'no' });
+  // the account already has it
+  assert.equal(prefsToSend(mergeCloud(null, { backup: true, places: false, saved: { backup: 'yes', places: false } })), null);
+  assert.equal(prefsToSend(mergeCloud(null, { backup: false, saved: { backup: 'no', places: false } })), null);
+  // only what differs is sent
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: true, places: true, saved: { backup: 'yes', places: false } })), { places: true });
+  assert.deepEqual(prefsToSend(mergeCloud(null, { backup: false, saved: { backup: 'yes', places: true } })), { backup: 'no' });
+});
+
+test('the account\'s answer is followed on every device; one that has not answered is never taken as a yes', () => {
+  // a new device: the account says yes, with places off
+  const fresh = takePrefs(null, { backup: 'yes', places: false, epoch: null });
+  assert.deepEqual([fresh.backup, fresh.places, prefsToSend(fresh)], [true, false, null]);
+  // the account says no (turned off on another device): this device stops too
+  const stopped = takePrefs(mergeCloud(null, { backup: true, places: true, saved: { backup: 'yes', places: true } }), { backup: 'no', places: false, epoch: null });
+  assert.deepEqual([stopped.backup, stopped.places], [false, false]);
+  // the account has never answered: this device has no answer either (so the player is asked)…
+  assert.equal(takePrefs(null, { backup: null, places: false, epoch: null }).backup, undefined);
+  // …and an answer just given here stands, and is still to be sent
+  const answered = takePrefs(mergeCloud(null, { backup: true, places: true }), { backup: null, places: false, epoch: null });
+  assert.deepEqual([answered.backup, answered.places, prefsToSend(answered)], [true, true, { backup: 'yes', places: true }]);
+  // a choice changed here while a request was in the air is not overwritten by that request's answer
+  const before = { backup: true, places: true };
+  const toggled = mergeCloud(mergeCloud(null, { ...before, saved: { backup: 'yes', places: true } }), { places: false });
+  const afterAnswer = takePrefs(toggled, { backup: 'yes', places: true, epoch: null }, before);
+  assert.deepEqual([afterAnswer.places, prefsToSend(afterAnswer)], [false, { places: false }]);
+  // the same answer with nothing changed here is simply taken
+  assert.equal(takePrefs(mergeCloud(null, { ...before, saved: { backup: 'yes', places: true } }), { backup: 'yes', places: false, epoch: null }, before).places, false);
+});
+
+test('after the saved journal is erased, sightings are no longer taken to be in the account', () => {
+  const journal = [
+    local('a', { cloudAt: NOW - 10, cloudPhoto: true, cloudPoints: 11, verified: true, rev: 2, sentRev: 2 }),
+    local('b', { cloudAt: NOW - 10, photoUri: 'cloud:b', cloudPhoto: true }), // its photo existed only in the account
+    local('c', { cloudSkip: true }),
+    local('d'), // never sent
+  ];
+  const after = forgetCloudCopies(journal);
+  assert.equal(after.length, 4); // nothing leaves the phone
+  assert.deepEqual(after.map((s) => [s.cloudAt, s.cloudPhoto, s.cloudPoints, s.cloudSkip]), [[undefined, undefined, undefined, undefined], [undefined, undefined, undefined, undefined], [undefined, undefined, undefined, undefined], [undefined, undefined, undefined, undefined]]);
+  assert.deepEqual(after.map((s) => s.photoUri), ['photos/a.jpg', undefined, 'photos/c.jpg', 'photos/d.jpg']);
+  assert.deepEqual(after.map((s) => s.points), [11, 11, 11, 11]); // the journal on the phone keeps its points
+  // if the backup is turned on again they all go up afresh, with the player's notes
+  assert.deepEqual(after.map(needsPush), [true, true, true, true]);
+  assert.equal(after[3], journal[3]); // untouched ones are not copied
 });

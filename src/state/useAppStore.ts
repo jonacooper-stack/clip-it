@@ -11,6 +11,12 @@ interface AppState {
   hasOnboarded: boolean;
   ageBracket: AgeBracket | null;
   isChild: boolean;
+  /**
+   * Which version of the age question was answered: 2 = month and year. The
+   * first version asked the year only, which could let in a 12-year-old who
+   * turns 13 later in the year, so a 13–17 answer from it is asked again.
+   */
+  ageCheck: number | null;
   displayName: string;
   avatarUrl: string | null;
   saveToCameraRoll: boolean;
@@ -28,7 +34,7 @@ interface AppState {
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
-  setAge: (bracket: AgeBracket, isChild: boolean) => void;
+  setAge: (bracket: AgeBracket, isChild: boolean, ageCheck?: number | null) => void;
   setDisplayName: (name: string) => void;
   setAvatarUrl: (url: string | null) => void;
   setSaveToCameraRoll: (v: boolean) => void;
@@ -48,6 +54,7 @@ export const useAppStore = create<AppState>()(
       hasOnboarded: false,
       ageBracket: null,
       isChild: false,
+      ageCheck: null,
       displayName: 'Explorer',
       avatarUrl: null,
       saveToCameraRoll: true,
@@ -58,7 +65,8 @@ export const useAppStore = create<AppState>()(
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
-      setAge: (ageBracket, isChild) => set({ ageBracket, isChild }),
+      // (Leaving `ageCheck` out keeps the one already known.)
+      setAge: (ageBracket, isChild, ageCheck) => set((s) => ({ ageBracket, isChild, ageCheck: ageCheck === undefined ? s.ageCheck : ageCheck })),
       setDisplayName: (displayName) => set({ displayName }),
       setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
       setSaveToCameraRoll: (saveToCameraRoll) => set({ saveToCameraRoll }),
@@ -70,13 +78,14 @@ export const useAppStore = create<AppState>()(
       // On sign-out. The next person to sign in on this device must not
       // inherit this one's name, picture, age range or privacy choice.
       clearAccount: () =>
-        set({ ageBracket: null, isChild: false, displayName: 'Explorer', avatarUrl: null, discoverable: null }),
+        set({ ageBracket: null, isChild: false, ageCheck: null, displayName: 'Explorer', avatarUrl: null, discoverable: null }),
 
       reset: () =>
         set({
           hasOnboarded: false,
           ageBracket: null,
           isChild: false,
+          ageCheck: null,
           displayName: 'Explorer',
           avatarUrl: null,
           saveToCameraRoll: true,

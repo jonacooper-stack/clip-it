@@ -58,11 +58,8 @@ export default function Identifying() {
       try {
         const outcome = await identifySighting({
           photoBase64: base64,
-          lat: current?.lat,
-          lng: current?.lng,
-          accuracyM: current?.accuracyM,
-          observedAt: current?.observedAt ?? Date.now(),
-          // For the cloud journal (nothing, while the player hasn't agreed to it).
+          // For the cloud journal (nothing, while the player hasn't agreed to it:
+          // then the photo is all that is sent).
           ...(current ? cloudFieldsFor(current) : {}),
         });
         if (cancelled.current) return;

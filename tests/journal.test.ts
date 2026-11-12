@@ -24,7 +24,9 @@ const B = '00000000-0000-4000-8000-00000000000b';
 const NOW = Date.parse('2026-11-12T15:00:00Z');
 const DAY = 86_400_000;
 
-function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
+// `choice`: what the accounts have answered to "save my journal to my account"
+// (most tests are about accounts that said yes, places included).
+function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 'yes' | 'no' | null; places?: boolean | null } = {}) {
   const rows = new Map<string, JournalRow>();
   const states = new Map<string, JournalState>();
   const profiles = new Map<string, { points: number; species_count: number }>();
@@ -34,7 +36,12 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
   const wallFacts = new Map<string, { points: number; common_name: string | null; scientific_name: string | null }>();
   const locks = new Set<string>();
   const key = (uid: string, sid: string) => `${uid}/${sid}`;
-  const state = (uid: string): JournalState => states.get(uid) ?? { user_id: uid, tz: null, ready_at: null, baseline_points: 0, carryover_points: 0, legacy_allowance: 0 };
+  const state = (uid: string): JournalState =>
+    states.get(uid) ?? {
+      user_id: uid, tz: null, ready_at: null, baseline_points: 0, carryover_points: 0, legacy_allowance: 0,
+      backup: choice.backup === undefined ? 'yes' : choice.backup, save_places: choice.places === undefined ? true : choice.places, erased_at: null,
+    };
+  const storage = { failing: false }; // set to make photo removal fail, as storage sometimes does
   const tick = () => new Promise((r) => setTimeout(r, 0)); // every call yields, as a real database call does
   const jdb: JournalDb = {
     async getRow(uid, sid) { await tick(); return rows.get(key(uid, sid)) ?? null; },
@@ -59,13 +66,20 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
       return true;
     },
     async updateRow(uid, sid, patch) { await tick(); rows.set(key(uid, sid), { ...rows.get(key(uid, sid))!, ...patch }); },
-    async getState(uid) { await tick(); return states.get(uid) ?? null; },
+    // (A row always exists by the time anything asks: taking the lock creates it.)
+    async getState(uid) { await tick(); return state(uid); },
     async saveState(uid, patch) { await tick(); states.set(uid, { ...state(uid), ...patch }); },
     async setProfileTotals(uid, points, species_count) { await tick(); profiles.set(uid, { points, species_count }); },
     async setWallPostFacts(_uid, postId, facts) { wallFacts.set(postId, facts); },
     async legacyUntil() { return legacyUntil; },
     async putPhoto(uid, sid, bytes) { photos.set(key(uid, sid), bytes); return true; },
-    async removePhotos(uid, sids) { for (const s of sids) photos.delete(key(uid, s)); },
+    async removePhotos(uid, sids) { if (storage.failing) return false; for (const s of sids) photos.delete(key(uid, s)); return true; },
+    async clearPhotoFlags(uid, sids) { for (const s of sids) rows.set(key(uid, s), { ...rows.get(key(uid, s))!, has_photo: false }); },
+    async clearPlaces(uid) { for (const [k, r] of rows) if (r.user_id === uid) rows.set(k, { ...r, lat: null, lng: null }); },
+    async deleteJournal(uid) {
+      for (const [k, r] of rows) if (r.user_id === uid) rows.delete(k);
+      for (let i = refusals.length - 1; i >= 0; i--) if (refusals[i].user_id === uid) refusals.splice(i, 1);
+    },
     async purgePhotos(uid) { for (const k of [...photos.keys()]) if (k.startsWith(`${uid}/`)) photos.delete(k); },
     async logRefusal(entry) { refusals.push(entry); },
     async tryLock(uid) { await tick(); if (locks.has(uid)) return false; locks.add(uid); return true; },
@@ -73,7 +87,7 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY) {
   };
   // An account that existed when the migration ran: the database gave it a baseline and an allowance.
   const existing = (uid: string, baseline: number, allowance: number) => states.set(uid, { ...state(uid), baseline_points: baseline, carryover_points: baseline, legacy_allowance: allowance });
-  return { jdb, rows, states, profiles, photos, wall, refusals, wallFacts, existing, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
+  return { jdb, rows, states, profiles, photos, wall, refusals, wallFacts, existing, storage, state, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
 }
 
 // Fingerprints with a real pattern, far apart from each other, and copies a few bits away.
@@ -84,7 +98,7 @@ const sighting = (over: Omit<Partial<ReceiptPayload>, 'id'> & { id?: Partial<Rec
   const { id, ...rest } = over;
   const phash = fresh();
   return {
-    v: 1, uid: A, sid: `sight-${n}-abc`, at: NOW, observedAt: NOW - 3600_000, loggedAt: NOW - 3000_000, lat: 44.1, lng: -72.5, accuracyM: 10,
+    v: 1, uid: A, sid: `sight-${n}-abc`, at: NOW, observedAt: NOW - 3600_000, loggedAt: NOW - 3000_000, lat: 44.1234, lng: -72.5678,
     capture: 'camera', cameraEvidence: null,
     id: { status: 'ai_confident', common: 'Osprey', sci: 'Pandion haliaetus', group: 'bird', confidence: 0.93, rarity: 0.4, tags: [], dangerous: false, caption: 'An osprey.', ...id },
     sha: createHash('sha256').update(`bytes-${n}`).digest('hex'), phash, model: 'test', ...rest,
@@ -100,7 +114,7 @@ const madeUp = (i: number) => `Fakeus number${String.fromCharCode(97 + (i % 26))
 test('a recorded sighting is scored by the server, and recording it twice changes nothing', async () => {
   const { jdb, row } = fakeDb();
   const p = sighting({ id: { rarity: 0.5, tags: ['in_flight'] } });
-  const first = await recordSighting(jdb, p);
+  const first = await recordSighting(jdb, p, null, { places: true });
   assert.equal(first.kind, 'recorded');
   const r = row(A, p.sid);
   assert.equal(r.verified, true);
@@ -108,7 +122,12 @@ test('a recorded sighting is scored by the server, and recording it twice change
   assert.equal(r.score!.behaviorMultiplier, 1.5);
   assert.equal(r.score!.bonuses.firstOfSpecies, 5);
   assert.equal(r.points, 14); // round(6 × 1.5) + 5
-  assert.deepEqual([r.lat, r.lng, r.status, r.scientific_name], [44.1, -72.5, 'ai_confident', 'Pandion haliaetus']);
+  // the place is kept to two decimals (about a kilometre), never the exact spot
+  assert.deepEqual([r.lat, r.lng, r.status, r.scientific_name], [44.12, -72.57, 'ai_confident', 'Pandion haliaetus']);
+  // and not at all unless the player saves places
+  const unplaced = sighting();
+  await recordSighting(jdb, unplaced);
+  assert.deepEqual([row(A, unplaced.sid).lat, row(A, unplaced.sid).lng], [null, null]);
   const again = await recordSighting(jdb, { ...p, id: { ...p.id, rarity: 1 } }); // a retry, or a tampered resend
   assert.equal(again.kind === 'recorded' && again.created, false);
   assert.equal(row(A, p.sid).points, 14);
@@ -217,14 +236,19 @@ test('deleting empties the sighting but its species and fingerprints still count
   const { jdb, row, photos } = fakeDb();
   const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 9)]);
   const first = sighting({ id: { rarity: 0.5 }, sha: createHash('sha256').update(jpg).digest('hex') });
-  await recordSighting(jdb, first, jpg.toString('base64'));
+  await recordSighting(jdb, first, jpg.toString('base64'), { places: true });
   assert.equal(photos.size, 1);
   assert.deepEqual(await deleteSightings(jdb, A, [first.sid], NOW), [first.sid]);
   const gone = row(A, first.sid);
   assert.ok(gone.deleted_at);
   assert.deepEqual([gone.lat, gone.lng, gone.caption, gone.common_name, gone.points, gone.status], [null, null, null, null, 0, null]);
+  // the marker keeps only what it is for: the species and the fingerprints. Not when or how the photo was taken.
   assert.equal(gone.scientific_name, 'Pandion haliaetus');
+  assert.equal(gone.photo_phash, first.phash);
+  const at = new Date(NOW).toISOString();
+  assert.deepEqual([gone.observed_at, gone.logged_at, gone.recorded_at, gone.taxon_group, gone.capture, gone.model], [at, at, at, null, null, null]);
   assert.equal(photos.size, 0);
+  assert.equal(gone.has_photo, false);
   // the same species again: no first-time bonus
   const again = sighting({ id: { rarity: 0.5 } });
   await recordSighting(jdb, again);
@@ -510,7 +534,7 @@ test('totals are the shared quest rules run in the player\'s time zone', async (
     const [sci, group] = species[i % species.length];
     await recordSighting(jdb, sighting({ observedAt: NOW - i * 0.9 * DAY, id: { sci, common: sci, group, rarity: 0.3 } }));
   }
-  states.set(A, { user_id: A, tz: 'pacific/auckland', ready_at: new Date(NOW).toISOString(), baseline_points: 7, carryover_points: 7, legacy_allowance: 0 });
+  states.set(A, { user_id: A, tz: 'pacific/auckland', ready_at: new Date(NOW).toISOString(), baseline_points: 7, carryover_points: 7, legacy_allowance: 0, backup: 'yes', save_places: true, erased_at: null });
   const totals = (await refreshTotals(jdb, A, NOW))!;
   // (a sighting handed in more than a week after it was taken counts when it was handed in)
   const when = (r: JournalRow) => (Date.parse(r.recorded_at!) - Date.parse(r.observed_at) > 7 * DAY ? Date.parse(r.recorded_at!) : Date.parse(r.observed_at));
@@ -587,4 +611,89 @@ test('recording at identify time does not switch an account or touch its score; 
   const out = await syncJournal(jdb, A, {}, { now: NOW });
   assert.equal(out.ready, true);
   assert.ok(out.totals!.points > 0);
+});
+
+// ---------- the player's choices ----------
+test('nothing is stored for an account that has not said yes; saying yes is recorded on the account', async () => {
+  const { jdb, rows, state, existing } = fakeDb(NOW + 30 * DAY, { backup: null, places: null });
+  existing(A, 0, 5000);
+  const item = { id: 'legacy-000001', legacy: claim() };
+  const before = await syncJournal(jdb, A, { tz: 'Europe/Paris', items: [item] }, { now: NOW });
+  assert.deepEqual([before.rows, before.prefs, before.ready, rows.size], [{}, { backup: null, places: false, epoch: null }, false, 0]);
+  assert.equal(state(A).tz, null); // not even the time zone
+  const after = await syncJournal(jdb, A, { tz: 'Europe/Paris', prefs: { backup: 'yes', places: false }, items: [item] }, { now: NOW });
+  assert.deepEqual(after.prefs, { backup: 'yes', places: false, epoch: null });
+  assert.equal(rows.size, 1);
+  assert.deepEqual([state(A).backup, state(A).save_places === true, state(A).tz], ['yes', false, 'Europe/Paris']);
+  // places off: the sighting is saved without where it was taken
+  assert.deepEqual([[...rows.values()][0].lat, [...rows.values()][0].lng], [null, null]);
+  // an answer that isn't yes or no changes nothing
+  assert.deepEqual((await syncJournal(jdb, A, { prefs: { backup: 'maybe', places: 'yes' } }, { now: NOW })).prefs, { backup: 'yes', places: false, epoch: null });
+});
+
+test('places: saved to two decimals when on; switching them off forgets the ones already saved', async () => {
+  const { jdb, rows, row } = fakeDb(NOW + 30 * DAY, { backup: 'yes', places: true });
+  const p = sighting({ lat: 44.123456, lng: -72.987654 });
+  await syncJournal(jdb, A, { items: [{ id: p.sid, receipt: signReceipt(p) }, { id: 'legacy-000002', legacy: claim({ lat: 51.50074, lng: -0.12462 }) }] }, { now: NOW });
+  assert.deepEqual([row(A, p.sid).lat, row(A, p.sid).lng], [44.12, -72.99]);
+  assert.deepEqual([row(A, 'legacy-000002').lat, row(A, 'legacy-000002').lng], [51.5, -0.12]);
+  const off = await syncJournal(jdb, A, { prefs: { places: false } }, { now: NOW });
+  assert.equal(off.prefs.places, false);
+  assert.ok([...rows.values()].every((r) => r.lat === null && r.lng === null));
+  // and a sighting recorded from now on has none either
+  const next = sighting();
+  await syncJournal(jdb, A, { items: [{ id: next.sid, receipt: signReceipt(next) }] }, { now: NOW });
+  assert.deepEqual([row(A, next.sid).lat, row(A, next.sid).lng], [null, null]);
+});
+
+test('turning the backup off stops new sightings being stored; a deletion is still honoured', async () => {
+  const { jdb, rows, row } = fakeDb();
+  const kept = sighting();
+  await syncJournal(jdb, A, { items: [{ id: kept.sid, receipt: signReceipt(kept) }] }, { now: NOW });
+  const off = await syncJournal(jdb, A, { prefs: { backup: 'no' } }, { now: NOW });
+  assert.equal(off.prefs.backup, 'no');
+  const late = sighting();
+  const out = await syncJournal(jdb, A, { items: [{ id: late.sid, receipt: signReceipt(late) }] }, { now: NOW });
+  assert.deepEqual([out.rows, rows.size], [{}, 1]); // what was saved stays; nothing new is added
+  const del = await syncJournal(jdb, A, { deletes: [kept.sid] }, { now: NOW });
+  assert.deepEqual(del.deleted, [kept.sid]);
+  assert.ok(row(A, kept.sid).deleted_at);
+});
+
+test('erase removes everything saved to the account: rows, markers, notes, photos and the time zone', async () => {
+  const { jdb, rows, photos, refusals, profiles, state, existing } = fakeDb();
+  existing(A, 300, 5000);
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7)]);
+  const shot = sighting({ sha: createHash('sha256').update(jpg).digest('hex') });
+  const other = sighting({ uid: B });
+  await recordSighting(jdb, other);
+  await syncJournal(jdb, A, { tz: 'Europe/Paris', items: [{ id: shot.sid, receipt: signReceipt(shot), photoBase64: jpg.toString('base64') }, { id: 'legacy-000003', legacy: claim() }], deletes: ['gone-000001'] }, { now: NOW });
+  await recordSighting(jdb, sighting({ uid: A, sha: other.sha, phash: other.phash })); // refused: leaves a note
+  assert.deepEqual([[...rows.values()].filter((r) => r.user_id === A).length, photos.size, refusals.length], [3, 1, 1]);
+  const out = await syncJournal(jdb, A, { erase: true }, { now: NOW });
+  assert.deepEqual([[...rows.values()].filter((r) => r.user_id === A).length, photos.size, refusals.length], [0, 0, 0]);
+  assert.deepEqual([state(A).tz, state(A).backup, state(A).save_places], [null, 'no', false]);
+  // (the account's "epoch" changes, so other devices know to send their sightings afresh if the backup is ever turned on again)
+  assert.deepEqual(out.prefs, { backup: 'no', places: false, epoch: new Date(NOW).toISOString() });
+  // someone else's journal is untouched
+  assert.equal([...rows.values()].filter((r) => r.user_id === B).length, 1);
+  // the score falls back to what is left of the carried-over baseline, and never rises again by erasing
+  assert.ok(profiles.get(A)!.points <= 300);
+  assert.equal(profiles.get(A)!.species_count, 0);
+  // nothing more is stored afterwards
+  const again = sighting();
+  assert.deepEqual((await syncJournal(jdb, A, { items: [{ id: again.sid, receipt: signReceipt(again) }] }, { now: NOW })).rows, {});
+});
+
+test('a stored photo that could not be removed is tried again; the marker says so until it is gone', async () => {
+  const { jdb, row, photos, storage } = fakeDb();
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 3)]);
+  const shot = sighting({ sha: createHash('sha256').update(jpg).digest('hex') });
+  await recordSighting(jdb, shot, jpg.toString('base64'));
+  storage.failing = true;
+  await deleteSightings(jdb, A, [shot.sid], NOW);
+  assert.deepEqual([Boolean(row(A, shot.sid).deleted_at), row(A, shot.sid).has_photo, photos.size], [true, true, 1]);
+  storage.failing = false;
+  await deleteSightings(jdb, A, [shot.sid], NOW + 1000); // the app's retry, or the nightly job
+  assert.deepEqual([row(A, shot.sid).has_photo, photos.size], [false, 0]);
 });

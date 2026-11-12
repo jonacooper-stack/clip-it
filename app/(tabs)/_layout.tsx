@@ -7,6 +7,7 @@ import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useProfileSync } from '@/lib/useProfileSync';
+import { ageIsSettled } from '../../shared/age';
 
 // The raised "ClipIt" camera button in the center of the tab bar — the primary
 // action, always one tap away.
@@ -28,6 +29,7 @@ function CaptureButton() {
 export default function TabsLayout() {
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
   const ageBracket = useAppStore((s) => s.ageBracket);
+  const ageCheck = useAppStore((s) => s.ageCheck);
   const session = useAuthStore((s) => s.session);
   // Reserve the device's safe areas so the full tab bar sits inside the screen
   // instead of being clipped by the home indicator or the rounded display corners.
@@ -43,7 +45,10 @@ export default function TabsLayout() {
   if (isSupabaseConfigured && !session) return <Redirect href="/onboarding/welcome" />;
   // ClipIt is 13+: an account that has never passed the age check (one made
   // through Google sign-in on the web, say) answers it before going further.
-  if (isSupabaseConfigured && !ageBracket) return <Redirect href="/onboarding/age-gate" />;
+  // So does a 13–17 account from when the question asked the year only (that
+  // could let in a 12-year-old who turns 13 later in the year): once more,
+  // with the month.
+  if (isSupabaseConfigured && !ageIsSettled(ageBracket, ageCheck)) return <Redirect href="/onboarding/age-gate" />;
   // A signed-in user who hasn't finished the intro (e.g. returning from the Google
   // redirect) just needs the ethos step; a local-only user starts at welcome.
   if (!hasOnboarded) {

@@ -6,7 +6,7 @@ const UID = '11111111-1111-4111-8111-111111111111';
 const now = Date.parse('2026-11-12T12:00:00Z');
 const payload = (over: Partial<ReceiptPayload> = {}): ReceiptPayload => ({
   v: 1, uid: UID, sid: 'mhx1abc-9f3k2a', at: now - 5000, observedAt: now - 60_000, loggedAt: now - 6000,
-  lat: 44.1, lng: -72.5, accuracyM: 12, capture: 'camera', cameraEvidence: null,
+  lat: 44.1, lng: -72.5, capture: 'camera', cameraEvidence: null,
   id: { status: 'ai_confident', common: 'Osprey', sci: 'Pandion haliaetus', group: 'bird', confidence: 0.93, rarity: 0.4, tags: ['in_flight'], dangerous: false, caption: 'An osprey over the lake.' },
   sha: 'ab'.repeat(32), phash: 'f0'.repeat(32), model: 'test-model', ...over,
 });

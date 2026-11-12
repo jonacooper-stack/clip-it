@@ -21,6 +21,8 @@ import { SCENE_TAG_CODES, TAXON_GROUPS } from './identifyCore';
 import { COPY_BITS, informative, mirrorHash, RESAVE_BITS, samePhoto } from './phash';
 import { LIBRARY_HASHES } from './libraryHashes';
 import { verifyReceipt, type ReceiptPayload } from './receipt';
+import { stripJpegMetadata } from './jpegStrip';
+import { approxPlace } from '../../shared/place';
 
 // ---------- what is stored ----------
 export type RowStatus = 'ai_confident' | 'needs_review' | 'disputed' | 'human_confirmed';
@@ -35,9 +37,9 @@ export interface JournalRow {
   recorded_at?: string;
   updated_at?: string;
   deleted_at: string | null;
+  /** Where it was taken, to two decimals, if the player saves places. */
   lat: number | null;
   lng: number | null;
-  accuracy_m: number | null;
   status: RowStatus | null;
   common_name: string | null;
   scientific_name: string | null;
@@ -80,6 +82,20 @@ export interface JournalState {
   carryover_points: number;
   /** The most that phone-scored sightings may add to this account's score (fixed by the database). */
   legacy_allowance: number;
+  /** The player's answer to "save my journal to my account". Nothing is stored unless it is 'yes'. */
+  backup: 'yes' | 'no' | null;
+  /** Whether a sighting's (approximate) place is stored with it. Anything but true means no. */
+  save_places: boolean | null;
+  /** When everything saved to the journal was last deleted at the player's request. */
+  erased_at: string | null;
+}
+
+// The account's two choices, as the app is told them.
+export interface Prefs {
+  backup: 'yes' | 'no' | null;
+  places: boolean;
+  /** Changes when the saved journal is erased: a device that synced before must send its sightings afresh. */
+  epoch: string | null;
 }
 
 // A stored picture that looks like the one being recorded.
@@ -126,9 +142,16 @@ export interface JournalDb {
   /** When the legacy window closes (ms), or null while no date has been set (the window is then open). */
   legacyUntil(): Promise<number | null>;
   putPhoto(uid: string, sid: string, bytes: Buffer): Promise<boolean>;
-  removePhotos(uid: string, sids: string[]): Promise<void>;
-  /** Remove every stored photo of the account (account deletion). */
+  /** Remove stored photos. False if storage didn't confirm they are gone. */
+  removePhotos(uid: string, sids: string[]): Promise<boolean>;
+  /** Note on these rows that their stored photo is gone. */
+  clearPhotoFlags(uid: string, sids: string[]): Promise<void>;
+  /** Remove every stored photo of the account (account deletion, erasing the journal). */
   purgePhotos(uid: string): Promise<void>;
+  /** Forget where the account's sightings were taken (the player stopped saving places). */
+  clearPlaces(uid: string): Promise<void>;
+  /** Remove every journal row and refusal note of the account (not its state). */
+  deleteJournal(uid: string): Promise<void>;
   /** Keep a record of a photo that was turned down as a copy, so a wrong call can be put right. */
   logRefusal(entry: Refusal): Promise<void>;
   /** Take the account's lock for up to `seconds`; false if another request holds it. */
@@ -177,10 +200,10 @@ function saneTime(v: unknown, fallback: number, now: number, earliest = Date.UTC
   return t != null && t >= earliest && t < now + 86_400_000 ? t : fallback;
 }
 
-function saneCoord(lat: unknown, lng: unknown): { lat: number | null; lng: number | null } {
-  const a = num(lat);
-  const b = num(lng);
-  return a != null && b != null && Math.abs(a) <= 90 && Math.abs(b) <= 180 ? { lat: a, lng: b } : { lat: null, lng: null };
+// The place to store: only if the player saves places, and then only to two
+// decimals (the exact spot never reaches the database, whatever was sent).
+function placeToStore(lat: unknown, lng: unknown, savePlaces: boolean): { lat: number | null; lng: number | null } {
+  return (savePlaces ? approxPlace(lat, lng) : null) ?? { lat: null, lng: null };
 }
 
 // One request at a time per account. Recording a sighting reads the journal
@@ -283,7 +306,7 @@ export type RecordOutcome =
 // receipt it signed. Safe to call twice for the same sighting: the second
 // call returns the row the first one wrote. Call it holding the account's
 // lock (withJournalLock).
-export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBase64?: string | null): Promise<RecordOutcome> {
+export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBase64?: string | null, opts: { places?: boolean } = {}): Promise<RecordOutcome> {
   // Already recorded (a retry), or already deleted by the player (the photo
   // was still being identified when they cancelled): nothing more to do.
   // A row that so far rests on the phone's word is different: the server has
@@ -323,7 +346,7 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
   // Field notes the player had already added to it keep their bonus.
   if (existing?.science) score = applyFieldNotesBonus(score, Object.keys(existing.science).length).score;
 
-  const where = saneCoord(p.lat, p.lng);
+  const where = placeToStore(p.lat, p.lng, opts.places === true);
   const row: JournalRow = {
     user_id: p.uid,
     id: p.sid,
@@ -333,7 +356,6 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     deleted_at: null,
     lat: where.lat,
     lng: where.lng,
-    accuracy_m: where.lat != null ? num(p.accuracyM) : null,
     status: existing?.proposed_species ? 'disputed' : p.id.status,
     common_name: p.id.common,
     scientific_name: p.id.sci,
@@ -385,7 +407,8 @@ async function storePhoto(jdb: JournalDb, row: JournalRow, photoBase64: string |
     const sha = createHash('sha256').update(bytes).digest('hex');
     if (sha !== row.photo_sha && !(fingerprint && samePhoto(fingerprint(photoBase64), { phash: row.photo_phash }, COPY_BITS))) return;
   }
-  if (await jdb.putPhoto(row.user_id, row.id, bytes)) {
+  // (Kept without the details a camera or an editor may have written into the file.)
+  if (await jdb.putPhoto(row.user_id, row.id, stripJpegMetadata(bytes))) {
     await jdb.updateRow(row.user_id, row.id, { has_photo: true });
     row.has_photo = true;
   }
@@ -397,7 +420,6 @@ export interface LegacyClaim {
   loggedAt?: unknown;
   lat?: unknown;
   lng?: unknown;
-  accuracyM?: unknown;
   status?: unknown;
   common?: unknown;
   sci?: unknown;
@@ -418,7 +440,7 @@ export type ImportOutcome = { kind: 'recorded'; row: JournalRow; created: boolea
 // window they are kept for the journal's sake but worth nothing; no score
 // breakdown is kept (a breakdown the app supplied must never be recomputed
 // into points); and their photo is never used to turn down someone else's.
-export async function importLegacy(jdb: JournalDb, uid: string, sid: string, claim: LegacyClaim, photoBase64?: string | null, now = Date.now()): Promise<ImportOutcome> {
+export async function importLegacy(jdb: JournalDb, uid: string, sid: string, claim: LegacyClaim, photoBase64?: string | null, now = Date.now(), opts: { places?: boolean } = {}): Promise<ImportOutcome> {
   const existing = await jdb.getRow(uid, sid);
   if (existing) return { kind: 'recorded', row: existing, created: false };
 
@@ -436,7 +458,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
   const claimed = typeof claim.points === 'number' && Number.isFinite(claim.points) ? clamp(Math.round(claim.points), 0, MAX_TOTAL_POINTS) : 0;
 
   const observedAt = saneTime(claim.observedAt, now, now, APP_START);
-  const where = saneCoord(claim.lat, claim.lng);
+  const where = placeToStore(claim.lat, claim.lng, opts.places === true);
   const caption = typeof claim.caption === 'string' ? claim.caption.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
   const row: JournalRow = {
     user_id: uid,
@@ -447,7 +469,6 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
     deleted_at: null,
     lat: where.lat,
     lng: where.lng,
-    accuracy_m: where.lat != null ? num(claim.accuracyM) : null,
     status: claim.status as RowStatus,
     common_name: common,
     scientific_name: sci,
@@ -530,12 +551,17 @@ export async function applyEdits(jdb: JournalDb, row: JournalRow, edits: Edits):
 
 // ---------- deleting ----------
 // The row stays as a marker (so the player's other devices drop the sighting
-// instead of uploading it again), emptied of everything personal. The species
-// and the photo's fingerprints are kept: they stop the same photo scoring
-// again for anyone, and stop delete-and-re-add from resetting a species.
+// instead of uploading it again), emptied of everything personal: no place,
+// no notes, no points, and its dates become the time of deletion. Only what
+// the marker is for is kept: the species (so delete-and-re-add can't reset
+// it) and the photo's fingerprints (so the same photo can't score again).
+//
+// The stored photo is removed too. The marker goes on saying it has one until
+// storage confirms it is gone, so a removal that fails is tried again (by the
+// next request, or by the nightly job).
 export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[], now = Date.now()): Promise<string[]> {
   const gone: string[] = [];
-  const hadPhoto: string[] = [];
+  const withPhoto: string[] = [];
   let newMarkers = 0;
   let total: number | null = null;
   for (const sid of sids) {
@@ -554,24 +580,37 @@ export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[
     }
     if (!row.deleted_at) {
       await jdb.updateRow(uid, sid, {
-        deleted_at: iso(now), status: null, common_name: null, lat: null, lng: null, accuracy_m: null, caption: null, points: 0, claimed_points: null, score: null,
-        science: null, proposed_species: null, wall_post_id: null, flags: null, has_photo: false, confidence: null, scene_tags: [],
+        deleted_at: iso(now), observed_at: iso(now), logged_at: iso(now), recorded_at: iso(now),
+        status: null, common_name: null, taxon_group: null, lat: null, lng: null, caption: null, points: 0, claimed_points: null, score: null,
+        science: null, proposed_species: null, wall_post_id: null, flags: null, confidence: null, scene_tags: [], capture: null, model: null,
       });
-      hadPhoto.push(sid);
     }
+    if (row.has_photo) withPhoto.push(sid);
     gone.push(sid);
   }
-  if (hadPhoto.length) await jdb.removePhotos(uid, hadPhoto);
+  if (withPhoto.length && (await jdb.removePhotos(uid, withPhoto))) await jdb.clearPhotoFlags(uid, withPhoto);
   return gone;
 }
 
 function deletionMarker(uid: string, sid: string, now: number): JournalRow {
   return {
-    user_id: uid, id: sid, observed_at: iso(now), logged_at: iso(now), recorded_at: iso(now), deleted_at: iso(now), lat: null, lng: null, accuracy_m: null,
+    user_id: uid, id: sid, observed_at: iso(now), logged_at: iso(now), recorded_at: iso(now), deleted_at: iso(now), lat: null, lng: null,
     status: null, common_name: null, scientific_name: null, taxon_group: null, confidence: null, scene_tags: [], caption: null, dangerous: false, points: 0,
     score: null, verified: false, capture: null, flags: null, photo_sha: null, photo_phash: null, has_photo: false, science: null, proposed_species: null,
     wall_post_id: null, model: null,
   };
+}
+
+// ---------- erasing ----------
+// Remove everything saved to the account's journal: every row (markers too),
+// the notes about refused photos, the stored photos and the time zone. Used
+// when the player turns the backup off and asks for what was saved to be
+// deleted, and when an account turns out to belong to someone under 13.
+// Afterwards the account's answer stands at "no": nothing more is stored.
+export async function eraseJournal(jdb: JournalDb, uid: string, now = Date.now()): Promise<void> {
+  await jdb.purgePhotos(uid);
+  await jdb.deleteJournal(uid);
+  await jdb.saveState(uid, { tz: null, backup: 'no', save_places: false, erased_at: iso(now) });
 }
 
 // ---------- the switch to server-kept scores ----------
@@ -603,8 +642,11 @@ export interface SyncBody {
   deletes?: unknown;
   /** The account is being deleted: remove its stored photos now. */
   purge?: unknown;
+  /** The player's choices, when they change: { backup: 'yes' | 'no', places: boolean }. */
+  prefs?: unknown;
+  /** Remove everything saved to the account's journal (see eraseJournal). */
+  erase?: unknown;
 }
-
 export type SyncRow = PublicRow | { error: string } | { refused: string };
 
 export interface SyncResult {
@@ -613,7 +655,20 @@ export interface SyncResult {
   totals: Totals | null;
   ready: boolean;
   legacyOpen: boolean;
+  /** The account's choices as they now stand (every device follows these). */
+  prefs: Prefs;
 }
+
+function readPrefs(v: unknown): { backup?: 'yes' | 'no'; places?: boolean } {
+  if (!v || typeof v !== 'object') return {};
+  const p = v as { backup?: unknown; places?: unknown };
+  return {
+    ...(p.backup === 'yes' || p.backup === 'no' ? { backup: p.backup } : {}),
+    ...(typeof p.places === 'boolean' ? { places: p.places } : {}),
+  };
+}
+
+export const prefsOf = (state: JournalState | null): Prefs => ({ backup: state?.backup ?? null, places: state?.save_places === true, epoch: state?.erased_at ?? null });
 
 export const MAX_SYNC_ITEMS = 40;
 export const MAX_SYNC_DELETES = 100;
@@ -631,15 +686,47 @@ export async function syncJournal(
   // Stop taking items when time is nearly up (the account's lock frees itself
   // after 15 seconds); what wasn't reached is simply sent again next time.
   const stopAt = Date.now() + (opts.budgetMs ?? 12_000);
+  const legacyOpen = async () => {
+    const until = await jdb.legacyUntil();
+    return until == null || now < until;
+  };
   if (body.purge === true) {
     await jdb.purgePhotos(uid);
-    return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false };
+    return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false, prefs: { backup: null, places: false, epoch: null } };
   }
-  await noteTimeZone(jdb, uid, body.tz);
-  await ensureReady(jdb, uid, now);
+  if (body.erase === true) {
+    await eraseJournal(jdb, uid, now);
+    const totals = await refreshTotals(jdb, uid, now);
+    return { rows: {}, deleted: [], totals, ready: totals !== null, legacyOpen: await legacyOpen(), prefs: prefsOf(await jdb.getState(uid)) };
+  }
 
+  // The player's choices belong to the account: they are recorded here and
+  // every device follows them. Switching places off also forgets the places
+  // already saved.
+  let state = await jdb.getState(uid);
+  const asked = readPrefs(body.prefs);
+  const change: Partial<Pick<JournalState, 'backup' | 'save_places'>> = {};
+  if (asked.backup && asked.backup !== (state?.backup ?? null)) change.backup = asked.backup;
+  if (asked.places !== undefined && asked.places !== (state?.save_places === true)) change.save_places = asked.places;
+  if (Object.keys(change).length) {
+    await jdb.saveState(uid, change);
+    if (change.save_places === false) await jdb.clearPlaces(uid);
+    state = await jdb.getState(uid);
+  }
+  const prefs = prefsOf(state);
+
+  // Something the player deleted is always removed, whatever the choice.
   const deletes = Array.isArray(body.deletes) ? body.deletes.filter(validSightingId).slice(0, MAX_SYNC_DELETES) : [];
   const deleted = deletes.length ? await deleteSightings(jdb, uid, deletes, now) : [];
+
+  // Nothing is stored for an account that hasn't said yes.
+  if (prefs.backup !== 'yes') {
+    const totals = deleted.length ? await refreshTotals(jdb, uid, now) : null;
+    return { rows: {}, deleted, totals, ready: Boolean(state?.ready_at), legacyOpen: await legacyOpen(), prefs };
+  }
+
+  await noteTimeZone(jdb, uid, body.tz);
+  await ensureReady(jdb, uid, now);
 
   const rows: Record<string, SyncRow> = {};
   const items = Array.isArray(body.items) ? (body.items as SyncItem[]).slice(0, MAX_SYNC_ITEMS) : [];
@@ -655,7 +742,7 @@ export async function syncJournal(
       const receipt = verifyReceipt(item.receipt, uid, sid, now);
       if (item.receipt && !receipt) opts.onBadReceipt?.(sid);
       if (receipt) {
-        const out = await recordSighting(jdb, receipt, photo);
+        const out = await recordSighting(jdb, receipt, photo, { places: prefs.places });
         if (out.kind === 'refused') {
           rows[sid] = { refused: out.message };
           continue;
@@ -667,7 +754,7 @@ export async function syncJournal(
           rows[sid] = { error: 'journal is full' };
           continue;
         }
-        const out = await importLegacy(jdb, uid, sid, item.legacy, photo, now);
+        const out = await importLegacy(jdb, uid, sid, item.legacy, photo, now, { places: prefs.places });
         if (out.kind === 'invalid') {
           rows[sid] = { error: out.error };
           continue;
@@ -686,6 +773,5 @@ export async function syncJournal(
   }
 
   const totals = await refreshTotals(jdb, uid, now);
-  const until = await jdb.legacyUntil();
-  return { rows, deleted, totals, ready: totals !== null, legacyOpen: until == null || now < until };
+  return { rows, deleted, totals, ready: totals !== null, legacyOpen: await legacyOpen(), prefs };
 }
