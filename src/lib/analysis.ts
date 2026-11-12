@@ -171,7 +171,9 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
         sightingId: s.id,
         loggedAt: s.createdAt,
         account: owner ?? undefined,
-        capture: s.capture,
+        // (A capture queued by an older version doesn't say how it was taken.
+        // Only the in-app camera queues captures; uploads are identified at once.)
+        capture: s.capture ?? 'camera',
         evidence: s.evidence,
       };
       try {

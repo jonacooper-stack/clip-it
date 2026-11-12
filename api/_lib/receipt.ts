@@ -34,7 +34,6 @@ export interface ReceiptPayload {
   };
   sha: string | null;
   phash: string | null;
-  flags: Record<string, unknown> | null;
   model: string;
 }
 
@@ -43,13 +42,25 @@ export interface ReceiptPayload {
 const MAX_AGE_MS = 90 * 86_400_000;
 
 // The signing key: RECEIPT_SECRET if set, otherwise derived from the
-// database secret the server already has (never the secret itself).
+// database secret the server already has (never the secret itself). Setting
+// RECEIPT_SECRET is better: receipts then survive a change of database key.
 function key(): Buffer | null {
   const own = process.env.RECEIPT_SECRET;
   if (own) return Buffer.from(own, 'utf8');
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!service) return null;
   return createHmac('sha256', service).update('clipit:receipt:v1').digest();
+}
+
+// Keys a receipt may have been signed with: the current one, and
+// RECEIPT_SECRET_PREVIOUS while a key is being changed (receipts wait on
+// phones for up to 90 days).
+function verifyKeys(): Buffer[] {
+  const keys: Buffer[] = [];
+  const now = key();
+  if (now) keys.push(now);
+  if (process.env.RECEIPT_SECRET_PREVIOUS) keys.push(Buffer.from(process.env.RECEIPT_SECRET_PREVIOUS, 'utf8'));
+  return keys;
 }
 
 const b64url = (b: Buffer) => b.toString('base64url');
@@ -67,14 +78,17 @@ export function signReceipt(payload: ReceiptPayload): string | null {
 // The payload, if the note is genuine, was issued to this account, and (when
 // given) is for this sighting. Null otherwise.
 export function verifyReceipt(token: unknown, uid: string, sid?: string, now = Date.now()): ReceiptPayload | null {
-  const k = key();
-  if (!k || typeof token !== 'string' || token.length > 6000) return null;
+  const keys = verifyKeys();
+  if (!keys.length || typeof token !== 'string' || token.length > 6000) return null;
   const dot = token.indexOf('.');
   if (dot <= 0 || dot !== token.lastIndexOf('.')) return null;
   const body = token.slice(0, dot);
   const given = Buffer.from(token.slice(dot + 1), 'base64url');
-  const expected = createHmac('sha256', k).update(body).digest();
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+  const genuine = keys.some((k) => {
+    const expected = createHmac('sha256', k).update(body).digest();
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+  if (!genuine) return null;
   let p: ReceiptPayload;
   try {
     p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));

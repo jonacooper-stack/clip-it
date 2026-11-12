@@ -5,7 +5,7 @@
 // Every method throws JournalUnavailable when the database says no: the
 // callers then leave the sighting on the phone to be recorded later.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { JournalUnavailable, type JournalDb, type JournalRow, type JournalState, type Print } from './journal';
+import { JournalUnavailable, type JournalDb, type JournalRow, type JournalState, type Match } from './journal';
 
 const SIGHTINGS = 'journal_sightings';
 const STATE = 'journal_state';
@@ -56,15 +56,18 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       return count ?? 0;
     },
 
-    async lookAlikes(sci, sha) {
-      const cols = 'user_id, id, photo_sha, photo_phash';
-      const [bySpecies, bySha] = await Promise.all([
-        db.from(SIGHTINGS).select(cols).eq('scientific_name', sci).not('photo_phash', 'is', null).order('recorded_at', { ascending: false }).limit(3000),
-        sha ? db.from(SIGHTINGS).select(cols).eq('photo_sha', sha).limit(20) : Promise.resolve({ data: [], error: null }),
-      ]);
-      check(bySpecies.error, 'read fingerprints');
-      check(bySha.error, 'read fingerprints');
-      return [...((bySpecies.data ?? []) as Print[]), ...((bySha.data ?? []) as Print[])];
+    async countRows(uid) {
+      const { count, error } = await db.from(SIGHTINGS).select('id', { count: 'exact', head: true }).eq('user_id', uid);
+      check(error, 'count journal');
+      return count ?? 0;
+    },
+
+    // The comparison runs in the database, over every stored fingerprint
+    // (public.journal_look_alikes in migration 0011), not over a page of rows.
+    async lookAlikes(uid, print, maxBits) {
+      const { data, error } = await db.rpc('journal_look_alikes', { p_user: uid, p_sha: print.sha, p_phash: print.phash, p_mirror: print.mirror, p_bits: maxBits });
+      check(error, 'compare photos');
+      return ((data ?? []) as any[]).map((m): Match => ({ source: m.source === 'wall' ? 'wall' : 'journal', user_id: m.user_id, ref: String(m.ref), exact: m.exact === true, distance: Number(m.distance) }));
     },
 
     async insertRow(row) {
@@ -80,7 +83,7 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
     },
 
     async getState(uid) {
-      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, carryover_points, legacy_points').eq('user_id', uid).maybeSingle();
+      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, carryover_points, legacy_allowance').eq('user_id', uid).maybeSingle();
       check(error, 'read journal state');
       return (data as JournalState | null) ?? null;
     },
@@ -88,12 +91,6 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
     async saveState(uid, patch) {
       const { error } = await db.from(STATE).upsert({ user_id: uid, ...patch, updated_at: stamp() }, { onConflict: 'user_id' });
       check(error, 'write journal state');
-    },
-
-    async profilePoints(uid) {
-      const { data, error } = await db.from('profiles').select('points').eq('id', uid).maybeSingle();
-      check(error, 'read profile');
-      return typeof (data as any)?.points === 'number' ? (data as any).points : null;
     },
 
     async setProfileTotals(uid, points, speciesCount) {
@@ -116,9 +113,9 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       return legacyCache.until;
     },
 
-    async putPhoto(uid, sid, bytes, contentType) {
-      const { error } = await db.storage.from(BUCKET).upload(`${uid}/${sid}.jpg`, bytes, { contentType, upsert: true });
-      return !error; // a missing photo is not fatal: the app offers it again on its next sync
+    async putPhoto(uid, sid, bytes) {
+      const { error } = await db.storage.from(BUCKET).upload(`${uid}/${sid}.jpg`, bytes, { contentType: 'image/jpeg', upsert: true });
+      return !error; // a missing photo is not fatal: the app offers it again on a later sync
     },
 
     async removePhotos(uid, sids) {
@@ -127,6 +124,29 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       } catch {
         // the nightly sweep and account deletion clear leftovers
       }
+    },
+
+    async purgePhotos(uid) {
+      for (let round = 0; round < 50; round++) {
+        const { data, error } = await db.storage.from(BUCKET).list(uid, { limit: 1000 });
+        if (error || !data?.length) return;
+        const { error: removeError } = await db.storage.from(BUCKET).remove(data.map((f) => `${uid}/${f.name}`));
+        if (removeError) return;
+      }
+    },
+
+    async logRefusal(entry) {
+      await db.from('journal_refusals').insert(entry);
+    },
+
+    async tryLock(uid, seconds) {
+      const { data, error } = await db.rpc('journal_try_lock', { p_user: uid, p_seconds: seconds });
+      check(error, 'lock journal');
+      return data === true;
+    },
+
+    async unlock(uid) {
+      await db.rpc('journal_unlock', { p_user: uid });
     },
   };
 }

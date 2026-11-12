@@ -8,9 +8,10 @@
 //          recompressing a picture changes only a few bits; a different
 //          picture changes about half of them.
 //
-// What it does not catch: a mirrored, cropped or heavily edited copy. And a
-// picture that is mostly one flat tone (a bird against clear sky) has no
-// reliable pattern, so `informative` says not to compare those.
+// A copy flipped left to right is caught too (mirrorHash). What it does not
+// catch: a cropped or heavily edited copy. And a picture that is mostly one
+// flat tone (a bird against clear sky) has no reliable pattern, so
+// `informative` says not to compare those.
 import { createHash } from 'crypto';
 import jpeg from 'jpeg-js';
 
@@ -102,6 +103,21 @@ export function informative(phash: string | null | undefined): boolean {
     ones += ONES[n];
   }
   return ones >= PHASH_BITS * 0.12 && ones <= PHASH_BITS * 0.88;
+}
+
+// The hash the same picture would have if it were flipped left to right (the
+// simplest way to disguise a copy). Each row's comparisons run the other way
+// round: reverse the row and invert it.
+export function mirrorHash(phash: string | null | undefined): string | null {
+  if (!phash || phash.length !== PHASH_BITS / 4 || /[^0-9a-f]/.test(phash)) return null;
+  let out = '';
+  for (let row = 0; row < ROWS; row++) {
+    const bits = parseInt(phash.slice(row * 4, row * 4 + 4), 16); // 16 comparisons
+    let flipped = 0;
+    for (let i = 0; i < 16; i++) if (!((bits >> i) & 1)) flipped |= 1 << (15 - i);
+    out += flipped.toString(16).padStart(4, '0');
+  }
+  return out;
 }
 
 // How close two look-alike hashes must be to call two pictures the same one.

@@ -1,11 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminClient, dailyLimitReached, log, rateLimited, secondsToUtcMidnight, verifyUser } from '../_lib/server';
-import { JournalUnavailable, syncJournal, type SyncBody } from '../_lib/journal';
+import { JournalBusy, JournalUnavailable, syncJournal, withJournalLock, type SyncBody } from '../_lib/journal';
+import { photoFingerprint } from '../_lib/phash';
 import { supabaseJournalDb } from '../_lib/journalDb';
 
 // POST /api/journal/sync
 //   { account?, tz?, items?: [{ id, receipt?, legacy?, photoBase64?, science?, proposedSpecies?, wallPostId? }],
-//     deletes?: [id] }
+//     deletes?: [id], purge?: true }
 //
 // The app's side of the cloud journal. It sends:
 //   - sightings the identify endpoint couldn't record at the time (with the
@@ -13,7 +14,8 @@ import { supabaseJournalDb } from '../_lib/journalDb';
 //     up on the phone before journals moved to the cloud (`legacy`);
 //   - the player's own additions (field notes, a suggested species, which
 //     wall post shares a sighting);
-//   - sightings the player deleted.
+//   - sightings the player deleted;
+//   - `purge`, just before an account is deleted: remove its stored photos.
 // The answer has each row as the server now holds it (points included) and
 // the player's totals. The app reads the journal itself straight from the
 // table (players can read their own rows); only writing goes through here,
@@ -49,9 +51,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const out = await syncJournal(supabaseJournalDb(db), userId, (req.body ?? {}) as SyncBody);
+    const jdb = supabaseJournalDb(db);
+    // One request at a time per account: everything here reads the journal
+    // and then writes to it.
+    const out = await withJournalLock(jdb, userId, 8000, () =>
+      syncJournal(jdb, userId, (req.body ?? {}) as SyncBody, {
+        fingerprint: photoFingerprint,
+        // Worth knowing about: a receipt stops verifying when the signing key is changed.
+        onBadReceipt: (sid) => fail('receipt_not_accepted', { userId, sighting: sid }),
+      }),
+    );
     return res.status(200).json(out);
   } catch (err: any) {
+    if (err instanceof JournalBusy) {
+      res.setHeader('Retry-After', '5');
+      return res.status(503).json({ error: 'journal busy' });
+    }
     const unavailable = err instanceof JournalUnavailable;
     fail(unavailable ? 'unavailable' : 'error', { userId, detail: String(err?.message ?? err).slice(0, 200) });
     return res.status(unavailable ? 503 : 500).json({ error: unavailable ? 'journal unavailable' : 'sync failed' });

@@ -8,7 +8,7 @@ const payload = (over: Partial<ReceiptPayload> = {}): ReceiptPayload => ({
   v: 1, uid: UID, sid: 'mhx1abc-9f3k2a', at: now - 5000, observedAt: now - 60_000, loggedAt: now - 6000,
   lat: 44.1, lng: -72.5, accuracyM: 12, capture: 'camera', cameraEvidence: null,
   id: { status: 'ai_confident', common: 'Osprey', sci: 'Pandion haliaetus', group: 'bird', confidence: 0.93, rarity: 0.4, tags: ['in_flight'], dangerous: false, caption: 'An osprey over the lake.' },
-  sha: 'ab'.repeat(32), phash: 'f0'.repeat(32), flags: null, model: 'test-model', ...over,
+  sha: 'ab'.repeat(32), phash: 'f0'.repeat(32), model: 'test-model', ...over,
 });
 
 test('a receipt verifies for the account and sighting it was issued to', () => {
@@ -49,6 +49,18 @@ test('a receipt signed with a different key is refused', () => {
   assert.deepEqual(verifyReceipt(own, UID, undefined, now), payload());
   delete process.env.RECEIPT_SECRET;
   assert.equal(verifyReceipt(own, UID, undefined, now), null);
+});
+
+test('while the key is being changed, receipts signed with the previous one are still honoured', () => {
+  process.env.RECEIPT_SECRET = 'old-secret';
+  const old = signReceipt(payload())!;
+  process.env.RECEIPT_SECRET = 'new-secret';
+  assert.equal(verifyReceipt(old, UID, undefined, now), null);
+  process.env.RECEIPT_SECRET_PREVIOUS = 'old-secret';
+  assert.deepEqual(verifyReceipt(old, UID, undefined, now), payload());
+  assert.deepEqual(verifyReceipt(signReceipt(payload())!, UID, undefined, now), payload());
+  delete process.env.RECEIPT_SECRET;
+  delete process.env.RECEIPT_SECRET_PREVIOUS;
 });
 
 test('old receipts and ones from the future are refused', () => {

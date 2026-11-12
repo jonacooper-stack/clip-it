@@ -1,12 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
-import { adminClient, dailyLimitReached, rateLimited, secondsToUtcMidnight, verifyUser } from './_lib/server';
+import { adminClient, DAILY_LIMITS, dailyLimitReached, rateLimited, secondsToUtcMidnight, usedToday, verifyUser } from './_lib/server';
 import { askText, ConfigError, ModelRefusal } from './_lib/claude';
 import {
   detectMediaType, IDENTIFY_SYSTEM, IDENTIFY_USER, MAX_IMAGE_BASE64, normalizeIdentification, parseModelJson, refuse, stripDataUrl,
   type Identification,
 } from './_lib/identifyCore';
-import { IMPORT_MESSAGE, noteTimeZone, recordSighting, refreshTotals, validSightingId, type JournalRow, type Totals } from './_lib/journal';
+import {
+  IMPORT_MESSAGE, JournalBusy, noteTimeZone, publicRow, recordSighting, refreshTotals, validSightingId, withJournalLock,
+  type JournalRow, type PublicRow, type Totals,
+} from './_lib/journal';
 import { supabaseJournalDb } from './_lib/journalDb';
 import { photoFingerprint, type Fingerprint } from './_lib/phash';
 import { signReceipt, type ReceiptPayload } from './_lib/receipt';
@@ -28,6 +31,11 @@ import { importLooksGenuine, type PhotoEvidence } from '../shared/photoEvidence'
 // instead and the app has the sighting recorded on its next sync. App builds
 // that send only the photo get exactly the answer they always did.
 //
+// What the app says about a photo (taken with the camera or uploaded, whether
+// it carries camera details) is a hint, not proof: anyone can call this
+// endpoint. The brakes that don't depend on it are the photo checks the
+// server makes itself and the daily limits below.
+//
 // Status codes the app relies on:
 //   200  identified (or "nothing to identify")
 //   400 / 413 / 422  this photo can never be identified (don't retry it)
@@ -44,6 +52,11 @@ function logFailure(reason: string, extra: Record<string, unknown> = {}) {
 }
 
 const RATE_MAX = 20; // identifications per user per minute (per warm instance)
+
+const LIMIT_MESSAGES = {
+  score: 'You’ve reached today’s limit for scored sightings. We identified this one, but it won’t add to your score. The limit resets tomorrow.',
+  refused: 'Several photos today couldn’t be confirmed as your own, so scoring is paused until tomorrow. You can still identify animals.',
+};
 
 // How long recording a sighting may hold up the answer. The app gives up on
 // the whole request after 28 s and the model may take 24 of them.
@@ -89,6 +102,10 @@ function readMeta(b: Record<string, unknown>, now: number): CaptureMeta {
 
 const journalOn = () => process.env.JOURNAL_SYNC !== 'off';
 
+// What the app is told about how the picture was judged: whether it can
+// score and why not. (The server's own doubts stay on the server.)
+const shown = (id: Identification) => ({ ...id, authenticity: { ok: id.authenticity.ok, reason: id.authenticity.reason } });
+
 // The identify answer for a sighting that is already in the journal.
 function fromJournal(row: JournalRow) {
   const live = !row.deleted_at && Boolean(row.scientific_name);
@@ -103,9 +120,9 @@ function fromJournal(row: JournalRow) {
     dangerous: row.dangerous,
     idStatus: live ? (row.status === 'needs_review' ? 'needs_review' : 'ai_confident') : 'rejected',
     ineligibleReason: '',
-    authenticity: { ok: true, reason: null, review: false },
+    authenticity: { ok: true, reason: null },
     recorded: true,
-    journal: row,
+    journal: publicRow(row),
     modelVersion: row.model ?? undefined,
   };
 }
@@ -200,13 +217,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let id: Identification = normalizeIdentification(parseModelJson(text));
 
     // An upload from the camera roll has to look like it came out of a camera
-    // (IMPORT_CHECK=off in the environment turns this rule off without a deploy).
-    if (id.eligible && meta.capture === 'library' && process.env.IMPORT_CHECK !== 'off' && !importLooksGenuine(meta.evidence)) {
+    // (IMPORT_CHECK=off in the environment turns this rule off without a
+    // deploy). An updated app always says how the photo was captured; when it
+    // doesn't (or says "uploaded" without saying what the photo carries), the
+    // photo is treated as an upload with no camera details.
+    const upload = meta.sid ? meta.capture !== 'camera' : meta.capture === 'library';
+    const evidence = meta.sid && !meta.evidence ? { camera: false, screenshot: false, generator: false } : meta.evidence;
+    if (id.eligible && upload && process.env.IMPORT_CHECK !== 'off' && !importLooksGenuine(evidence)) {
       id = refuse(id, 'import', IMPORT_MESSAGE);
     }
 
     // Record it in the player's journal and score it.
-    let journal: { receipt?: string; recorded: boolean; journal?: JournalRow; totals?: Totals | null } | undefined;
+    let journal: { receipt?: string; recorded: boolean; journal?: PublicRow; totals?: Totals | null } | undefined;
+    const db = meta.sid && journalOn() ? adminClient() : null;
+    // Two daily brakes that don't rest on anything the app says: a cap on
+    // sightings that may score, and a pause once several photos in one day
+    // have been turned down as not the player's own.
+    if (id.eligible && db) {
+      if ((await usedToday(db, userId, 'refused')) >= DAILY_LIMITS.refused) id = refuse(id, 'limit', LIMIT_MESSAGES.refused);
+      else if (await dailyLimitReached(db, userId, 'score')) id = refuse(id, 'limit', LIMIT_MESSAGES.score);
+    }
     if (id.eligible && meta.sid && id.idStatus !== 'rejected' && id.idStatus !== 'ineligible') {
       const payload: ReceiptPayload = {
         v: 1, uid: userId, sid: meta.sid, at: Date.now(), observedAt: meta.observedAt, loggedAt: meta.loggedAt,
@@ -217,38 +247,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           confidence: id.species.confidence, rarity: id.rarityScore, tags: id.sceneTags, dangerous: id.dangerous, caption: id.caption,
         },
         sha: print.sha || null, phash: print.phash,
-        flags: id.authenticity.review ? { pictureDoubt: true } : null,
         model: usage.model,
       };
       journal = { receipt: signReceipt(payload) ?? undefined, recorded: false };
-      const db = journalOn() ? adminClient() : null;
       if (db) {
         try {
           const jdb = supabaseJournalDb(db);
+          // One request at a time per account (see withJournalLock), and not
+          // for longer than the answer can wait.
           const done = await within(
-            (async () => {
+            withJournalLock(jdb, userId, RECORD_BUDGET_MS - 500, async () => {
               await noteTimeZone(jdb, userId, meta.tz);
               const out = await recordSighting(jdb, payload, imageBase64);
               return { out, totals: out.kind === 'recorded' && out.created ? await refreshTotals(jdb, userId) : null };
-            })(),
+            }),
             RECORD_BUDGET_MS,
           );
           if (done?.out.kind === 'refused') {
             id = refuse(id, done.out.reason, done.out.message);
             journal = undefined;
           } else if (done?.out.kind === 'recorded') {
-            journal = { recorded: true, journal: done.out.row, totals: done.totals };
+            journal = { recorded: true, journal: publicRow(done.out.row), totals: done.totals };
           } else {
             logFailure('journal_record_slow', { userId });
           }
         } catch (err: any) {
           // The sighting isn't lost: the app holds the receipt and syncs it later.
-          logFailure('journal_record_failed', { userId, detail: String(err?.message ?? err).slice(0, 200) });
+          if (!(err instanceof JournalBusy)) logFailure('journal_record_failed', { userId, detail: String(err?.message ?? err).slice(0, 200) });
         }
       }
     }
-    if (!id.authenticity.ok) logFailure('not_own_photo', { userId, why: id.authenticity.reason });
-    return res.status(200).json({ ...id, ...journal, modelVersion: usage.model });
+    if (!id.authenticity.ok) {
+      logFailure('not_own_photo', { userId, why: id.authenticity.reason });
+      // Counted per day: after several, scoring pauses until tomorrow (see above).
+      if (id.authenticity.reason !== 'limit' && db) await dailyLimitReached(db, userId, 'refused');
+    } else if (id.authenticity.review) {
+      logFailure('picture_doubt', { userId, sighting: meta.sid });
+    }
+    return res.status(200).json({ ...shown(id), ...journal, modelVersion: usage.model });
   } catch (err: any) {
     // The reason goes to the logs, not to the app: raw provider errors can
     // carry details that shouldn't leave the server.

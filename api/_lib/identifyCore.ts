@@ -110,9 +110,10 @@ export interface Identification {
 // as the picture itself shows. `ok: false` means it can't score. `review`
 // marks a picture the model had doubts about but not enough to refuse.
 type PictureReason = 'screen' | 'print' | 'screenshot' | 'artwork' | 'watermark' | 'synthetic';
-// 'import', 'copied' and 'library' are not read from the picture: they come
-// from the server's own checks (see api/_lib/journal.ts).
-export type AuthenticityReason = PictureReason | 'import' | 'copied' | 'library';
+// The rest are not read from the picture: they come from the server's own
+// checks (an upload without camera details, a copy of a photo already
+// logged, a photo that couldn't be compared, too many today).
+export type AuthenticityReason = PictureReason | 'import' | 'copied' | 'library' | 'unchecked' | 'limit';
 export interface Authenticity {
   ok: boolean;
   reason: AuthenticityReason | null;

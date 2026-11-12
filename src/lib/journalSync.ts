@@ -252,6 +252,28 @@ async function uploadPhotos(uid: string): Promise<void> {
   }
 }
 
+// The account is about to be deleted: have the server remove the photos it
+// stores for the journal (only the server can). Best effort: the nightly job
+// clears anything left behind.
+export async function purgeCloudPhotos(): Promise<void> {
+  const uid = signedIn();
+  if (!cloudOn() || !uid) return;
+  try {
+    const auth = await authHeaders();
+    if (!auth) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    await fetch(`${API_BASE}/api/journal/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ account: uid, purge: true }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+  } catch {
+    // the nightly job removes them
+  }
+}
+
 // How many things are waiting to go to the cloud (for the Profile screen).
 export function pendingCount(sightings: Parameters<typeof needsPush>[0][], pendingDeletes: string[]): number {
   return sightings.filter(needsPush).length + pendingDeletes.length;

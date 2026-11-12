@@ -9,6 +9,7 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { resizedBase64, WALL_PHOTO, AVATAR_PHOTO } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
+import { purgeCloudPhotos } from './journalSync';
 import { checkText, reservedName } from './moderation';
 import { publicStorageUrl } from '../../shared/storage';
 
@@ -750,13 +751,15 @@ async function emptyMyFolder(bucket: string, uid: string) {
 export async function deleteMyAccount(): Promise<{ error?: string }> {
   const uid = myId();
   if (!supabase || !uid) return { error: 'You’re not signed in.' };
-  for (const bucket of [WALL_BUCKET, AVATAR_BUCKET, 'journal-photos']) {
+  for (const bucket of [WALL_BUCKET, AVATAR_BUCKET]) {
     try {
       await emptyMyFolder(bucket, uid);
     } catch {
       // keep going — the account delete below is the essential part
     }
   }
+  // The journal's photo copies are stored by the server, which removes them.
+  await purgeCloudPhotos();
   const { error } = await supabase.rpc('delete_my_account');
   if (error) return { error: error.message };
   blockedCache = null;

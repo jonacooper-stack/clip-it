@@ -22,9 +22,14 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
   const [state, setState] = useState<'idle' | 'sharing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Once the server keeps this account's journal, only a sighting it has
+  // recorded can be shared: the post takes its points and species from the
+  // journal, and the photo is one the server has already checked.
+  const serverKeepsJournal = useJournalStore((s) => s.cloud?.ready === true);
   const eligible =
     !!sighting.species &&
-    (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed');
+    (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed') &&
+    (!serverKeepsJournal || Boolean(sighting.cloudAt));
   if (!isSupabaseConfigured || !session || !eligible) return null;
 
   // Already on the wall (remembered on the sighting, so it can't be posted

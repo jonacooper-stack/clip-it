@@ -101,6 +101,8 @@ export const DAILY_LIMITS = {
   generate: limit('DAILY_GENERATE_LIMIT', 60), // new Scout facts / stories written because of this player
   flag: limit('DAILY_FLAG_LIMIT', 20), // photos reported
   journal: limit('DAILY_JOURNAL_LIMIT', 600), // journal sync requests (each carries up to 40 sightings)
+  score: limit('DAILY_SCORE_LIMIT', 100), // sightings that may score in a day (more are still identified)
+  refused: limit('DAILY_REFUSED_LIMIT', 10), // photos turned down as not the player's own before scoring pauses for the day
 } as const;
 
 let warnedNoCounters = false;
@@ -124,6 +126,15 @@ export async function dailyLimitReached(db: SupabaseClient | null, userId: strin
     return false;
   }
   return Number(data) > DAILY_LIMITS[kind];
+}
+
+// How many times something has been counted for a player today, without
+// adding to it. (0 when the counters can't be read.)
+export async function usedToday(db: SupabaseClient | null, userId: string, kind: keyof typeof DAILY_LIMITS): Promise<number> {
+  if (!db) return 0;
+  const day = new Date().toISOString().slice(0, 10); // the counters are per UTC day
+  const { data, error } = await db.from('usage_counters').select('count').eq('user_id', userId).eq('day', day).eq('kind', kind).maybeSingle();
+  return error ? 0 : Number((data as any)?.count ?? 0);
 }
 
 // Photo and avatar links in the database are written by the app that posted

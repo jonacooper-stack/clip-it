@@ -105,27 +105,42 @@ create index if not exists journal_sightings_sha_idx on public.journal_sightings
 
 -- A player can read their own journal and nothing else. Nobody but the
 -- server writes: there are no insert, update or delete rules, and the table
--- privileges for them are removed as well.
+-- privileges for them are removed as well. Reading is limited to the columns
+-- the app shows: the server's own notes (review flags, photo fingerprints,
+-- which model answered, what a phone claimed) stay on the server.
 alter table public.journal_sightings enable row level security;
 drop policy if exists journal_sightings_read_own on public.journal_sightings;
 create policy journal_sightings_read_own on public.journal_sightings
   for select using (user_id = auth.uid());
-revoke insert, update, delete, truncate on public.journal_sightings from anon, authenticated;
+revoke all on public.journal_sightings from anon, authenticated;
+grant select (
+  user_id, id, observed_at, logged_at, recorded_at, updated_at, deleted_at, lat, lng, accuracy_m, status, common_name,
+  scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo,
+  science, proposed_species, wall_post_id
+) on public.journal_sightings to authenticated;
 
--- Where each account stands: its time zone (weekly quests run in the player's
--- own zone) and the switch to server-kept scores. ready_at is set at the
--- account's first sync from an updated app: from then on the server owns its
--- score. baseline_points is what the leaderboard showed at that moment, and
--- carryover_points is how much of that the uploaded journal doesn't account
--- for yet. It is added to the score so nobody's score drops at the switch,
--- and it only ever shrinks, as the old journal arrives.
+-- Where each account stands.
+--   tz                the player's time zone (weekly quests run in it)
+--   ready_at          set at the account's first sync from an updated app:
+--                     from then on the server owns its score
+--   baseline_points   what the leaderboard showed for the account when this
+--                     migration first ran (capped)
+--   carryover_points  how much of that the uploaded journal doesn't account
+--                     for yet. It is added to the score so nobody's score
+--                     drops at the switch; it only ever shrinks
+--   legacy_allowance  the most that sightings scored on the phone (before
+--                     scores moved to the server) may add to the score
+--   busy_until        a short lock: one journal request at a time per account
+-- The baseline and the allowance are set once, below, by this file. They are
+-- never taken from an app afterwards, and an account created later has none.
 create table if not exists public.journal_state (
   user_id uuid primary key references auth.users (id) on delete cascade,
   tz text check (char_length(tz) <= 64),
   ready_at timestamptz,
-  baseline_points integer not null default 0 check (baseline_points between 0 and 100000),
-  carryover_points integer not null default 0 check (carryover_points between 0 and 100000),
-  legacy_points integer not null default 0,   -- points accepted from phone-scored sightings so far
+  baseline_points integer not null default 0 check (baseline_points between 0 and 10000),
+  carryover_points integer not null default 0 check (carryover_points between 0 and 10000),
+  legacy_allowance integer not null default 0 check (legacy_allowance between 0 and 20000),
+  busy_until timestamptz,
   updated_at timestamptz not null default now()
 );
 alter table public.journal_state enable row level security;
@@ -134,12 +149,164 @@ create policy journal_state_read_own on public.journal_state
   for select using (user_id = auth.uid());
 revoke insert, update, delete, truncate on public.journal_state from anon, authenticated;
 
+-- The one-time snapshot, taken the first time this file runs (running it
+-- again changes nothing). Every account that exists now gets:
+--   a baseline: its current leaderboard score, at most 10,000;
+--   an allowance for phone-scored sightings: 500 points for each day the
+--   account has existed, at most 20,000.
+do $$
+begin
+  if not exists (select 1 from public.app_settings where key = 'cloud_journal_started') then
+    insert into public.journal_state (user_id, baseline_points, carryover_points, legacy_allowance)
+    select u.id,
+           least(greatest(coalesce(p.points, 0), 0), 10000),
+           least(greatest(coalesce(p.points, 0), 0), 10000),
+           least(20000, 500 * greatest(1, ceil(extract(epoch from (now() - coalesce(u.created_at, now()))) / 86400.0)::integer))
+    from auth.users u
+    left join public.profiles p on p.id = u.id
+    where not coalesce(p.is_bot, false)
+    on conflict (user_id) do nothing;
+    insert into public.app_settings (key, value) values ('cloud_journal_started', to_jsonb(now()));
+  end if;
+end $$;
+
+-- One journal request at a time per account. Recording a sighting reads the
+-- journal (is this photo already there? how many of this species?) and then
+-- writes to it; two requests doing that together would both be "the first".
+-- The lock frees itself after p_seconds if the request that took it dies.
+create or replace function public.journal_try_lock(p_user uuid, p_seconds integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  got boolean;
+begin
+  insert into public.journal_state (user_id, busy_until)
+  values (p_user, now() + make_interval(secs => greatest(1, least(p_seconds, 60))))
+  on conflict (user_id) do update
+    set busy_until = excluded.busy_until
+    where public.journal_state.busy_until is null or public.journal_state.busy_until < now()
+  returning true into got;
+  return coalesce(got, false);
+end;
+$$;
+
+create or replace function public.journal_unlock(p_user uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.journal_state set busy_until = null where user_id = p_user;
+$$;
+revoke all on function public.journal_try_lock(uuid, integer) from public, anon, authenticated;
+revoke all on function public.journal_unlock(uuid) from public, anon, authenticated;
+grant execute on function public.journal_try_lock(uuid, integer) to service_role;
+grant execute on function public.journal_unlock(uuid) to service_role;
+
+-- ---------- 2b. spotting the same photo handed in twice ----------
+-- Fingerprints of the photos on the wall (the only photos of other players
+-- anyone can get hold of). Filled by the server: the nightly job fingerprints
+-- new posts. RLS on, no policies.
+create table if not exists public.wall_prints (
+  post_id uuid primary key references public.feed_posts (id) on delete cascade,
+  user_id uuid not null,
+  photo_sha text,
+  photo_phash text,
+  created_at timestamptz not null default now()
+);
+alter table public.wall_prints enable row level security;
+
+-- Wall posts with a photo and no fingerprint yet, newest first (for the nightly job).
+create or replace function public.wall_posts_without_prints(p_limit integer)
+returns table (id uuid, user_id uuid, photo_url text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id, p.user_id, p.photo_url
+  from public.feed_posts p
+  left join public.wall_prints w on w.post_id = p.id
+  where p.photo_url is not null and w.post_id is null
+  order by p.created_at desc
+  limit greatest(1, least(p_limit, 500));
+$$;
+revoke all on function public.wall_posts_without_prints(integer) from public, anon, authenticated;
+grant execute on function public.wall_posts_without_prints(integer) to service_role;
+
+-- Photos that were turned down as copies: who, which sighting, and what they
+-- matched. Kept so that a wrong call can be looked at and put right.
+-- RLS on, no policies.
+create table if not exists public.journal_refusals (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  sighting_id text not null,
+  reason text not null,
+  matched_user uuid,
+  matched_ref text,
+  created_at timestamptz not null default now()
+);
+create index if not exists journal_refusals_user_idx on public.journal_refusals (user_id, created_at desc);
+alter table public.journal_refusals enable row level security;
+
+-- Stored pictures that are, or look like, the one being recorded: sightings
+-- the server identified itself (any account), wall photos (any account), and
+-- the asking account's own sightings of any kind. p_phash / p_mirror are the
+-- look-alike fingerprint of the picture and of its mirror image (64 hex
+-- characters; see api/_lib/phash.ts); p_bits is how many of the 256 bits may
+-- differ. Compared here, over every stored fingerprint, so the answer doesn't
+-- depend on what the picture was identified as. A sighting only the phone
+-- vouches for is never used against another player.
+create or replace function public.journal_look_alikes(p_user uuid, p_sha text, p_phash text, p_mirror text, p_bits integer)
+returns table (source text, user_id uuid, ref text, exact boolean, distance integer)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with prints as (
+    select 'journal'::text as source, s.user_id, s.id as ref, s.photo_sha, s.photo_phash
+      from public.journal_sightings s
+      where (s.verified or s.user_id = p_user)
+        and (s.photo_sha is not null or s.photo_phash is not null)
+    union all
+    select 'wall', w.user_id, w.post_id::text, w.photo_sha, w.photo_phash
+      from public.wall_prints w
+  ), compared as (
+    select p.source, p.user_id, p.ref,
+      (p_sha is not null and p.photo_sha = p_sha) as exact,
+      case
+        when p_phash ~ '^[0-9a-f]{64}$' and p.photo_phash ~ '^[0-9a-f]{64}$' then
+          least(
+            bit_count(('x' || p.photo_phash)::bit(256) # ('x' || p_phash)::bit(256)),
+            case when p_mirror ~ '^[0-9a-f]{64}$'
+              then bit_count(('x' || p.photo_phash)::bit(256) # ('x' || p_mirror)::bit(256))
+              else 256 end
+          )::integer
+        else 256
+      end as distance
+    from prints p
+  )
+  select c.source, c.user_id, c.ref, c.exact, c.distance
+  from compared c
+  where c.exact or c.distance <= p_bits
+  order by c.exact desc, c.distance
+  limit 50;
+$$;
+revoke all on function public.journal_look_alikes(uuid, text, text, text, integer) from public, anon, authenticated;
+grant execute on function public.journal_look_alikes(uuid, text, text, text, integer) to service_role;
+
 -- ---------- 3. the score on the leaderboard is the server's ----------
 -- profiles.points and species_count used to be whatever the app reported.
 -- Now the server writes them. An app's own numbers are still accepted only
 -- during the legacy window, and only for an account that hasn't synced from
 -- an updated app yet. Otherwise they are ignored: the row keeps the values
--- it had.
+-- it had. (What such an account reports is shown on the board in the
+-- meantime but is never carried into the server-kept score: see the
+-- snapshot above, and settle_legacy_scores below for when the window ends.)
 create or replace function public.protect_score()
 returns trigger
 language plpgsql
@@ -172,6 +339,35 @@ create trigger profiles_protect_score
   before insert or update on public.profiles
   for each row execute function public.protect_score();
 
+-- Once the legacy window has closed, an account that never switched goes
+-- back to what it had when this migration ran: anything its app reported
+-- since then was never checked by anyone. Called by the nightly job; does
+-- nothing while the window is open. Returns how many scores it changed.
+create or replace function public.settle_legacy_scores()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  if private.legacy_open() then
+    return 0;
+  end if;
+  update public.profiles p
+    set points = least(p.points, coalesce((select s.baseline_points from public.journal_state s where s.user_id = p.id), 0)),
+        updated_at = now()
+    where not coalesce(p.is_bot, false)
+      and not exists (select 1 from public.journal_state s where s.user_id = p.id and s.ready_at is not null)
+      and p.points > coalesce((select s.baseline_points from public.journal_state s where s.user_id = p.id), 0);
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+revoke all on function public.settle_legacy_scores() from public, anon, authenticated;
+grant execute on function public.settle_legacy_scores() to service_role;
+
 -- ---------- 4. a wall post takes its facts from the sighting it shares ----------
 alter table public.feed_posts add column if not exists sighting_id text;
 alter table public.feed_posts drop constraint if exists feed_posts_sighting_id_shape;
@@ -199,9 +395,10 @@ begin
     return new;
   end if;
   if new.sighting_id is not null then
+    -- (Looked up as the person asking, not as whoever the row names.)
     select s.points, s.common_name, s.scientific_name into j
       from public.journal_sightings s
-      where s.user_id = new.user_id and s.id = new.sighting_id and s.deleted_at is null;
+      where s.user_id = auth.uid() and s.id = new.sighting_id and s.deleted_at is null;
     if found then
       new.points := j.points;
       new.common_name := j.common_name;
@@ -336,10 +533,11 @@ create trigger profiles_clean_display_name
 
 -- ---------- 6. private storage for journal photos ----------
 -- Not public: a photo here can only be opened by its owner (through a
--- short-lived signed link). The server stores the copies; a player may read
--- and delete their own, nothing else.
+-- short-lived signed link). Only the server stores and removes copies (it
+-- removes them when a sighting or an account is deleted); a player may read
+-- their own and nothing else. JPEGs of the size the app sends.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('journal-photos', 'journal-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+values ('journal-photos', 'journal-photos', false, 1048576, array['image/jpeg'])
 on conflict (id) do update
   set public = false,
       file_size_limit = excluded.file_size_limit,
@@ -350,6 +548,3 @@ create policy journal_photos_read_own on storage.objects
   for select to authenticated
   using (bucket_id = 'journal-photos' and (storage.foldername(name))[1] = auth.uid()::text);
 drop policy if exists journal_photos_delete_own on storage.objects;
-create policy journal_photos_delete_own on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'journal-photos' and (storage.foldername(name))[1] = auth.uid()::text);

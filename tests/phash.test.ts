@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
-import { COPY_BITS, differenceHash, hamming, informative, PHASH_BITS, photoFingerprint, RESAVE_BITS, samePhoto } from '../api/_lib/phash';
+import { COPY_BITS, differenceHash, hamming, informative, mirrorHash, PHASH_BITS, photoFingerprint, RESAVE_BITS, samePhoto } from '../api/_lib/phash';
 import { LIBRARY_HASHES } from '../api/_lib/libraryHashes';
 import { libraryHashes } from '../scripts/hash-library';
 
@@ -88,4 +88,25 @@ test('unreadable or non-JPEG data gives an exact hash only, without throwing', (
   assert.equal(hamming('abc', null), PHASH_BITS);
   assert.equal(hamming('zz', 'zz'), PHASH_BITS);
   assert.equal(differenceHash(new Uint8Array(4 * 4 * 4), 4, 4), null); // too small to grid
+});
+
+test('a copy flipped left to right is recognised through the mirror fingerprint', () => {
+  let caught = 0;
+  const sample = files.filter((_, i) => i % 9 === 0); // 11 photos
+  for (const f of sample) {
+    const img = decode(load(f));
+    const flipped = new Uint8Array(img.data.length);
+    for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+      flipped.set(img.data.subarray((y * img.width + (img.width - 1 - x)) * 4, (y * img.width + (img.width - 1 - x)) * 4 + 4), (y * img.width + x) * 4);
+    }
+    const original = differenceHash(img.data, img.width, img.height)!;
+    const mirrored = differenceHash(flipped, img.width, img.height)!;
+    assert.ok(hamming(original, mirrored) > COPY_BITS, `${f}: a flipped copy would slip past a plain comparison`);
+    if (hamming(mirrorHash(original), mirrored) <= COPY_BITS) caught++;
+  }
+  assert.equal(caught, sample.length);
+  assert.equal(mirrorHash(null), null);
+  assert.equal(mirrorHash('xyz'), null);
+  const h = Object.values(LIBRARY_HASHES)[0];
+  assert.equal(mirrorHash(mirrorHash(h)), h); // flipping twice is the original
 });

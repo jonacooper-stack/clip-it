@@ -7,6 +7,7 @@ import { prewarmStories } from './_lib/stories';
 import { dailyPick } from './_lib/library';
 import { weekOf } from '../shared/crew';
 import { cleanName } from '../shared/moderation';
+import { printWallPhotos, settleLegacyScores, sweepOrphanPhotos } from './_lib/journalUpkeep';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
@@ -17,7 +18,10 @@ import { cleanName } from '../shared/moderation';
 // 2. Recent wall posts get at most one Scout comment each: a welcome on a
 //    player's very first post, otherwise a fun fact about the species
 //    (catching posts shared from older app versions or while facts were down).
-// 3. Writes upcoming stories ahead of time (this week's themes, today's and
+// 3. Looks after the cloud journal: fingerprints new wall photos (so a photo
+//    copied from the wall is recognised), removes stored photos of deleted
+//    accounts, and settles scores once the legacy window has closed.
+// 4. Writes upcoming stories ahead of time (this week's themes, today's and
 //    tomorrow's animal of the day), so "Read the story" opens instantly.
 //
 // Needs SUPABASE_SERVICE_ROLE_KEY and CRON_SECRET in Vercel; run
@@ -87,14 +91,26 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
     if (error && !/usage_counters/.test(error.message)) log('crew_daily_cleanup_error', { detail: error.message.slice(0, 160) });
   }
 
+  // The cloud journal's housekeeping (each step bounded; none of it calls a model).
+  const journal = { wallPrints: 0, orphanFolders: 0, settled: 0 };
+  if (!dry) {
+    try {
+      journal.wallPrints = await printWallPhotos(db, { deadline: started + 18_000 });
+      journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: started + 24_000 });
+      journal.settled = await settleLegacyScores(db);
+    } catch (err: any) {
+      log('crew_daily_journal_error', { detail: String(err?.message ?? err).slice(0, 200) });
+    }
+  }
+
   let stories: string[] = [];
   try {
-    stories = await prewarmStories(db, { dry, cap: 6, deadline: started + 40_000, week: weekOf(), dailyPick });
+    stories = await prewarmStories(db, { dry, cap: 6, deadline: started + 45_000, week: weekOf(), dailyPick });
   } catch (err: any) {
     log('crew_daily_stories_error', { detail: String(err?.message ?? err).slice(0, 200) });
   }
 
-  const result = { ok: true, dry, companion: scout ? 'scout' : 'not created yet', retired, comments, stories };
+  const result = { ok: true, dry, companion: scout ? 'scout' : 'not created yet', retired, comments, journal, stories };
   log('crew_daily_run', result);
   return result;
 }

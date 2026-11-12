@@ -86,6 +86,18 @@ export function isTimeZone(tz: unknown): tz is string {
   }
 }
 
+// The engine's own spelling of a zone name ("asia/calcutta" -> "Asia/Calcutta"),
+// or null if it doesn't know it. Use this before storing or caching a name a
+// caller supplied: many spellings are accepted for the same zone.
+export function canonicalTimeZone(tz: unknown): string | null {
+  if (typeof tz !== 'string' || !tz || tz.length > 64) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
 const zones = new Map<string, Zone>();
 
 // Any named zone, read through Intl. Throws on a name the engine doesn't know
@@ -141,6 +153,7 @@ export function ianaZone(tz: string): Zone {
   };
 
   const zone = makeZone(wallAt, instantAt);
+  if (zones.size > 600) zones.clear(); // there are only a few hundred real zones
   zones.set(tz, zone);
   return zone;
 }
