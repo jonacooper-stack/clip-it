@@ -85,7 +85,7 @@ export default function Profile() {
       () =>
         askYesNo(
           'Delete what is saved to your account?',
-          'This deletes the copy of your journal that is saved to your account, including the copies of its photos. The sightings on this phone stay.',
+          'This deletes the copy of your journal that is saved to your account, including the copies of its photos, and resets your score on the leaderboard. The sightings on this phone stay.',
           'Delete it',
           'Keep it',
           () => void turnOffBackup({ erase: true }),

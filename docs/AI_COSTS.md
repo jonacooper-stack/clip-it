@@ -88,7 +88,9 @@ not file size. That is why the size of the copy sent to the AI
    server doesn't count those beyond each account's starting allowance. Once
    the phone has the new version, it sends the photo of each such sighting to
    the server to be identified properly (three per sync, only while the photo
-   is still on the phone). Each one is a normal identification, once.
+   is still on the phone). Each one is a normal identification, once. The
+   same happens for a player who deletes the journal saved to their account
+   and later turns the backup on again.
 5. **Daily brakes** (`DAILY_SCORE_LIMIT` 100, `DAILY_REFUSED_LIMIT` 10,
    `DAILY_JOURNAL_LIMIT` 600) limit scoring and syncing, not AI spend: a photo
    over the scoring limit is still identified. The spend limit is still

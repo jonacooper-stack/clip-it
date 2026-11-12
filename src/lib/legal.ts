@@ -259,7 +259,7 @@ export const SUPPORT_FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do I stop saving my journal to my account?',
-    a: 'Go to Profile → Turn off journal backup. You can also choose to delete what was saved. Your sightings stay on your phone; your score stops counting on the leaderboard until you turn the backup on again. To keep the backup but not places, turn off “Save places with my journal” instead.',
+    a: 'Go to Profile → Turn off journal backup. You can also choose to delete what was saved, which resets your score on the leaderboard. Your sightings stay on your phone; new ones stop counting on the leaderboard until you turn the backup on again. To keep the backup but not places, turn off “Save places with my journal” instead.',
   },
   {
     q: 'How do I report a post, comment or person?',
