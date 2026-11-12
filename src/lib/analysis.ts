@@ -7,12 +7,15 @@
 
 import { Platform } from 'react-native';
 import type { IdentifyInput, IdentifyOutcome } from './identify';
-import { identifySighting, OfflineError } from './identify';
+import { identifySighting, isPermanentFailure, OfflineError } from './identify';
 import { fetchCrewNotes } from './crew/api';
 import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { useJournalStore } from '@/state/useJournalStore';
+import { dueForRetry, nextRetry } from './retry';
+
+export { MAX_AUTO_RETRIES } from './retry';
 
 // Cheap, stable hash of a photo's bytes (FNV-1a, salted with length) for detecting
 // an exact-duplicate resubmission within a player's own journal.
@@ -110,23 +113,6 @@ let running = false;
 // hold the whole queue until this time instead of knocking again every tick.
 let pausedUntil = 0;
 
-// A capture the server answered for but couldn't identify (a server error, a
-// photo it can't read) is retried after a growing wait, then left alone: each
-// try uploads the photo and may spend AI credit, so a capture that keeps
-// failing must not be retried forever. Players can still retry it by hand.
-export const RETRY_WAITS_MS = [30_000, 2 * 60_000, 10 * 60_000, 3600_000, 6 * 3600_000];
-export const MAX_AUTO_RETRIES = 8;
-
-export function nextRetry(attempts: number, now = Date.now()): { attempts: number; nextAt: number } {
-  const step = Math.min(Math.max(attempts, 1), RETRY_WAITS_MS.length) - 1;
-  return { attempts, nextAt: now + RETRY_WAITS_MS[step] };
-}
-
-// Whether the queue should try this capture now.
-export function dueForRetry(retry: { attempts: number; nextAt: number } | undefined, now = Date.now()): boolean {
-  return !retry || (retry.attempts < MAX_AUTO_RETRIES && now >= retry.nextAt);
-}
-
 // Retries every queued (offline) capture. Safe to call often: it no-ops when
 // there's nothing due or a run is already going, and leaves a capture queued
 // if the device is still offline. `force` (the player asked) ignores waits.
@@ -162,6 +148,11 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
           // Signed out, or asked to slow down: not this capture's fault.
           pausedUntil = Date.now() + (status === 429 ? 60_000 : 2 * 60_000);
           break;
+        }
+        if (isPermanentFailure(err)) {
+          // This photo can't be identified (unreadable or declined): stop trying.
+          useJournalStore.getState().updateSighting(s.id, { idStatus: 'rejected', retry: undefined });
+          continue;
         }
         // The server answered but couldn't identify this one. Wait longer
         // before trying it again, and move on to the next capture.

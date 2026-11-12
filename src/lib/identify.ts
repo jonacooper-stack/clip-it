@@ -31,6 +31,14 @@ export class OfflineError extends Error {
   }
 }
 
+// Statuses that mean "this photo can never be identified" (unreadable, too
+// large, or the identifier declined it): trying again won't help.
+const PERMANENT = new Set([400, 413, 415, 422]);
+
+export function isPermanentFailure(err: unknown): boolean {
+  return err instanceof OfflineError && err.status != null && PERMANENT.has(err.status);
+}
+
 // The identify endpoint answered, but with an error.
 class EndpointError extends Error {
   constructor(
@@ -155,7 +163,9 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
   };
 }
 
-const IDENTIFY_TIMEOUT_MS = 20000;
+// A little longer than the server allows itself (24s), so a slow answer still
+// arrives instead of being paid for and thrown away.
+const IDENTIFY_TIMEOUT_MS = 28000;
 
 async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcome> {
   let resp: Response;

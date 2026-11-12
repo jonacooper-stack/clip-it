@@ -191,7 +191,9 @@ const storiesInFlight = new Map<string, Promise<Story | null>>();
 export function loadStory(r: StoryRef): Promise<Story | null> {
   const id = storyId(r);
   const cached = useCrewStore.getState().stories[id];
-  if (cached && Date.now() - (cached.fetchedAt ?? 0) < 7 * 86_400_000) return Promise.resolve(cached);
+  // A copy that went out before its photos were ready is only good for a few minutes.
+  const freshFor = cached?.partial ? 10 * 60_000 : 7 * 86_400_000;
+  if (cached && Date.now() - (cached.fetchedAt ?? 0) < freshFor) return Promise.resolve(cached);
   const running = storiesInFlight.get(id);
   if (running) return running;
   const request = crewFetch<Story>('/api/crew/story', { method: 'POST', body: JSON.stringify(r) }, STORY_TIMEOUT_MS)

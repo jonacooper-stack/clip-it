@@ -49,6 +49,8 @@ export interface Story {
   title: string;
   species: string;
   pages: StoryPage[];
+  /** Sent before all its photos were ready: refetched soon rather than kept a week. */
+  partial?: boolean;
   fetchedAt?: number;
 }
 

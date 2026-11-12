@@ -1,5 +1,7 @@
 // Shared client types for Clip-It.
 
+import type { Retry } from '@/lib/retry';
+
 export type IdStatus =
   | 'identifying'
   | 'queued' // captured offline; awaiting analysis when back online
@@ -70,7 +72,7 @@ export interface Sighting {
   wallPostId?: string;
   /** For a queued capture: how many times identifying it has failed, and when
    * to try again (see lib/analysis). */
-  retry?: { attempts: number; nextAt: number };
+  retry?: Retry;
 }
 
 export interface CrewOtherPost {

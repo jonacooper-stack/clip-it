@@ -164,6 +164,7 @@ export default function PostDetail() {
               placeholderTextColor={colors.faint}
               style={[styles.input, webInputReset]}
               multiline
+              maxLength={500}
               onSubmitEditing={send}
             />
             <Pressable

@@ -9,7 +9,11 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p api/tsconfig.json --noEmit",
+    "test": "node --import tsx --test \"tests/*.test.ts\"",
+    "test:db": "bash supabase/tests/run.sh",
+    "check": "npm run typecheck && npm test",
+    "eval:identify": "tsx scripts/eval-identify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
@@ -55,6 +59,7 @@
   "devDependencies": {
     "@types/react": "~18.3.12",
     "@vercel/node": "^5.8.17",
+    "tsx": "4.21.0",
     "typescript": "~5.3.3"
   }
 }

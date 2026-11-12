@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminClient, bearer, log, rateLimited, userClient, verifyUser } from '../_lib/server';
-import { getFacts, scoutComment, type SpeciesFacts } from '../_lib/crewFacts';
+import { adminClient, bearer, dailyLimitReached, log, ownStorageUrl, rateLimited, userClient, verifyUser } from '../_lib/server';
+import { getFacts, NotAnAnimal, QuotaExceeded, scoutComment, type SpeciesFacts } from '../_lib/crewFacts';
+import { cleanName } from '../../shared/moderation';
 import { findLibraryPhoto, type PhotoRef } from '../_lib/library';
 import { withoutBlocked } from '../_lib/photoFlags';
 import { ensureCrew, hasCrewComment } from '../_lib/crewAccounts';
@@ -32,20 +33,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (rateLimited(`notes:${userId}`, 30)) return res.status(429).json({ error: 'too many requests' });
 
   const body = (req.body ?? {}) as { species?: unknown; sci?: unknown; postId?: unknown };
-  const species = typeof body.species === 'string' ? body.species.trim().slice(0, 80) : '';
-  const sci = typeof body.sci === 'string' ? body.sci.trim().slice(0, 80) : null;
-  const postId = typeof body.postId === 'string' ? body.postId : null;
+  // The names come from the app. Scout repeats them (in its comment) and
+  // writes about them, so only something that reads like an animal's name
+  // gets through.
+  const species = cleanName(body.species);
+  const sci = cleanName(body.sci, 80);
+  const postId = typeof body.postId === 'string' && /^[0-9a-f-]{36}$/i.test(body.postId) ? body.postId : null;
   if (!species) return res.status(400).json({ error: 'species is required' });
 
   const db = adminClient();
   const reader = db ?? userClient(bearer(req.headers.authorization)!);
 
-  // Facts
+  // Facts (written once per species; a player can cause only so many new ones a day)
   let facts: SpeciesFacts | null = null;
   try {
-    facts = await getFacts(db, species, sci);
+    facts = await getFacts(db, species, sci, { allow: async () => !(await dailyLimitReached(db, userId, 'generate')) });
   } catch (err: any) {
-    fail('facts_error', { species, detail: String(err?.message ?? err).slice(0, 200) });
+    if (!(err instanceof NotAnAnimal) && !(err instanceof QuotaExceeded)) {
+      fail('facts_error', { species, detail: String(err?.message ?? err).slice(0, 200) });
+    }
   }
 
   // Other players' posts of this species (last 60 days), best first.
@@ -71,7 +77,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const l of likes ?? []) likeCount.set(l.post_id, (likeCount.get(l.post_id) ?? 0) + 1);
       const nameOf = new Map((people ?? []).map((p) => [p.id, p.display_name || 'Explorer']));
       others = posts
-        .map((p) => ({ postId: p.id, photoUrl: p.photo_url as string, name: nameOf.get(p.user_id) ?? 'Explorer', likes: likeCount.get(p.id) ?? 0, createdAt: p.created_at }))
+        .map((p) => ({ postId: p.id, photoUrl: ownStorageUrl(p.photo_url, 'feed-photos'), name: nameOf.get(p.user_id) ?? 'Explorer', likes: likeCount.get(p.id) ?? 0, createdAt: p.created_at }))
+        .filter((p): p is OtherPost => Boolean(p.photoUrl))
         .sort((a, b) => b.likes - a.likes || Date.parse(b.createdAt) - Date.parse(a.createdAt))
         .slice(0, 3);
     }

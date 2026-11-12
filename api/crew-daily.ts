@@ -1,11 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { adminClient, log } from './_lib/server';
+import { adminClient, log, safeEqual } from './_lib/server';
 import { ensureCrew, hasCrewComment, retireOldCrew } from './_lib/crewAccounts';
-import { getFacts, scoutComment, scoutWelcome, speciesKey } from './_lib/crewFacts';
+import { getFacts, NotAnAnimal, scoutComment, scoutWelcome, speciesKey } from './_lib/crewFacts';
 import { prewarmStories } from './_lib/stories';
 import { dailyPick } from './_lib/library';
 import { weekOf } from '../shared/crew';
+import { cleanName } from '../shared/moderation';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
@@ -45,34 +46,45 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
     for (const p of recent ?? []) {
       if (await hasCrewComment(db, p.id, [scout.id])) continue;
       const { count } = await db.from('feed_posts').select('id', { count: 'exact', head: true }).eq('user_id', p.user_id);
+      // Post and profile text is written by players' apps. Scout only repeats
+      // (or writes about) what reads like a name; anything else is left out.
+      const species = cleanName(p.common_name);
+      const sci = cleanName(p.scientific_name, 80);
       let body: string | null = null;
       let kind = 'fact';
       if (count === 1) {
         const { data: author } = await db.from('profiles').select('display_name').eq('id', p.user_id).maybeSingle();
-        body = scoutWelcome(author?.display_name ?? 'explorer', p.common_name);
+        body = scoutWelcome(cleanName(String(author?.display_name ?? '').split(' ')[0], 30) ?? 'explorer', species);
         kind = 'welcome';
-      } else if (p.common_name) {
+      } else if (species) {
         try {
           // Cap fresh model calls per run; cached species are free.
           const { data: cached } = await db
             .from('crew_facts')
             .select('species_key')
-            .eq('species_key', speciesKey(p.common_name, p.scientific_name))
+            .eq('species_key', speciesKey(species, sci))
             .maybeSingle();
           if (!cached) {
             if (newFacts >= MAX_NEW_FACTS_PER_RUN) continue;
             newFacts++;
           }
-          const facts = await getFacts(db, p.common_name, p.scientific_name);
-          body = scoutComment(p.common_name, facts, p.id);
+          const facts = await getFacts(db, species, sci);
+          body = scoutComment(species, facts, p.id);
         } catch (err: any) {
-          log('crew_daily_facts_error', { detail: String(err?.message ?? err).slice(0, 200) });
+          if (!(err instanceof NotAnAnimal)) log('crew_daily_facts_error', { detail: String(err?.message ?? err).slice(0, 200) });
         }
       }
       if (!body) continue;
       if (!dry) await db.from('post_comments').insert({ post_id: p.id, user_id: scout.id, body });
       comments.push({ post: p.id, kind });
     }
+  }
+
+  // Yesterday's (and older) usage counts are no longer needed.
+  if (!dry) {
+    const cutoff = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const { error } = await db.from('usage_counters').delete().lt('day', cutoff);
+    if (error && !/usage_counters/.test(error.message)) log('crew_daily_cleanup_error', { detail: error.message.slice(0, 160) });
   }
 
   let stories: string[] = [];
@@ -92,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return res.status(500).json({ error: 'CRON_SECRET is not set' });
   const sent = String(req.headers.authorization ?? '').trim().replace(/^Bearer\s+/i, '').trim();
-  if (sent !== secret) {
+  if (!safeEqual(sent, secret)) {
     log('crew_daily_unauthorized', { sentLength: sent.length, expectedLength: secret.length });
     return res.status(401).json({ error: 'unauthorized' });
   }

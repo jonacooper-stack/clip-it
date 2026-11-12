@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
-import { identifySighting, OfflineError } from '@/lib/identify';
+import { identifySighting, isPermanentFailure, OfflineError } from '@/lib/identify';
 import { applyIdentifyOutcome, processAnalysisQueue, hashPhotoBase64 } from '@/lib/analysis';
 import { savePhotoBase64, resolvePhoto } from '@/lib/photoStore';
 import { takePendingPhoto } from '@/state/pendingCaptures';
@@ -69,7 +69,7 @@ export default function Identifying() {
         processAnalysisQueue();
       } catch (err) {
         if (cancelled.current) return;
-        if (err instanceof OfflineError) {
+        if (err instanceof OfflineError && !isPermanentFailure(err)) {
           // No signal: queue it. The photo was already persisted at capture; if it
           // somehow wasn't, stash the base64 now so the retry still has it.
           let photoUri = current?.photoUri;

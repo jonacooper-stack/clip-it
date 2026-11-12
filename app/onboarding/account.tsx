@@ -199,6 +199,7 @@ export default function Account() {
               onChangeText={setName}
               placeholder="What should we call you?"
               placeholderTextColor={colors.faint}
+              maxLength={30}
               style={[styles.input, webInputReset]}
               autoCapitalize="words"
               returnKeyType="next"

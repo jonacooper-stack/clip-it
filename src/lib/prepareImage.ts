@@ -10,27 +10,11 @@
 
 import { Image } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
-
-// Longest side, in pixels, of the copy sent to the AI.
-export const AI_MAX_DIM = 1280;
+import { AI_MAX_DIM, resizeFor, type Size } from './imageSize';
 
 // Quality for photos people look at (journal, camera roll, the wall). The AI copy
-// stays small (above); what players see should stay sharp.
+// stays small (see imageSize.ts); what players see should stay sharp.
 export const CAPTURE_QUALITY = 0.85;
-
-export interface Size {
-  width: number;
-  height: number;
-}
-
-// The resize step that brings the LONGEST side down to `maxDim`, or none when
-// the photo is already small enough (never upscale: it adds bytes and AI cost
-// without adding detail).
-export function resizeFor(size: Size | null, maxDim: number): { width: number } | { height: number } | null {
-  if (!size || !(size.width > 0) || !(size.height > 0)) return { width: maxDim }; // unknown size: cap the width
-  if (Math.max(size.width, size.height) <= maxDim) return null;
-  return size.width >= size.height ? { width: maxDim } : { height: maxDim };
-}
 
 function imageSize(uri: string): Promise<Size | null> {
   return new Promise((resolve) => {

@@ -100,6 +100,13 @@ function myId(): string | null {
   return useAuthStore.getState().session?.user?.id ?? null;
 }
 
+// The name to put on a new profile row: the player's display name if it's one
+// the board accepts, otherwise a neutral one.
+function publicName(): string {
+  const shown = useAppStore.getState().displayName.trim().slice(0, 40);
+  return !shown || checkText(shown) || reservedName(shown) ? 'Explorer' : shown;
+}
+
 // Most social tables reference profiles(id), and a fresh account has no profile
 // row until it first syncs. Create a minimal one (never overwriting) so inserts
 // like blocks, reports and posts can't fail on a foreign key.
@@ -107,7 +114,7 @@ async function ensureProfile(uid: string) {
   if (!supabase) return;
   await supabase
     .from('profiles')
-    .upsert({ id: uid, display_name: useAppStore.getState().displayName }, { onConflict: 'id', ignoreDuplicates: true });
+    .upsert({ id: uid, display_name: publicName() }, { onConflict: 'id', ignoreDuplicates: true });
 }
 
 // --- blocking (cached so every list can filter cheaply) ---
@@ -140,7 +147,9 @@ export async function syncMyProfile(displayName: string, points: number, species
     .select('display_name, points, species_count')
     .eq('id', uid)
     .maybeSingle();
-  const name = checkText(displayName) || reservedName(displayName) ? 'Explorer' : displayName;
+  // Names from Google or Apple can be long; the board keeps the first 40 characters.
+  const shown = displayName.trim().slice(0, 40) || 'Explorer';
+  const name = checkText(shown) || reservedName(shown) ? 'Explorer' : shown;
   const next = {
     display_name: name,
     points: Math.max(points, (current as any)?.points ?? 0),
@@ -536,7 +545,7 @@ export async function uploadAvatar(localUri: string): Promise<{ url?: string; er
   const url = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
   const { error: dbErr } = await supabase
     .from('profiles')
-    .upsert({ id: uid, display_name: useAppStore.getState().displayName, avatar_url: url }, { onConflict: 'id' });
+    .upsert({ id: uid, display_name: publicName(), avatar_url: url }, { onConflict: 'id' });
   if (dbErr) return { error: dbErr.message };
   return { url };
 }

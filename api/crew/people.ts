@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { adminClient, log, rateLimited, verifyUser } from '../_lib/server';
+import { adminClient, log, ownStorageUrl, rateLimited, verifyUser } from '../_lib/server';
 import { withArticle } from '../../shared/crew';
 
 // POST /api/crew/people  { species: string[] }
@@ -89,10 +89,13 @@ export async function suggestPeople(db: SupabaseClient, userId: string, species:
   for (const uid of authors) {
     const prof = profileOf.get(uid);
     const priv = privateOf.get(uid);
-    if (!prof || prof.is_bot || priv?.discoverable === false) continue;
+    // Only players who have said yes (the app saves the choice: on for adults,
+    // off for ages 13–17 until they turn it on). No saved choice means no.
+    if (!prof || prof.is_bot || priv?.discoverable !== true) continue;
     const theirs: PersonPost[] = candidates
       .filter((p: any) => p.user_id === uid)
-      .map((p: any) => ({ postId: p.id, photoUrl: p.photo_url, commonName: p.common_name, likes: likeCount.get(p.id) ?? 0, createdAt: p.created_at, sci: p.scientific_name }))
+      .map((p: any) => ({ postId: p.id, photoUrl: ownStorageUrl(p.photo_url, 'feed-photos'), commonName: p.common_name, likes: likeCount.get(p.id) ?? 0, createdAt: p.created_at, sci: p.scientific_name }))
+      .filter((p): p is PersonPost & { sci: string | null } => Boolean(p.photoUrl))
       .sort((a, b) => b.likes - a.likes || Date.parse(b.createdAt) - Date.parse(a.createdAt));
     const sharedPosts = theirs.filter((p: any) => mySpecies.has(norm(p.commonName)) || mySpecies.has(norm(p.sci)));
     const sharedNames = new Set(sharedPosts.map((p) => norm(p.commonName)));
@@ -114,7 +117,8 @@ export async function suggestPeople(db: SupabaseClient, userId: string, species:
               : 'New to the wall';
     // Show the shared find first, then their best photos.
     const show = [...sharedPosts.slice(0, 1), ...theirs.filter((p) => p !== sharedPosts[0])].slice(0, 3).map(({ sci, ...p }: any) => p);
-    people.push({ userId: uid, name: prof.display_name || 'Explorer', avatarUrl: prof.avatar_url ?? null, reason, near, shared: sharedNames.size, posts: show, score });
+    if (!theirs.length) continue;
+    people.push({ userId: uid, name: prof.display_name || 'Explorer', avatarUrl: ownStorageUrl(prof.avatar_url, 'avatars'), reason, near, shared: sharedNames.size, posts: show, score });
   }
   people.sort((a, b) => b.score - a.score);
   return people.slice(0, 6).map(({ score, ...p }) => p);

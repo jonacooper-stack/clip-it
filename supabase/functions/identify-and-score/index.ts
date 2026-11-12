@@ -25,6 +25,14 @@ const AUTO_RESOLVE_CONFIDENCE = 0.75;
 
 Deno.serve(async (req) => {
   try {
+    // This function runs with the service role (it bypasses RLS) and spends AI
+    // credit, so it must know who is asking: a signed-in player, and only for
+    // their own sighting. NOT YET DEPLOYED — add a per-player daily limit like
+    // api/_lib/server.ts → dailyLimitReached before it is.
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: auth } = token ? await db.auth.getUser(token) : { data: { user: null } };
+    if (!auth?.user) return json({ error: "sign in required" }, 401);
+
     const { sightingId } = await req.json();
     if (!sightingId) {
       return json({ error: "sightingId is required" }, 400);
@@ -36,7 +44,7 @@ Deno.serve(async (req) => {
       .select("id, user_id, media_path")
       .eq("id", sightingId)
       .single();
-    if (loadErr || !sighting) return json({ error: "sighting not found" }, 404);
+    if (loadErr || !sighting || sighting.user_id !== auth.user.id) return json({ error: "sighting not found" }, 404);
 
     // 2. Fetch the image bytes from Storage and base64-encode them.
     // TODO: confirm bucket name / path convention.
@@ -173,7 +181,8 @@ Deno.serve(async (req) => {
       provisional: needsReview,
     });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    console.error("identify-and-score failed:", err);
+    return json({ error: "identification failed" }, 500);
   }
 });
 
