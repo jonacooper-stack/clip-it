@@ -220,11 +220,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     // While the model looks at the photo, take its fingerprints (used to spot
     // the same picture handed in twice). Only needed when it may be recorded.
-    // (Yield first: the request to the model leaves on the next turn of the
-    // event loop, and fingerprinting keeps the loop busy for a moment.)
-    let print: Fingerprint = { sha: '', phash: null };
+    // (Wait a moment first: fingerprinting keeps this process busy for a
+    // tenth of a second or so, and started straight away it would hold up
+    // the request to the model for that long.)
+    let print: Fingerprint = { sha: '', phash: null, mask: null };
     if (meta.sid) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       try {
         print = photoFingerprint(imageBase64);
       } catch {
@@ -264,7 +265,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           status: id.idStatus, common: id.species.commonName, sci: id.species.scientificName, group: id.species.group,
           confidence: id.species.confidence, rarity: id.rarityScore, tags: id.sceneTags, dangerous: id.dangerous, caption: id.caption,
         },
-        sha: print.sha || null, phash: print.phash,
+        sha: print.sha || null, phash: print.phash, mask: print.mask,
         model: usage.model,
       };
       journal = { receipt: signReceipt(payload) ?? undefined, recorded: false };

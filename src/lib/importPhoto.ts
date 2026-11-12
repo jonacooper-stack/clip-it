@@ -80,8 +80,13 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
     try {
       const info = await MediaLibrary.getAssetInfoAsync(a.assetId);
       if (info.location) {
-        lat = info.location.latitude;
-        lng = info.location.longitude;
+        // (On iOS the photo library hands these over as text, not numbers.)
+        const libLat = num(info.location.latitude);
+        const libLng = num(info.location.longitude);
+        if (libLat != null && libLng != null) {
+          lat = libLat;
+          lng = libLng;
+        }
       }
       if (info.creationTime) observedAt = info.creationTime;
       libraryDetails = info.exif;

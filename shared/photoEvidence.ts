@@ -24,8 +24,17 @@ const EXPOSURE_KEYS = ['exposuretime', 'shutterspeedvalue'];
 const SETTING_KEYS = ['fnumber', 'aperturevalue', 'isospeedratings', 'photographicsensitivity', 'iso', 'focallength', 'focallengthin35mmfilm', 'focalleninmmfilm'];
 const TEXT_KEYS = ['software', 'imagedescription', 'artist', 'usercomment', 'copyright', 'hostcomputer'];
 
-// Names that show up in the details of AI-made pictures.
-const GENERATORS = /midjourney|dall[\s·.-]?e|stable\s?diffusion|sdxl|firefly|imagen\b|flux\b|chatgpt|openai|made with google ai|google ai|gemini|grok|leonardo\.?ai|ideogram|ai[\s-]?generated|trainedalgorithmicmedia/i;
+// Names that show up in the details of AI-made pictures. This catches little
+// (most such pictures carry their label where a photo picker doesn't look,
+// and they already fail for having no camera details); the identifier's own
+// look at the picture is the real check. So it errs on the side of not
+// accusing a real photo:
+//   - in "Software" (the program that wrote the file), generator names;
+//   - in free text (description, artist, copyright, comment), only phrases
+//     that can hardly mean anything else. Words such as "imagen" (Spanish for
+//     image), "flux" or "gemini" turn up in ordinary captions and studio names.
+const GENERATOR_SOFTWARE = /midjourney|dall[\s·.-]?e\b|stable\s?diffusion|sdxl|firefly|chatgpt|openai|google ai|leonardo\.?ai|ideogram|ai[\s-]?generated|trainedalgorithmicmedia/i;
+const GENERATOR_PHRASES = /midjourney|dall[\s·.-]e\b|stable\s?diffusion|adobe firefly|made with google ai|ai[\s-]generated|trainedalgorithmicmedia/i;
 
 // The picker's details arrive as one flat object on iOS and Android, but
 // other sources nest them ("{Exif}", "{TIFF}"): gather every level.
@@ -48,11 +57,12 @@ export function photoEvidence(exif: Record<string, unknown> | null | undefined, 
   const all = new Map<string, unknown>();
   if (exif && typeof exif === 'object') flatten(exif, all);
   const has = (keys: string[]) => keys.some((k) => filled(all.get(k)));
-  const text = TEXT_KEYS.map((k) => all.get(k)).filter((v) => typeof v === 'string').join(' \n ');
+  const software = typeof all.get('software') === 'string' ? (all.get('software') as string) : '';
+  const text = TEXT_KEYS.filter((k) => k !== 'software').map((k) => all.get(k)).filter((v) => typeof v === 'string').join(' \n ');
   return {
     camera: has(CAMERA_KEYS) || (has(EXPOSURE_KEYS) && has(SETTING_KEYS)),
     screenshot: Boolean(extra.subtypes?.includes('screenshot')) || /^\s*screenshot\s*$/i.test(String(all.get('usercomment') ?? '')),
-    generator: GENERATORS.test(text),
+    generator: GENERATOR_SOFTWARE.test(software) || GENERATOR_PHRASES.test(text),
   };
 }
 

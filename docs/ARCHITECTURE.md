@@ -115,6 +115,10 @@ These shape the UX from day one; they're product features, not afterthoughts.
   parent's account immediately. Before opening under-13 to the **public**, we add a
   recognized **verifiable parental consent** method (the COPPA requirement) as a fast-follow.
   *(Confirm public-launch specifics with counsel — "close enough" isn't good enough here.)*
+  **As built (November 2026):** the app is 13+. The age question turns away anyone
+  younger and there is no child profile yet. Journals can now be saved to accounts, so a
+  child playing on a parent's account has their sightings saved to that account: see
+  [DECISIONS.md](DECISIONS.md), decision 3.
 - **Reward the photo, never the proximity.** Points are for *observation/photo quality*,
   explicitly **not** how close you got. No quest ever implies "get closer." Dangerous
   species trigger a "keep your distance, use zoom" interstitial.

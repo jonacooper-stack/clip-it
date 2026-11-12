@@ -200,7 +200,7 @@ export default function SightingDetail() {
               hasLoc ? `~${sighting.lat!.toFixed(2)}, ${sighting.lng!.toFixed(2)}` : 'Not recorded'
             }
           />
-          {hasLoc && <Text style={styles.privacyNote}>Approximate — your precise location stays private to you.</Text>}
+          {hasLoc && <Text style={styles.privacyNote}>Approximate. The exact spot stays on this phone, and other players never see where you were.</Text>}
         </Card>
 
         {sighting.science && Object.keys(sighting.science).length > 0 && (

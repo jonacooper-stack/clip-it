@@ -40,6 +40,27 @@ test('details that name an image generator are recognised', () => {
   }
   assert.equal(photoEvidence({ Make: 'Canon', Software: 'Adobe Lightroom 7.4' }).generator, false); // editing a real photo is fine
   assert.equal(importLooksGenuine(photoEvidence({ Make: 'Canon', Software: 'Midjourney' })), false);
+  // a label in the description or comment counts too, when it can hardly mean anything else
+  for (const text of ['AI-generated image', 'Made with Google AI', 'created with Stable Diffusion']) {
+    assert.equal(photoEvidence({ Make: 'Canon', ImageDescription: text }).generator, true, text);
+  }
+});
+
+test('ordinary words in a real photo\'s caption or credits are not taken for a generator', () => {
+  for (const details of [
+    { ImageDescription: 'Imagen de Ana López' }, // Spanish for "image"
+    { Copyright: 'Flux Studio 2026' },
+    { Artist: 'Gemini Wildlife Photography' },
+    { UserComment: 'grok this bird' },
+    { ImageDescription: 'A firefly at dusk' },
+    { Artist: 'Dalle Molle' },
+    { Software: 'Gemini Photos 2.1' },
+    { Software: '17.5.1' },
+  ]) {
+    const e = photoEvidence({ Make: 'Apple', Model: 'iPhone 15', ...details });
+    assert.equal(e.generator, false, JSON.stringify(details));
+    assert.equal(importLooksGenuine(e), true);
+  }
 });
 
 test('unknown evidence (an app build that does not send it) is allowed, as before', () => {

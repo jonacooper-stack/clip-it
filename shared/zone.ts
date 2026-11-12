@@ -2,10 +2,17 @@
 //
 // Weekly quests run Monday to Sunday in the player's own time zone, and the
 // phone has always worked that out with the device clock. The server keeps
-// the score now, so it has to be able to repeat the same sums for a player
-// in any zone: `ianaZone('America/New_York')` gives the same answers there as
-// `localZone` gives on a phone set to New York, including on days when the
-// clocks skip or repeat an hour.
+// the score now, so it repeats the same sums for a player in any zone:
+// `ianaZone('America/New_York')` gives the same answers as `localZone` gives
+// on a computer set to New York, including on days when the clocks skip or
+// repeat an hour (tests/zone.test.ts checks this across many zones).
+//
+// The server's sums are the ones that count. A phone agrees with them
+// wherever the clocks change by a whole hour or not at all, which is nearly
+// everywhere. In the few places where they change by another amount (Lord
+// Howe Island's half hour), the phone's own clock arithmetic can put a
+// sighting made around midnight in a different day than the server does; the
+// app shows the server's total once the server keeps the account's score.
 //
 // Keep this file free of React Native and Node-only imports.
 
@@ -75,15 +82,17 @@ export const localZone: Zone = makeZone(
   (y, m, d, h, mi, s, ms) => new Date(y, m, d, h, mi, s, ms).getTime(),
 );
 
+// A phone whose clock is set by a fixed offset rather than a place reports
+// its zone as "GMT-0800" (iPhone) or "GMT+05:30" (Android). Intl doesn't take
+// those spellings, but it does take the bare offset ("-08:00").
+function spelled(tz: string): string {
+  const m = /^(?:GMT|UTC)([+-])(\d{1,2})(?::?(\d{2}))?$/i.exec(tz.trim());
+  return m ? `${m[1]}${m[2].padStart(2, '0')}:${m[3] ?? '00'}` : tz;
+}
+
 // Whether `tz` is a time zone this JavaScript engine knows ("Europe/Paris").
 export function isTimeZone(tz: unknown): tz is string {
-  if (typeof tz !== 'string' || !tz || tz.length > 64) return false;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
+  return canonicalTimeZone(tz) !== null;
 }
 
 // The engine's own spelling of a zone name ("asia/calcutta" -> "Asia/Calcutta"),
@@ -92,7 +101,7 @@ export function isTimeZone(tz: unknown): tz is string {
 export function canonicalTimeZone(tz: unknown): string | null {
   if (typeof tz !== 'string' || !tz || tz.length > 64) return null;
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: tz }).resolvedOptions().timeZone;
+    return new Intl.DateTimeFormat('en-US', { timeZone: spelled(tz) }).resolvedOptions().timeZone;
   } catch {
     return null;
   }

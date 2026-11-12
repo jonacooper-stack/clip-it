@@ -12,8 +12,8 @@ import {
   withJournalLock, type JournalDb, type JournalRow, type JournalState, type Match, type Refusal,
 } from '../api/_lib/journal';
 import { signReceipt, type ReceiptPayload } from '../api/_lib/receipt';
-import { LIBRARY_HASHES } from '../api/_lib/libraryHashes';
-import { hamming, mirrorHash, photoFingerprint } from '../api/_lib/phash';
+import { LIBRARY_PRINTS } from '../api/_lib/libraryHashes';
+import { compare, mirrorPrint, photoFingerprint, samePhoto } from '../api/_lib/phash';
 import { playerTotals } from '../shared/quests';
 import { ianaZone } from '../shared/zone';
 
@@ -31,7 +31,7 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
   const states = new Map<string, JournalState>();
   const profiles = new Map<string, { points: number; species_count: number }>();
   const photos = new Map<string, Buffer>();
-  const wall: { post_id: string; user_id: string; photo_sha: string | null; photo_phash: string | null }[] = [];
+  const wall: { post_id: string; user_id: string; photo_sha: string | null; photo_phash: string | null; photo_mask: string | null }[] = [];
   const refusals: Refusal[] = [];
   const wallFacts = new Map<string, { points: number; common_name: string | null; scientific_name: string | null }>();
   const locks = new Set<string>();
@@ -49,15 +49,16 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
     async countRows(uid) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid).length; },
     async speciesCount(uid, sci, except) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid && r.scientific_name === sci && r.id !== except).length; },
     // The same rule as public.journal_look_alikes: sightings the server identified (anyone's), wall photos (anyone's), and the asker's own.
-    async lookAlikes(uid, print, maxBits) {
+    async lookAlikes(uid, print) {
       await tick();
       const prints = [
-        ...[...rows.values()].filter((r) => (r.verified || r.user_id === uid) && (r.photo_sha || r.photo_phash)).map((r) => ({ source: 'journal' as const, user_id: r.user_id, ref: r.id, sha: r.photo_sha, phash: r.photo_phash })),
-        ...wall.map((w) => ({ source: 'wall' as const, user_id: w.user_id, ref: w.post_id, sha: w.photo_sha, phash: w.photo_phash })),
+        ...[...rows.values()].filter((r) => (r.verified || r.user_id === uid) && (r.photo_sha || r.photo_phash)).map((r) => ({ source: 'journal' as const, user_id: r.user_id, ref: r.id, sha: r.photo_sha, phash: r.photo_phash, mask: r.photo_mask })),
+        ...wall.map((w) => ({ source: 'wall' as const, user_id: w.user_id, ref: w.post_id, sha: w.photo_sha, phash: w.photo_phash, mask: w.photo_mask })),
       ];
       return prints
-        .map((p): Match => ({ source: p.source, user_id: p.user_id, ref: p.ref, exact: Boolean(print.sha && p.sha === print.sha), distance: Math.min(hamming(p.phash, print.phash), hamming(p.phash, print.mirror)) }))
-        .filter((m) => m.exact || m.distance <= maxBits);
+        .map((p) => ({ match: { source: p.source, user_id: p.user_id, ref: p.ref, exact: Boolean(print.sha && p.sha === print.sha) } as Match, alike: samePhoto({ phash: print.phash, mask: print.mask }, { phash: p.phash, mask: p.mask }) }))
+        .filter((x) => x.match.exact || x.alike)
+        .map((x) => x.match);
     },
     async insertRow(row) {
       await tick();
@@ -91,6 +92,8 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
 }
 
 // Fingerprints with a real pattern, far apart from each other, and copies a few bits away.
+// (Every comparison in them counts as clear-cut, so all 256 bits are compared.)
+const CLEAR = 'f'.repeat(64);
 let n = 0;
 const fresh = () => createHash('sha256').update(`pattern-${++n}`).digest('hex');
 const flip = (h: string, bits: number) => h.split('').map((c, i) => (i < bits ? (parseInt(c, 16) ^ 1).toString(16) : c)).join('');
@@ -101,7 +104,7 @@ const sighting = (over: Omit<Partial<ReceiptPayload>, 'id'> & { id?: Partial<Rec
     v: 1, uid: A, sid: `sight-${n}-abc`, at: NOW, observedAt: NOW - 3600_000, loggedAt: NOW - 3000_000, lat: 44.1234, lng: -72.5678,
     capture: 'camera', cameraEvidence: null,
     id: { status: 'ai_confident', common: 'Osprey', sci: 'Pandion haliaetus', group: 'bird', confidence: 0.93, rarity: 0.4, tags: [], dangerous: false, caption: 'An osprey.', ...id },
-    sha: createHash('sha256').update(`bytes-${n}`).digest('hex'), phash, model: 'test', ...rest,
+    sha: createHash('sha256').update(`bytes-${n}`).digest('hex'), phash, mask: CLEAR, model: 'test', ...rest,
   };
 };
 const claim = (over: Record<string, unknown> = {}) => ({
@@ -152,7 +155,9 @@ test('a photo another player already logged is refused: the same file, a re-save
   const exact = await recordSighting(jdb, sighting({ uid: B, sha: original.sha }));
   assert.deepEqual(exact, { kind: 'refused', reason: 'copied', message: COPY_MESSAGES.copied });
   assert.equal((await recordSighting(jdb, sighting({ uid: B, phash: flip(original.phash!, 15) }))).kind, 'refused');
-  assert.equal((await recordSighting(jdb, sighting({ uid: B, phash: flip(mirrorHash(original.phash)!, 6) }))).kind, 'refused');
+  assert.equal((await recordSighting(jdb, sighting({ uid: B, phash: flip(mirrorPrint(original)!.phash, 6) }))).kind, 'refused');
+  // 30 of the 256 clear-cut bits different is a different picture
+  assert.equal(compare(original, { phash: flip(original.phash!, 30), mask: CLEAR })!.differing, 30);
   assert.equal((await recordSighting(jdb, sighting({ uid: B }))).kind, 'recorded'); // a different photo
   assert.equal([...rows.values()].filter((r) => r.user_id === B).length, 1);
   // each refusal is on record, with what it matched, so a wrong call can be put right
@@ -162,15 +167,15 @@ test('a photo another player already logged is refused: the same file, a re-save
 
 test('one of Scout\'s own library photos is refused, mirrored or not', async () => {
   const { jdb } = fakeDb();
-  const libraryPhoto = Object.values(LIBRARY_HASHES)[7];
-  assert.deepEqual(await recordSighting(jdb, sighting({ phash: flip(libraryPhoto, 10) })), { kind: 'refused', reason: 'library', message: COPY_MESSAGES.library });
-  assert.equal((await recordSighting(jdb, sighting({ phash: mirrorHash(libraryPhoto) }))).kind, 'refused');
+  const libraryPhoto = Object.values(LIBRARY_PRINTS)[7];
+  assert.deepEqual(await recordSighting(jdb, sighting({ phash: flip(libraryPhoto.phash, 10), mask: libraryPhoto.mask })), { kind: 'refused', reason: 'library', message: COPY_MESSAGES.library });
+  assert.equal((await recordSighting(jdb, sighting(mirrorPrint(libraryPhoto)!))).kind, 'refused');
 });
 
 test('a photo taken from the wall is refused; the poster\'s own later sighting is not blocked by it', async () => {
   const { jdb, wall } = fakeDb();
   const posted = fresh();
-  wall.push({ post_id: '20000000-0000-4000-8000-0000000000a1', user_id: A, photo_sha: 'wall-sha', photo_phash: posted });
+  wall.push({ post_id: '20000000-0000-4000-8000-0000000000a1', user_id: A, photo_sha: 'wall-sha', photo_phash: posted, photo_mask: CLEAR });
   const stolen = await recordSighting(jdb, sighting({ uid: B, phash: flip(posted, 9) }));
   assert.equal(stolen.kind, 'refused');
   const own = await recordSighting(jdb, sighting({ uid: A, phash: flip(posted, 9) })); // A photographing the same scene again
@@ -182,6 +187,7 @@ test('a photo that cannot be fingerprinted (not a JPEG) is not recorded at all',
   const out = await recordSighting(jdb, sighting({ phash: null }));
   assert.deepEqual(out, { kind: 'refused', reason: 'unchecked', message: COPY_MESSAGES.unchecked });
   assert.equal((await recordSighting(jdb, sighting({ phash: 'not-a-hash' }))).kind, 'refused');
+  assert.equal((await recordSighting(jdb, sighting({ mask: null }))).kind, 'refused'); // half a fingerprint is none
   assert.equal(rows.size, 0);
 });
 
@@ -200,17 +206,26 @@ test('a sighting only someone\'s phone vouches for cannot be used to block anoth
   assert.ok(row(A, p.sid).points > 0);
 });
 
-test('the player\'s own photo again scores nothing; a different frame of the same animal scores as a repeat', async () => {
+test('the player\'s own photo again scores nothing; frames of a burst with the ClipIt camera score as repeats', async () => {
   const { jdb, row } = fakeDb();
   const first = sighting({ id: { rarity: 0.5 } });
   await recordSighting(jdb, first);
-  const same = sighting({ id: { rarity: 0.5 }, phash: flip(first.phash!, 2) }); // the same picture, re-saved
-  await recordSighting(jdb, same);
-  assert.deepEqual([row(A, same.sid).points, row(A, same.sid).score!.repeatMultiplier], [0, 0]);
-  const burst = sighting({ id: { rarity: 0.5 }, phash: flip(first.phash!, 15) }); // the next frame of a burst
-  assert.equal(hamming(burst.phash, first.phash), 15);
+  // the very same file again (a retry under a new id, a re-submission): nothing, however it was captured
+  const sameFile = sighting({ id: { rarity: 0.5 }, sha: first.sha, phash: first.phash });
+  await recordSighting(jdb, sameFile);
+  assert.deepEqual([row(A, sameFile.sid).points, row(A, sameFile.sid).score!.repeatMultiplier], [0, 0]);
+  // the same picture uploaded again from the camera roll, re-saved (new bytes, same look): nothing
+  const reupload = sighting({ id: { rarity: 0.5 }, phash: flip(first.phash!, 2), capture: 'library', cameraEvidence: true });
+  await recordSighting(jdb, reupload);
+  assert.deepEqual([row(A, reupload.sid).points, row(A, reupload.sid).score!.repeatMultiplier], [0, 0]);
+  // the next frame of a burst with the ClipIt camera looks the same and is a different photo: a repeat of the species
+  const burst = sighting({ id: { rarity: 0.5 }, phash: flip(first.phash!, 2), capture: 'camera' });
   await recordSighting(jdb, burst);
-  assert.equal(row(A, burst.sid).points, 2); // third of the species: 6 / 3
+  assert.equal(row(A, burst.sid).points, 2); // fourth of the species (the two above count as sightings of it): 6 / 4 = 1.5, rounded
+  // a different upload of the same animal (a different picture) also scores as a repeat
+  const other = sighting({ id: { rarity: 0.5 }, capture: 'library', cameraEvidence: true });
+  await recordSighting(jdb, other);
+  assert.ok(row(A, other.sid).points > 0);
 });
 
 test('twenty requests for the same photo at once score it once (one request at a time per account)', async () => {
@@ -304,10 +319,10 @@ test('a photo sent later for a recorded sighting is accepted when it is the same
   const original = readFileSync(join(__dirname, '..', 'site', 'img', 'library', 'osprey.jpg'));
   const print = photoFingerprint(original.toString('base64'));
   // (a library photo stands in for a player's photo here, so the row is put in place directly, past the "one of Scout's photos" rule)
-  const p = sighting({ sha: print.sha, phash: print.phash });
+  const p = sighting({ sha: print.sha, phash: print.phash, mask: print.mask });
   const scratch = fakeDb();
-  await recordSighting(scratch.jdb, { ...p, phash: fresh() });
-  await jdb.insertRow({ ...scratch.row(A, p.sid), photo_sha: p.sha, photo_phash: p.phash });
+  await recordSighting(scratch.jdb, { ...p, phash: fresh(), mask: CLEAR });
+  await jdb.insertRow({ ...scratch.row(A, p.sid), photo_sha: p.sha, photo_phash: p.phash, photo_mask: p.mask });
   const resaved = jpeg.encode(jpeg.decode(original, { useTArray: true }) as any, 60).data.toString('base64');
   const other = readFileSync(join(__dirname, '..', 'site', 'img', 'library', 'bison.jpg')).toString('base64');
   await syncJournal(jdb, A, { items: [{ id: p.sid, photoBase64: other }] }, { now: NOW, fingerprint: photoFingerprint });
@@ -569,7 +584,7 @@ test('sync: receipts are recorded as verified, the old journal as phone-scored, 
   const v = out.rows['sync-ver-0001'] as any;
   assert.deepEqual([v.verified, v.points, v.science], [true, row(A, 'sync-ver-0001').points, { count: ['1'] }]);
   // the app is not sent the server's own notes
-  for (const hidden of ['flags', 'photo_sha', 'photo_phash', 'model', 'claimed_points']) assert.equal(hidden in v, false, hidden);
+  for (const hidden of ['flags', 'photo_sha', 'photo_phash', 'photo_mask', 'model', 'claimed_points']) assert.equal(hidden in v, false, hidden);
   assert.equal((out.rows['sync-leg-0001'] as any).verified, false);
   assert.deepEqual(out.rows['sync-forged-01'], { error: 'nothing to record' });
   assert.deepEqual(out.rows['sync-moved-001'], { error: 'nothing to record' });

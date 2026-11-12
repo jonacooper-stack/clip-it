@@ -4,7 +4,7 @@
 // device set to that zone, including around every clock change.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ianaZone, isTimeZone, localZone } from '../shared/zone';
+import { canonicalTimeZone, ianaZone, isTimeZone, localZone } from '../shared/zone';
 
 const ZONES = [
   'UTC',
@@ -85,4 +85,22 @@ test('unknown zone names are refused', () => {
   assert.equal(isTimeZone(null), false);
   assert.equal(isTimeZone('x'.repeat(200)), false);
   assert.throws(() => ianaZone('Mars/Olympus_Mons'));
+});
+
+test('a phone set to a fixed offset ("GMT-0800", "GMT+05:30") is understood, not counted in UTC', () => {
+  assert.equal(canonicalTimeZone('GMT-0800'), '-08:00'); // iPhone's spelling
+  assert.equal(canonicalTimeZone('GMT+05:30'), '+05:30'); // Android's
+  assert.equal(canonicalTimeZone('UTC+2'), '+02:00');
+  assert.equal(canonicalTimeZone('gmt-8'), '-08:00');
+  assert.equal(canonicalTimeZone('asia/calcutta') !== null, true);
+  assert.equal(canonicalTimeZone('GMT+25:99'), null);
+  assert.equal(canonicalTimeZone('GMT+'), null);
+  // Sunday 22:00 in California is still Sunday there (it is already Monday in UTC)
+  const sundayEvening = Date.UTC(2026, 10, 16, 6, 0); // Mon 16 Nov 06:00 UTC = Sun 15 Nov 22:00 at UTC-8
+  const zone = ianaZone(canonicalTimeZone('GMT-0800')!);
+  assert.equal(zone.dateString(sundayEvening), 'Sun Nov 15 2026');
+  assert.equal(zone.startOfWeek(sundayEvening), Date.UTC(2026, 10, 9, 8, 0)); // Monday 9 Nov, midnight at UTC-8
+  assert.equal(zone.startOfDay(sundayEvening), Date.UTC(2026, 10, 15, 8, 0));
+  // half-hour offsets too
+  assert.equal(ianaZone(canonicalTimeZone('GMT+05:30')!).startOfDay(Date.UTC(2026, 10, 15, 20, 0)), Date.UTC(2026, 10, 15, 18, 30));
 });

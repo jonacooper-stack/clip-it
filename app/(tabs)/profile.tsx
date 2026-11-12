@@ -9,7 +9,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, distinctSpecies, purgeJournal, setCloudChoice } from '@/state/useJournalStore';
+import { useJournalStore, useJournalSave, distinctSpecies, purgeJournal, setCloudChoice } from '@/state/useJournalStore';
 import { askAboutBackup } from '@/lib/backupChoice';
 import { askYesNo } from '@/lib/dialogs';
 import { playerPoints } from '@/lib/quests';
@@ -62,7 +62,10 @@ export default function Profile() {
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
   const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
   const syncState = useSyncStatus((s) => s.state);
+  const saveFailed = useJournalSave((s) => s.failed);
   const backupLabel =
+    saveFailed ? 'Journal: couldn’t save on this phone. Free up some storage'
+    :
     cloud?.backup !== true ? 'Journal backup: off. Tap to turn on'
     : syncState === 'syncing' ? 'Journal backup: saving…'
     : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
@@ -128,7 +131,7 @@ export default function Profile() {
   const onDeleteAccount = () =>
     confirmAction(
       'Delete your account?',
-      'This permanently deletes your account, profile, shared posts, photos, comments, likes, follows and friends. It can’t be undone.',
+      'This permanently deletes your account, profile, journal, shared posts, photos, comments, likes, follows and friends. It can’t be undone.',
       'Continue',
       () =>
         confirmAction(

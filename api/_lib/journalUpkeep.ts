@@ -26,6 +26,7 @@ export async function printWallPhotos(db: SupabaseClient, opts: { max?: number; 
       if (Date.now() > opts.deadline) return;
       let sha: string | null = null;
       let phash: string | null = null;
+      let mask: string | null = null;
       const url = ownStorageUrl(p.photo_url, 'feed-photos'); // only ever fetch from our own storage
       if (url) {
         try {
@@ -35,12 +36,12 @@ export async function printWallPhotos(db: SupabaseClient, opts: { max?: number; 
           clearTimeout(timer);
           if (!res.ok) continue; // not there right now: try again another night
           const bytes = Buffer.from(await res.arrayBuffer());
-          if (bytes.length <= 6_000_000) ({ sha, phash } = photoFingerprint(bytes.toString('base64')));
+          if (bytes.length <= 6_000_000) ({ sha, phash, mask } = photoFingerprint(bytes.toString('base64')));
         } catch {
           continue;
         }
       }
-      const { error: insertError } = await db.from('wall_prints').upsert({ post_id: p.id, user_id: p.user_id, photo_sha: sha, photo_phash: phash }, { onConflict: 'post_id' });
+      const { error: insertError } = await db.from('wall_prints').upsert({ post_id: p.id, user_id: p.user_id, photo_sha: sha, photo_phash: phash, photo_mask: mask }, { onConflict: 'post_id' });
       if (!insertError) done++;
     }
   };

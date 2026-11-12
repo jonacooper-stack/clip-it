@@ -147,7 +147,7 @@ select t.is('the migration does not start the clock: the window is open and has 
 select t.is('server records a sighting for A', t.try('service', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, common_name, scientific_name, points, verified, lat, lng) values (%L, 'sight-a-1', now(), now(), 'ai_confident', 'Osprey', 'Pandion haliaetus', 7, true, 44.1, -72.5), (%L, 'sight-a-2', now(), now(), 'ai_confident', 'Red fox', 'Vulpes vulpes', 3, true, null, null)$q$, :'A', :'A')), 'ok:2');
 select t.is('server records a sighting for B', t.try('service', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, common_name, scientific_name, points, verified, lat, lng) values (%L, 'sight-b-1', now(), now(), 'ai_confident', 'Bald eagle', 'Haliaeetus leucocephalus', 30, true, 40.7, -74.0)$q$, :'B')), 'ok:1');
 select t.is('A reads their own journal', t.try(:'A', 'select id, points, lat, lng, common_name from public.journal_sightings'), 'ok:2');
-select t.is('…but not the server''s own notes on it (review flags, photo fingerprints)', t.try(:'A', 'select flags from public.journal_sightings') || '/' || t.try(:'A', 'select photo_phash, photo_sha from public.journal_sightings') || '/' || t.try(:'A', 'select * from public.journal_sightings'), 'error:42501/error:42501/error:42501');
+select t.is('…but not the server''s own notes on it (review flags, photo fingerprints)', t.try(:'A', 'select flags from public.journal_sightings') || '/' || t.try(:'A', 'select photo_phash, photo_mask, photo_sha from public.journal_sightings') || '/' || t.try(:'A', 'select * from public.journal_sightings'), 'error:42501/error:42501/error:42501');
 select t.is('A cannot read B''s journal (or where B was)', t.try(:'A', format('select lat, lng from public.journal_sightings where user_id = %L', :'B')), 'ok:0');
 select t.is('anon reads nothing', t.try('anon', 'select id from public.journal_sightings'), 'error:42501');
 select t.is('a player cannot add a sighting', t.try(:'A', format($q$insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, points, verified) values (%L, 'sight-a-9', now(), now(), 'ai_confident', 500, true)$q$, :'A')), 'error:42501');
@@ -205,24 +205,38 @@ select public.journal_unlock(:'A');
 select t.is('a player cannot take or release locks', t.try(:'A', format('select public.journal_try_lock(%L, 15)', :'B')) || '/' || t.try(:'A', format('select public.journal_unlock(%L)', :'B')), 'error:42501/error:42501');
 
 -- 13d. spotting the same photo
-\set H1 'a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3'
-\set H1NEAR 'a5c2a5c2a5c2a5c2a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3'
-\set HFAR '5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c'
+-- A look-alike fingerprint is two parts: the bits, and which of them are clear-cut.
+\set H1    'a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3'
+-- the same picture re-saved: two of its clear-cut bits moved
+\set H1NEAR 'a5c2a5c2a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3a5c3'
+-- a different picture: a quarter of the bits differ
+\set HFAR  '5a3ca5c3a5c3a5c35a3ca5c3a5c3a5c35a3ca5c3a5c3a5c35a3ca5c3a5c3a5c3'
 \set HWALL '0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f'
-update public.journal_sightings set photo_phash = :'H1', photo_sha = 'sha-b-1' where user_id = :'B' and id = 'sight-b-1';
-insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, common_name, scientific_name, points, verified, photo_phash, photo_sha)
-  values (:'B', 'sight-b-legacy', now(), now(), 'ai_confident', 'Old one', 'Vetus unus', 5, false, :'HFAR', 'sha-b-legacy');
-insert into public.wall_prints (post_id, user_id, photo_sha, photo_phash) values ('20000000-0000-4000-8000-00000000000b', :'B', 'sha-wall', :'HWALL');
-select t.is('the very same file is found, whatever it looks like', (select string_agg(source || ':' || ref || ':' || exact, ',') from public.journal_look_alikes(:'A', 'sha-b-1', null, null, 24)), 'journal:sight-b-1:true');
-select t.is('a re-saved copy (a few bits different) is found', (select string_agg(ref || ':' || distance, ',') from public.journal_look_alikes(:'A', 'other-sha', :'H1NEAR', null, 24)), 'sight-b-1:4');
-select t.is('a mirrored copy is found through the mirror fingerprint', (select string_agg(ref || ':' || distance, ',') from public.journal_look_alikes(:'A', null, :'HFAR', :'H1NEAR', 24)), 'sight-b-1:4');
-select t.is('a different photo is not', (select count(*)::text from public.journal_look_alikes(:'A', 'other-sha', :'HFAR', null, 24)), '0');
-select t.is('a photo on the wall is found', (select string_agg(source || ':' || ref, ',') from public.journal_look_alikes(:'A', null, :'HWALL', null, 24)), 'wall:20000000-0000-4000-8000-00000000000b');
-select t.is('a sighting only someone''s phone vouches for is never used against another player', (select count(*)::text from public.journal_look_alikes(:'A', 'sha-b-legacy', :'HFAR', null, 24)), '0');
-select t.is('…but is found for its own account (their own photo again)', (select string_agg(ref, ',') from public.journal_look_alikes(:'B', 'sha-b-legacy', null, null, 24)), 'sight-b-legacy');
-select t.is('malformed fingerprints are ignored, not an error', (select count(*)::text from public.journal_look_alikes(:'A', null, 'not-a-hash', 'zz', 24)), '0');
-select t.is('the nightly job is given wall posts that still need a fingerprint, and only those', (select count(*)::text from public.wall_posts_without_prints(50) where id = '20000000-0000-4000-8000-00000000000b') || '/' || (select (count(*) > 0)::text from public.wall_posts_without_prints(50)), '0/true');
-select t.is('a player cannot run the comparison (it would reveal who has which photo)', t.try(:'A', format('select * from public.journal_look_alikes(%L, null, %L, null, 256)', :'A', :'H1')), 'error:42501');
+-- every comparison clear-cut / only the first 64 / only 32 (too few to compare)
+\set MALL  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+\set M64   'ffffffffffffffff000000000000000000000000000000000000000000000000'
+\set M32   'ffffffff00000000000000000000000000000000000000000000000000000000'
+update public.journal_sightings set photo_phash = :'H1', photo_mask = :'MALL', photo_sha = 'sha-b-1' where user_id = :'B' and id = 'sight-b-1';
+insert into public.journal_sightings (user_id, id, observed_at, logged_at, status, common_name, scientific_name, points, verified, photo_phash, photo_mask, photo_sha)
+  values (:'B', 'sight-b-legacy', now(), now(), 'ai_confident', 'Old one', 'Vetus unus', 5, false, :'HFAR', :'MALL', 'sha-b-legacy');
+insert into public.wall_prints (post_id, user_id, photo_sha, photo_phash, photo_mask) values ('20000000-0000-4000-8000-00000000000b', :'B', 'sha-wall', :'HWALL', :'MALL');
+select t.is('the very same file is found, whatever it looks like', (select string_agg(source || ':' || ref || ':' || exact, ',') from public.journal_look_alikes(:'A', 'sha-b-1', null, null, null, null)), 'journal:sight-b-1:true');
+select t.is('a re-saved copy (a couple of clear-cut bits different) is found', (select string_agg(ref || ':' || exact, ',') from public.journal_look_alikes(:'A', 'other-sha', :'H1NEAR', :'MALL', null, null)), 'sight-b-1:false');
+select t.is('a mirrored copy is found through the mirror fingerprint', (select string_agg(ref, ',') from public.journal_look_alikes(:'A', null, :'HWALL', :'M32', :'H1NEAR', :'MALL')), 'sight-b-1');
+select t.is('a different photo is not', (select count(*)::text from public.journal_look_alikes(:'A', 'other-sha', :'HFAR', :'MALL', null, null)), '0');
+select t.is('a photo on the wall is found', (select string_agg(source || ':' || ref, ',') from public.journal_look_alikes(:'A', null, :'HWALL', :'MALL', null, null)), 'wall:20000000-0000-4000-8000-00000000000b');
+select t.is('a sighting only someone''s phone vouches for is never used against another player', (select count(*)::text from public.journal_look_alikes(:'A', 'sha-b-legacy', :'HFAR', :'MALL', null, null)), '0');
+select t.is('…but is found for its own account (their own photo again)', (select string_agg(ref, ',') from public.journal_look_alikes(:'B', 'sha-b-legacy', null, null, null, null)), 'sight-b-legacy');
+select t.is('malformed fingerprints are ignored, not an error', (select count(*)::text from public.journal_look_alikes(:'A', null, 'not-a-hash', 'zz', 'x', null)), '0');
+-- the rule itself: only bits that are clear-cut in both count; enough of them must be shared; few may disagree
+select t.is('same picture: 256 shared, 2 differ', private.same_picture(:'H1', :'MALL', :'H1NEAR', :'MALL')::text, 'true');
+select t.is('different picture: 256 shared, 64 differ', private.same_picture(:'H1', :'MALL', :'HFAR', :'MALL')::text, 'false');
+select t.is('bits that are not clear-cut in both are left out (the 2 that differ are inside the first 64)', private.same_picture(:'H1', :'M64', :'H1NEAR', :'MALL')::text, 'true');
+select t.is('with only 64 shared bits, a difference of 16 is a different picture', private.same_picture(:'H1', :'M64', :'HFAR', :'MALL')::text, 'false');
+select t.is('too few clear-cut bits in common: not compared at all, even when identical', private.same_picture(:'H1', :'M32', :'H1', :'MALL')::text, 'false');
+select t.is('a missing part means not comparable', coalesce(private.same_picture(:'H1', null, :'H1', :'MALL')::text, 'null') || '/' || private.same_picture(:'H1', :'MALL', 'xyz', :'MALL')::text, 'false/false');
+select t.is('a fingerprint that is not 64 hex characters cannot be stored', t.try('service', format($q$update public.journal_sightings set photo_phash = 'abc' where user_id = %L and id = 'sight-b-1'$q$, :'B')) || '/' || t.try('service', format($q$update public.journal_sightings set photo_mask = 'ZZ' where user_id = %L and id = 'sight-b-1'$q$, :'B')), 'error:23514/error:23514');
+select t.is('a player cannot run the comparison (it would reveal who has which photo)', t.try(:'A', format('select * from public.journal_look_alikes(%L, null, %L, %L, null, null)', :'A', :'H1', :'MALL')), 'error:42501');
 
 -- 14. wall posts take their facts from the journal
 select t.is('a post that shares a sighting gets the journal''s points and species, not the app''s', t.then_(:'A', format($q$insert into public.feed_posts (id, user_id, common_name, scientific_name, points, sighting_id) values ('20000000-0000-4000-8000-0000000000a1', %L, 'Dragon', 'Draco fictus', 499, 'sight-a-1')$q$, :'A'), $r$select points || '/' || common_name || '/' || scientific_name from public.feed_posts where id = '20000000-0000-4000-8000-0000000000a1'$r$), 'ok:1/7/Osprey/Pandion haliaetus');

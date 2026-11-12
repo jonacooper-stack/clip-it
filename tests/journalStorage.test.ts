@@ -247,3 +247,26 @@ test('a save already on its way when the journal is erased does not bring it bac
   await ui.add('late'); // and nothing after
   assert.equal(data.has(DEVICE_KEY), false);
 });
+
+test('a save that fails (storage full) is reported, not swallowed; the next one that works clears it', async () => {
+  const { kv, data } = memory();
+  let full = false;
+  const realSet = kv.setItem.bind(kv);
+  kv.setItem = async (k, v) => {
+    if (full && k === DEVICE_KEY) throw new Error('database or disk is full');
+    return realSet(k, v);
+  };
+  const reports: boolean[] = [];
+  const storage = createJournalStorage(kv, true, (ok) => reports.push(ok));
+  await storage.open(A, { clear() {}, fill() {} }, { mayClaim: true });
+  await storage.adapter.setItem('x', blob(['one'], { owner: A }));
+  assert.deepEqual(reports, [true]);
+  full = true;
+  await storage.adapter.setItem('x', blob(['one', 'two'], { owner: A }));
+  assert.deepEqual(reports, [true, false]);
+  assert.deepEqual(ids(data.get(DEVICE_KEY)), ['one']); // what was saved before is still there
+  full = false;
+  await storage.adapter.setItem('x', blob(['one', 'two', 'three'], { owner: A }));
+  assert.deepEqual(reports, [true, false, true]);
+  assert.deepEqual(ids(data.get(DEVICE_KEY)), ['one', 'two', 'three']); // a later save carries everything
+});

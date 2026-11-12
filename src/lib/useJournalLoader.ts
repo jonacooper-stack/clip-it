@@ -25,7 +25,7 @@ function afterLoad(uid: string | null): void {
 function askAboutSavedSightings(uid: string, count: number): void {
   askYesNo(
     'Sightings saved on this phone',
-    `This phone has ${count} sighting${count === 1 ? '' : 's'} saved from before you signed in. If they’re yours, add them to your journal.`,
+    `This phone has ${count} sighting${count === 1 ? '' : 's'} saved from before you signed in. If they’re yours, add them to your journal. (If your journal is saved to your account, they will be saved with it.)`,
     'They’re mine',
     'Not mine',
     async () => {

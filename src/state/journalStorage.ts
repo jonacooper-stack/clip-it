@@ -62,7 +62,10 @@ function parse(raw: string | null): Blob | null {
 const count = (b: Blob | null) => (Array.isArray(b?.state.sightings) ? (b!.state.sightings as unknown[]).length : 0);
 const stamp = (b: Blob | null) => (typeof b?.state.owner === 'string' ? (b!.state.owner as string) : null);
 
-export function createJournalStorage(kv: KeyValue, accountsEnabled: boolean) {
+// `onSave`: told after every attempt to save the journal whether it worked
+// (the device's storage can be full), so the app can say so instead of
+// carrying on as if the journal were safe.
+export function createJournalStorage(kv: KeyValue, accountsEnabled: boolean, onSave: (ok: boolean) => void = () => {}) {
   let activeKey: string | null = null; // where changes are saved right now
   let paused = true; // true while a journal is being switched: nothing is written
   let turn = 0;
@@ -76,7 +79,12 @@ export function createJournalStorage(kv: KeyValue, accountsEnabled: boolean) {
     setItem: (_name: string, value: string): Promise<void> => {
       const key = activeKey; // decided now, not after an await
       if (paused || !key) return Promise.resolve();
-      writes = writes.then(() => kv.setItem(key, value)).catch(() => {});
+      writes = writes
+        .then(() => kv.setItem(key, value))
+        .then(
+          () => onSave(true),
+          () => onSave(false),
+        );
       return writes;
     },
     removeItem: async (_name: string): Promise<void> => {},

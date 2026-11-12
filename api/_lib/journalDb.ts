@@ -6,6 +6,7 @@
 // callers then leave the sighting on the phone to be recorded later.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { JournalUnavailable, type JournalDb, type JournalRow, type JournalState, type Match } from './journal';
+import { mirrorPrint } from './phash';
 
 const SIGHTINGS = 'journal_sightings';
 const STATE = 'journal_state';
@@ -64,10 +65,13 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
 
     // The comparison runs in the database, over every stored fingerprint
     // (public.journal_look_alikes in migration 0011), not over a page of rows.
-    async lookAlikes(uid, print, maxBits) {
-      const { data, error } = await db.rpc('journal_look_alikes', { p_user: uid, p_sha: print.sha, p_phash: print.phash, p_mirror: print.mirror, p_bits: maxBits });
+    async lookAlikes(uid, print) {
+      const flipped = mirrorPrint(print);
+      const { data, error } = await db.rpc('journal_look_alikes', {
+        p_user: uid, p_sha: print.sha ?? null, p_phash: print.phash ?? null, p_mask: print.mask ?? null, p_mirror: flipped?.phash ?? null, p_mirror_mask: flipped?.mask ?? null,
+      });
       check(error, 'compare photos');
-      return ((data ?? []) as any[]).map((m): Match => ({ source: m.source === 'wall' ? 'wall' : 'journal', user_id: m.user_id, ref: String(m.ref), exact: m.exact === true, distance: Number(m.distance) }));
+      return ((data ?? []) as any[]).map((m): Match => ({ source: m.source === 'wall' ? 'wall' : 'journal', user_id: m.user_id, ref: String(m.ref), exact: m.exact === true }));
     },
 
     async insertRow(row) {

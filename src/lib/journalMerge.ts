@@ -48,6 +48,23 @@ export interface CloudRow {
 export const CLOUD_COLUMNS =
   'id, observed_at, logged_at, updated_at, deleted_at, lat, lng, status, common_name, scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo, science, proposed_species, wall_post_id';
 
+// A sighting as it comes off the disk, put right where an older version of
+// the app saved something the rest of the app can't use: on iPhone the place
+// of a photo uploaded from the camera roll was saved as text ("44.12") rather
+// than a number, which screens that show the place choke on.
+export function repairSighting(s: Sighting): Sighting {
+  const fix = (v: unknown): number | undefined => {
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+  };
+  const lat = fix(s.lat);
+  const lng = fix(s.lng);
+  const accuracyM = fix(s.accuracyM);
+  const placed = lat !== undefined && lng !== undefined && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  if (s.lat === (placed ? lat : undefined) && s.lng === (placed ? lng : undefined) && s.accuracyM === accuracyM) return s;
+  return { ...s, lat: placed ? lat : undefined, lng: placed ? lng : undefined, accuracyM };
+}
+
 // Sightings that count: these are the ones kept in the cloud. Photos that
 // didn't count (a pet, a person, nothing found) stay on the device only.
 const COUNTED: ReadonlySet<string> = new Set(['ai_confident', 'needs_review', 'human_confirmed', 'disputed']);

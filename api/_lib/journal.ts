@@ -18,8 +18,8 @@ import { canonicalTimeZone, ianaZone } from '../../shared/zone';
 import { cleanName, hasBlockedLanguage, tidyName } from '../../shared/moderation';
 import { cleanFieldNotes } from '../../shared/fieldNotes';
 import { SCENE_TAG_CODES, TAXON_GROUPS } from './identifyCore';
-import { COPY_BITS, informative, mirrorHash, RESAVE_BITS, samePhoto } from './phash';
-import { LIBRARY_HASHES } from './libraryHashes';
+import { samePhoto, type Print } from './phash';
+import { LIBRARY_PRINTS } from './libraryHashes';
 import { verifyReceipt, type ReceiptPayload } from './receipt';
 import { stripJpegMetadata } from './jpegStrip';
 import { approxPlace } from '../../shared/place';
@@ -55,8 +55,10 @@ export interface JournalRow {
   verified: boolean;
   capture: 'camera' | 'library' | null;
   flags: Record<string, unknown> | null;
+  /** The photo's fingerprints (see phash.ts): the hash of its bytes, and the two parts of the look-alike one. */
   photo_sha: string | null;
   photo_phash: string | null;
+  photo_mask: string | null;
   has_photo: boolean;
   science: Record<string, string[]> | null;
   proposed_species: string | null;
@@ -66,9 +68,9 @@ export interface JournalRow {
 
 // What the owner's app is sent: the row without the server's own notes
 // (review flags, photo fingerprints, which model answered).
-export type PublicRow = Omit<JournalRow, 'flags' | 'photo_sha' | 'photo_phash' | 'model' | 'claimed_points'>;
+export type PublicRow = Omit<JournalRow, 'flags' | 'photo_sha' | 'photo_phash' | 'photo_mask' | 'model' | 'claimed_points'>;
 export function publicRow(r: JournalRow): PublicRow {
-  const { flags: _f, photo_sha: _s, photo_phash: _p, model: _m, claimed_points: _c, ...rest } = r;
+  const { flags: _f, photo_sha: _s, photo_phash: _p, photo_mask: _k, model: _m, claimed_points: _c, ...rest } = r;
   return rest;
 }
 
@@ -98,13 +100,12 @@ export interface Prefs {
   epoch: string | null;
 }
 
-// A stored picture that looks like the one being recorded.
+// A stored picture that is, or looks like, the one being recorded.
 export interface Match {
   source: 'journal' | 'wall';
   user_id: string;
   ref: string; // the sighting id, or the wall post id
-  exact: boolean; // the very same bytes
-  distance: number; // look-alike bits apart (256 when it can't be compared)
+  exact: boolean; // the very same bytes (otherwise: the look-alike fingerprints say it is the same picture)
 }
 
 export interface Refusal {
@@ -128,9 +129,10 @@ export interface JournalDb {
   /**
    * Stored pictures that are, or look like, this one: sightings the server
    * identified (any account), wall photos (any account), and this account's
-   * own sightings of any kind. Compared in the database, over everything.
+   * own sightings of any kind. Compared in the database, over everything,
+   * flipped left to right as well as not.
    */
-  lookAlikes(uid: string, print: { sha: string | null; phash: string | null; mirror: string | null }, maxBits: number): Promise<Match[]>;
+  lookAlikes(uid: string, print: Print): Promise<Match[]>;
   /** False when a row with this account and id already exists. */
   insertRow(row: JournalRow): Promise<boolean>;
   updateRow(uid: string, sid: string, patch: Partial<JournalRow>): Promise<void>;
@@ -183,7 +185,7 @@ export const COPY_MESSAGES = {
 } as const;
 
 export const IMPORT_MESSAGE =
-  'We couldn’t confirm this is a photo you took: it doesn’t carry the details a camera saves (it may be a screenshot or a saved picture). Photos taken with the ClipIt camera always count.';
+  'We couldn’t confirm this is a photo you took: it doesn’t carry the details a camera saves (it may be a screenshot or a saved picture). Photos you take with the ClipIt camera are never turned down for this.';
 
 // ---------- small helpers ----------
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -317,18 +319,21 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
   // A photo can only score if it can be compared with the ones already
   // known. Without a look-alike fingerprint (not a JPEG, or one that
   // couldn't be read) there is nothing to compare, so it isn't recorded.
-  if (!p.phash || !HASH.test(p.phash)) return refused(jdb, p, 'unchecked');
+  if (!p.phash || !p.mask || !HASH.test(p.phash) || !HASH.test(p.mask)) return refused(jdb, p, 'unchecked');
 
   // Is this picture already known? Flipped left to right counts as the same.
-  const comparable = informative(p.phash);
-  const mirror = comparable ? mirrorHash(p.phash) : null;
-  if (comparable && Object.values(LIBRARY_HASHES).some((h) => samePhoto({ phash: p.phash }, { phash: h }, COPY_BITS) || samePhoto({ phash: mirror }, { phash: h }, COPY_BITS))) {
-    return refused(jdb, p, 'library');
-  }
+  const print: Print = { sha: p.sha, phash: p.phash, mask: p.mask };
+  if (Object.values(LIBRARY_PRINTS).some((scouts) => samePhoto(print, scouts))) return refused(jdb, p, 'library');
   let duplicatePhoto = false;
-  for (const m of await jdb.lookAlikes(p.uid, { sha: p.sha, phash: comparable ? p.phash : null, mirror }, COPY_BITS)) {
+  for (const m of await jdb.lookAlikes(p.uid, print)) {
     if (m.user_id !== p.uid) return refused(jdb, p, 'copied', m); // someone else logged (or posted) this picture first
-    if (m.ref !== p.sid && (m.exact || m.distance <= RESAVE_BITS)) duplicatePhoto = true; // the player's own photo again: recorded, worth nothing
+    if (m.ref === p.sid) continue;
+    // The player's own photo again: recorded, worth nothing. The very same
+    // file always counts as that. A look-alike does only for an upload: with
+    // the ClipIt camera, the frames of a burst, or a phone left watching one
+    // spot, give pictures that look alike and are different photos; those
+    // keep their normal (reduced) score as repeat sightings.
+    if (m.exact || p.capture !== 'camera') duplicatePhoto = true;
   }
 
   // Earlier sightings of the species, deleted ones included (so deleting and
@@ -371,6 +376,7 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     flags: null,
     photo_sha: p.sha,
     photo_phash: p.phash,
+    photo_mask: p.mask,
     has_photo: existing?.has_photo ?? false,
     science: existing?.science ?? null,
     proposed_species: existing?.proposed_species ?? null,
@@ -399,13 +405,13 @@ async function refused(jdb: JournalDb, p: ReceiptPayload, reason: keyof typeof C
 // sends. For a sighting the server identified, only the picture it identified
 // is accepted: the same bytes, or (when the app sends it later, resized
 // again) one whose look-alike fingerprint says it is the same picture.
-async function storePhoto(jdb: JournalDb, row: JournalRow, photoBase64: string | null | undefined, fingerprint?: (b64: string) => { phash: string | null }): Promise<void> {
+async function storePhoto(jdb: JournalDb, row: JournalRow, photoBase64: string | null | undefined, fingerprint?: (b64: string) => Print): Promise<void> {
   if (!photoBase64 || row.has_photo || row.deleted_at) return;
   const bytes = Buffer.from(photoBase64, 'base64');
   if (bytes.length < 100 || bytes.length > MAX_PHOTO_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8) return;
   if (row.verified) {
     const sha = createHash('sha256').update(bytes).digest('hex');
-    if (sha !== row.photo_sha && !(fingerprint && samePhoto(fingerprint(photoBase64), { phash: row.photo_phash }, COPY_BITS))) return;
+    if (sha !== row.photo_sha && !(fingerprint && samePhoto({ ...fingerprint(photoBase64), sha: null }, { phash: row.photo_phash, mask: row.photo_mask }))) return;
   }
   // (Kept without the details a camera or an editor may have written into the file.)
   if (await jdb.putPhoto(row.user_id, row.id, stripJpegMetadata(bytes))) {
@@ -487,6 +493,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
     // file twice, and never used against anyone else.
     photo_sha: photoBase64 ? createHash('sha256').update(Buffer.from(photoBase64, 'base64')).digest('hex') : null,
     photo_phash: null,
+    photo_mask: null,
     has_photo: false,
     science: null,
     proposed_species: null,
@@ -596,7 +603,7 @@ function deletionMarker(uid: string, sid: string, now: number): JournalRow {
   return {
     user_id: uid, id: sid, observed_at: iso(now), logged_at: iso(now), recorded_at: iso(now), deleted_at: iso(now), lat: null, lng: null,
     status: null, common_name: null, scientific_name: null, taxon_group: null, confidence: null, scene_tags: [], caption: null, dangerous: false, points: 0,
-    score: null, verified: false, capture: null, flags: null, photo_sha: null, photo_phash: null, has_photo: false, science: null, proposed_species: null,
+    score: null, verified: false, capture: null, flags: null, photo_sha: null, photo_phash: null, photo_mask: null, has_photo: false, science: null, proposed_species: null,
     wall_post_id: null, model: null,
   };
 }
@@ -680,7 +687,7 @@ export async function syncJournal(
   jdb: JournalDb,
   uid: string,
   body: SyncBody,
-  opts: { now?: number; fingerprint?: (b64: string) => { phash: string | null }; onBadReceipt?: (sid: string) => void; budgetMs?: number } = {},
+  opts: { now?: number; fingerprint?: (b64: string) => Print; onBadReceipt?: (sid: string) => void; budgetMs?: number } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? Date.now();
   // Stop taking items when time is nearly up (the account's lock frees itself

@@ -12,7 +12,7 @@ import type { Sighting } from '@/types';
 import { deletePhoto } from '@/lib/photoStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { createJournalStorage, DEVICE_KEY, LOCAL_OWNER, type OpenResult } from './journalStorage';
-import { mergeCloud, type CloudState } from '@/lib/journalMerge';
+import { mergeCloud, repairSighting, type CloudState } from '@/lib/journalMerge';
 
 export { mergeCloud, type CloudState };
 
@@ -37,7 +37,14 @@ interface JournalState {
   applySync: (fn: (st: Pick<JournalState, 'sightings' | 'pendingDeletes' | 'cloud'>) => Partial<Pick<JournalState, 'sightings' | 'pendingDeletes' | 'cloud'>>) => void;
 }
 
-export const journalStorage = createJournalStorage(AsyncStorage, isSupabaseConfigured);
+// Whether the last attempt to save the journal on this device worked. (It can
+// fail when the device's storage is full; the journal in memory is then ahead
+// of what is saved.)
+export const useJournalSave = create<{ failed: boolean }>(() => ({ failed: false }));
+
+export const journalStorage = createJournalStorage(AsyncStorage, isSupabaseConfigured, (ok) => {
+  if (useJournalSave.getState().failed === ok) useJournalSave.setState({ failed: !ok });
+});
 
 // Told when the player changes something the cloud keeps (set by lib/journalSync).
 let onLocalChange: () => void = () => {};
@@ -114,6 +121,7 @@ function tidy(state: Record<string, unknown> | null): Pick<JournalState, 'sighti
   pageJustLoaded = false;
   const sightings = (Array.isArray(state?.sightings) ? (state!.sightings as Sighting[]) : [])
     .filter((s) => s && typeof s === 'object' && typeof s.id === 'string')
+    .map(repairSighting)
     .map((s) => (dropDead && typeof s.photoUri === 'string' && s.photoUri.startsWith('blob:') ? { ...s, photoUri: s.cloudPhoto ? `cloud:${s.id}` : undefined } : s));
   const pendingDeletes = Array.isArray(state?.pendingDeletes) ? (state!.pendingDeletes as unknown[]).filter((x): x is string => typeof x === 'string') : [];
   const c = state?.cloud as CloudState | null | undefined;

@@ -32,8 +32,10 @@ export interface ReceiptPayload {
     dangerous: boolean;
     caption: string;
   };
+  /** The photo's fingerprints (api/_lib/phash.ts): the hash of its bytes, and the two parts of the look-alike one. */
   sha: string | null;
   phash: string | null;
+  mask: string | null;
   model: string;
 }
 

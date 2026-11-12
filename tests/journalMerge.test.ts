@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, forgetCloudCopies, fromCloudRow, mergeCloud, mergeRows, needsPush, prefsToSend, pushItem,
-  takePrefs, worthReidentifying, type CloudRow,
+  repairSighting, takePrefs, worthReidentifying, type CloudRow,
 } from '../src/lib/journalMerge';
 import type { Sighting } from '../src/types';
 
@@ -231,4 +231,23 @@ test('after the saved journal is erased, sightings are no longer taken to be in 
   // if the backup is turned on again they all go up afresh, with the player's notes
   assert.deepEqual(after.map(needsPush), [true, true, true, true]);
   assert.equal(after[3], journal[3]); // untouched ones are not copied
+});
+
+test('a place saved as text by an older version (iPhone camera-roll uploads) is put right when the journal is loaded', () => {
+  const broken = local('a', { lat: '44.123456' as any, lng: '-72.5' as any, accuracyM: '12' as any });
+  const fixed = repairSighting(broken);
+  assert.deepEqual([fixed.lat, fixed.lng, fixed.accuracyM], [44.123456, -72.5, 12]);
+  assert.equal(`~${fixed.lat!.toFixed(2)}, ${fixed.lng!.toFixed(2)}`, '~44.12, -72.50'); // what the sighting screen shows
+  // it can then be saved to the account like any other place
+  assert.deepEqual([(pushItem(fixed, groupOf, { places: true }) as any).legacy.lat, (pushItem(fixed, groupOf, { places: true }) as any).legacy.lng], [44.12, -72.5]);
+  // half a place, nonsense, or an impossible position is no place
+  for (const [lat, lng] of [['44.1', undefined], ['abc', '1'], ['', ''], [95, 10], [null, null], [{}, []]] as [any, any][]) {
+    const r = repairSighting(local('b', { lat, lng }));
+    assert.deepEqual([r.lat, r.lng], [undefined, undefined]);
+  }
+  // a sighting that is fine is returned as it is (not copied)
+  const fine = local('c', { lat: 1.5, lng: 2.5 });
+  assert.equal(repairSighting(fine), fine);
+  const none = local('d');
+  assert.equal(repairSighting(none), none);
 });

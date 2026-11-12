@@ -58,7 +58,14 @@ the current set lives.
   sightings are stored in `journal_sightings` (readable only by their owner,
   written only by the server), with a copy of each photo in the private
   `journal-photos` bucket. The server scores every sighting and writes the
-  leaderboard totals; `journal_state` holds where each account stands. How it
-  is rolled out: [RELEASE.md](RELEASE.md), "The cloud journal".
+  leaderboard totals; `journal_state` holds where each account stands,
+  including the player's two choices (`backup`: is the journal saved at all;
+  `save_places`: is the rough place of each sighting saved with it). Nothing
+  is stored for an account unless `backup` is `yes`. How it is rolled out:
+  [RELEASE.md](RELEASE.md), "The cloud journal".
+- **Later, if the game grows large:** the check for the same photo handed in
+  twice (`journal_look_alikes`) compares a new photo with every stored
+  fingerprint. That is quick up to a few hundred thousand photos; beyond that
+  it wants an index or a first pass that narrows the field.
 - **Native:** when the iOS build is unblocked, the same two keys get added to the
   EAS build environment.

@@ -8,7 +8,7 @@ const payload = (over: Partial<ReceiptPayload> = {}): ReceiptPayload => ({
   v: 1, uid: UID, sid: 'mhx1abc-9f3k2a', at: now - 5000, observedAt: now - 60_000, loggedAt: now - 6000,
   lat: 44.1, lng: -72.5, capture: 'camera', cameraEvidence: null,
   id: { status: 'ai_confident', common: 'Osprey', sci: 'Pandion haliaetus', group: 'bird', confidence: 0.93, rarity: 0.4, tags: ['in_flight'], dangerous: false, caption: 'An osprey over the lake.' },
-  sha: 'ab'.repeat(32), phash: 'f0'.repeat(32), model: 'test-model', ...over,
+  sha: 'ab'.repeat(32), phash: 'f0'.repeat(32), mask: 'ff'.repeat(32), model: 'test-model', ...over,
 });
 
 test('a receipt verifies for the account and sighting it was issued to', () => {

@@ -99,8 +99,12 @@ create table if not exists public.journal_sightings (
   verified boolean not null default false,
   capture text check (capture in ('camera', 'library')),
   flags jsonb,                                -- notes for review (e.g. the identifier had doubts about the picture)
-  photo_sha text,                             -- fingerprints of the photo, to spot the same picture
-  photo_phash text,                           -- handed in twice (api/_lib/phash.ts)
+  -- Fingerprints of the photo, to spot the same picture handed in twice
+  -- (api/_lib/phash.ts): the hash of its bytes, and a look-alike fingerprint
+  -- in two parts (64 hex characters each).
+  photo_sha text,
+  photo_phash text check (photo_phash ~ '^[0-9a-f]{64}$'),
+  photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$'),
   has_photo boolean not null default false,   -- a copy is stored at journal-photos/<user_id>/<id>.jpg
   science jsonb,                              -- the player's field-note answers
   proposed_species text check (char_length(proposed_species) <= 80),
@@ -108,8 +112,10 @@ create table if not exists public.journal_sightings (
   model text,                                 -- which model identified it
   primary key (user_id, id)
 );
--- (An earlier draft of this file had a column for GPS accuracy.)
+-- (An earlier draft of this file had a column for GPS accuracy, and a
+-- one-part look-alike fingerprint.)
 alter table public.journal_sightings drop column if exists accuracy_m;
+alter table public.journal_sightings add column if not exists photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$');
 create index if not exists journal_sightings_user_time_idx on public.journal_sightings (user_id, observed_at desc);
 create index if not exists journal_sightings_species_idx on public.journal_sightings (scientific_name, recorded_at desc);
 create index if not exists journal_sightings_sha_idx on public.journal_sightings (photo_sha) where photo_sha is not null;
@@ -243,9 +249,11 @@ create table if not exists public.wall_prints (
   post_id uuid primary key references public.feed_posts (id) on delete cascade,
   user_id uuid not null,
   photo_sha text,
-  photo_phash text,
+  photo_phash text check (photo_phash ~ '^[0-9a-f]{64}$'),
+  photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$'),
   created_at timestamptz not null default now()
 );
+alter table public.wall_prints add column if not exists photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$');
 alter table public.wall_prints enable row level security;
 
 -- Wall posts with a photo and no fingerprint yet, newest first (for the nightly job).
@@ -321,52 +329,69 @@ create trigger journal_state_queue_photo_cleanup
   after delete on public.journal_state
   for each row execute function public.queue_journal_photo_cleanup();
 
+-- Do two look-alike fingerprints belong to the same picture? Each fingerprint
+-- is a pair: 256 bits saying which of two neighbouring patches is brighter,
+-- and 256 bits saying which of those comparisons are clear-cut. Two pictures
+-- are compared on the bits that are clear-cut in both: they need at least 48
+-- such bits, and at most a tenth of them, less three, may disagree. The same
+-- rule as looksTheSame() in api/_lib/phash.ts, where the numbers come from.
+create or replace function private.same_picture(a_hash text, a_mask text, b_hash text, b_mask text)
+returns boolean
+language sql
+immutable
+as $$
+  select case
+    when a_hash ~ '^[0-9a-f]{64}$' and a_mask ~ '^[0-9a-f]{64}$' and b_hash ~ '^[0-9a-f]{64}$' and b_mask ~ '^[0-9a-f]{64}$' then (
+      select c.shared >= 48 and c.differing <= c.shared / 10 - 3
+      from (
+        select bit_count(m.both_clear) as shared,
+               bit_count((('x' || a_hash)::bit(256) # ('x' || b_hash)::bit(256)) & m.both_clear) as differing
+        from (select ('x' || a_mask)::bit(256) & ('x' || b_mask)::bit(256) as both_clear) m
+      ) c)
+    else false
+  end;
+$$;
+revoke all on function private.same_picture(text, text, text, text) from public;
+
 -- Stored pictures that are, or look like, the one being recorded: sightings
 -- the server identified itself (any account), wall photos (any account), and
--- the asking account's own sightings of any kind. p_phash / p_mirror are the
--- look-alike fingerprint of the picture and of its mirror image (64 hex
--- characters; see api/_lib/phash.ts); p_bits is how many of the 256 bits may
--- differ. Compared here, over every stored fingerprint, so the answer doesn't
--- depend on what the picture was identified as. A sighting only the phone
--- vouches for is never used against another player.
-create or replace function public.journal_look_alikes(p_user uuid, p_sha text, p_phash text, p_mirror text, p_bits integer)
-returns table (source text, user_id uuid, ref text, exact boolean, distance integer)
+-- the asking account's own sightings of any kind. p_phash / p_mask are the
+-- picture's look-alike fingerprint and p_mirror / p_mirror_mask that of its
+-- mirror image (see api/_lib/phash.ts). Compared here, over every stored
+-- fingerprint, so the answer doesn't depend on what the picture was
+-- identified as. A sighting only the phone vouches for is never used against
+-- another player.
+drop function if exists public.journal_look_alikes(uuid, text, text, text, integer);
+create or replace function public.journal_look_alikes(p_user uuid, p_sha text, p_phash text, p_mask text, p_mirror text, p_mirror_mask text)
+returns table (source text, user_id uuid, ref text, exact boolean)
 language sql
 stable
 security definer
 set search_path = public
 as $$
   with prints as (
-    select 'journal'::text as source, s.user_id, s.id as ref, s.photo_sha, s.photo_phash
+    select 'journal'::text as source, s.user_id, s.id as ref, s.photo_sha, s.photo_phash, s.photo_mask
       from public.journal_sightings s
       where (s.verified or s.user_id = p_user)
         and (s.photo_sha is not null or s.photo_phash is not null)
     union all
-    select 'wall', w.user_id, w.post_id::text, w.photo_sha, w.photo_phash
+    select 'wall', w.user_id, w.post_id::text, w.photo_sha, w.photo_phash, w.photo_mask
       from public.wall_prints w
   ), compared as (
     select p.source, p.user_id, p.ref,
       (p_sha is not null and p.photo_sha = p_sha) as exact,
-      case
-        when p_phash ~ '^[0-9a-f]{64}$' and p.photo_phash ~ '^[0-9a-f]{64}$' then
-          least(
-            bit_count(('x' || p.photo_phash)::bit(256) # ('x' || p_phash)::bit(256)),
-            case when p_mirror ~ '^[0-9a-f]{64}$'
-              then bit_count(('x' || p.photo_phash)::bit(256) # ('x' || p_mirror)::bit(256))
-              else 256 end
-          )::integer
-        else 256
-      end as distance
+      (private.same_picture(p.photo_phash, p.photo_mask, p_phash, p_mask)
+        or private.same_picture(p.photo_phash, p.photo_mask, p_mirror, p_mirror_mask)) as alike
     from prints p
   )
-  select c.source, c.user_id, c.ref, c.exact, c.distance
+  select c.source, c.user_id, c.ref, c.exact
   from compared c
-  where c.exact or c.distance <= p_bits
-  order by c.exact desc, c.distance
+  where c.exact or c.alike
+  order by c.exact desc
   limit 50;
 $$;
-revoke all on function public.journal_look_alikes(uuid, text, text, text, integer) from public, anon, authenticated;
-grant execute on function public.journal_look_alikes(uuid, text, text, text, integer) to service_role;
+revoke all on function public.journal_look_alikes(uuid, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.journal_look_alikes(uuid, text, text, text, text, text) to service_role;
 
 -- ---------- 3. the score on the leaderboard is the server's ----------
 -- profiles.points and species_count used to be whatever the app reported.
