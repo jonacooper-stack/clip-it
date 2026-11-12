@@ -49,6 +49,8 @@ export interface Story {
   title: string;
   species: string;
   pages: StoryPage[];
+  /** Sent before all its photos were ready: refetched soon rather than kept a week. */
+  partial?: boolean;
   fetchedAt?: number;
 }
 
@@ -80,6 +82,9 @@ interface CrewState {
   setFollowed: (userId: string, on: boolean) => void;
   saveStory: (id: string, s: Story) => void;
   hidePhoto: (url: string) => void;
+  /** Forget everything cached (on sign-out / account deletion): suggestions and
+   *  follows belong to the account that was signed in. It all refetches. */
+  reset: () => void;
 }
 
 export const useCrewStore = create<CrewState>()(
@@ -91,6 +96,7 @@ export const useCrewStore = create<CrewState>()(
       followed: [],
       stories: {},
       hiddenPhotos: [],
+      reset: () => set({ forecasts: {}, today: {}, people: null, followed: [], stories: {}, hiddenPhotos: [] }),
       saveStory: (id, story) =>
         set((s) => {
           const entries = Object.entries({ ...s.stories, [id]: { ...story, fetchedAt: Date.now() } })

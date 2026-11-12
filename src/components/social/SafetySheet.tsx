@@ -3,11 +3,12 @@
 // A Modal (not Alert) so it works the same on iOS, Android and web, and isn't
 // capped at Alert's button limit.
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { blockUser, reportContent, friendlyError, REPORT_REASONS, type ReportTarget } from '@/lib/social';
+import { notify } from '@/lib/dialogs';
 
 export interface SafetyTarget {
   type: ReportTarget;
@@ -21,11 +22,6 @@ type Step = 'menu' | 'reasons' | 'confirmBlock' | 'done';
 const NOUN: Record<ReportTarget, string> = { post: 'post', comment: 'comment', user: 'account' };
 
 const webInputReset: any = Platform.OS === 'web' ? { outlineStyle: 'none' } : null;
-
-function notify(title: string, msg: string) {
-  if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${msg}`);
-  else Alert.alert(title, msg);
-}
 
 export function SafetySheet({
   target,

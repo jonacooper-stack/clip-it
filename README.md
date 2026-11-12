@@ -27,6 +27,21 @@ Social play, the sightings map, freemium, and science-data export come in later 
 - [**docs/CONCEPT.md**](docs/CONCEPT.md) — what the app is, who it's for, and the key product decisions.
 - [**docs/ROADMAP.md**](docs/ROADMAP.md) — the MVP definition and the phased plan after it.
 - [**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) — tech stack, data model, scoring engine, and how identification works.
+- [**docs/RELEASE.md**](docs/RELEASE.md) — shipping the app, and what needs setting up where.
+- [**docs/AI_COSTS.md**](docs/AI_COSTS.md) — what each AI call costs and how to change models.
+- [**docs/DECISIONS.md**](docs/DECISIONS.md) — open product and engineering decisions.
+
+## Working on it
+
+```bash
+npm ci
+npm run web          # the app in a browser (mock identifier unless a backend is configured)
+npm run check        # type checks (app + server) and unit tests
+npm run test:db      # database rules, against a local Postgres
+```
+
+The app is `app/` (screens) and `src/`; the server is `api/` (Vercel functions);
+code used by both is `shared/`; the database is `supabase/migrations/`.
 
 ## Platform
 

@@ -9,10 +9,8 @@ import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet'
 import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
-import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
-import { playerPoints } from '@/lib/quests';
 import {
-  syncMyProfile, getLeaderboard, getFriends, searchUsers,
+  getLeaderboard, getFriends, searchUsers,
   sendFriendRequest, acceptFriendRequest, removeFriendship, type Scope, type LeaderboardEntry,
   type FriendsState,
 } from '@/lib/social';
@@ -23,11 +21,7 @@ const webInputReset: any =
 type Tab = 'leaderboard' | 'friends';
 
 export default function Community() {
-  const displayName = useAppStore((s) => s.displayName);
   const avatarUrl = useAppStore((s) => s.avatarUrl);
-  const sightings = useJournalStore((s) => s.sightings);
-  const points = playerPoints(sightings);
-  const speciesCount = distinctSpecies(sightings).length;
   const [tab, setTab] = useState<Tab>('leaderboard');
   // Report/block for any person shown here (App Store Guideline 1.2). Bumping
   // reloadKey after a block re-fetches the lists so they disappear at once.
@@ -36,10 +30,7 @@ export default function Community() {
   const onMore = (userId: string, name: string) =>
     setSafety({ type: 'user', id: userId, userId, displayName: name });
 
-  // Keep my leaderboard row current whenever my totals change.
-  useEffect(() => {
-    syncMyProfile(displayName, points, speciesCount);
-  }, [displayName, points, speciesCount]);
+  // (My own leaderboard row is kept current by useProfileSync in the tabs layout.)
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>

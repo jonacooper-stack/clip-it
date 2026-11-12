@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -15,6 +15,7 @@ import { DemoNotice } from '@/components/DemoNotice';
 import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
 import { SCIENCE_QUESTIONS, answerValues, answerLabelsText } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
+import { MAX_AUTO_RETRIES, retryCaptureNow } from '@/lib/analysis';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import type { IdStatus } from '@/types';
@@ -25,7 +26,7 @@ const STATUS: Record<IdStatus, { label: string; color: string; bg: string }> = {
   ai_confident: { label: 'Identified', color: colors.primary, bg: colors.primarySoft },
   needs_review: { label: 'Best guess', color: colors.accentInk, bg: colors.accentSoft },
   human_confirmed: { label: 'Confirmed', color: colors.primary, bg: colors.primarySoft },
-  disputed: { label: 'In review', color: colors.accentInk, bg: colors.accentSoft },
+  disputed: { label: 'Disputed', color: colors.accentInk, bg: colors.accentSoft },
   ineligible: { label: 'Not eligible', color: colors.clay, bg: colors.claySoft },
   rejected: { label: 'No animal', color: colors.danger, bg: colors.dangerSoft },
 };
@@ -37,6 +38,13 @@ export default function SightingDetail() {
   const removeSighting = useJournalStore((s) => s.removeSighting);
   const [confirming, setConfirming] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  const retryNow = async () => {
+    setRetrying(true);
+    await retryCaptureNow().catch(() => {});
+    setRetrying(false);
+  };
 
   // Go back to wherever we came from, but fall back to the home tab when there's
   // no history to pop (e.g. opened via a deep link or after a web reload) so the
@@ -125,6 +133,20 @@ export default function SightingDetail() {
         )}
 
         {sighting.caption ? <Text style={styles.caption}>{sighting.caption}</Text> : null}
+
+        {sighting.idStatus === 'queued' && (
+          <Card style={styles.block}>
+            <Text style={styles.blockTitle}>Waiting to be identified</Text>
+            <Text style={styles.queuedText}>
+              {(sighting.retry?.attempts ?? 0) >= MAX_AUTO_RETRIES
+                ? 'We tried several times and couldn’t identify this photo. You can try again, or remove it from your journal.'
+                : 'Your photo is saved. ClipIt will identify it and add your points as soon as it can reach the identifier.'}
+            </Text>
+            {Platform.OS !== 'web' && (
+              <Button label="Try now" icon="refresh" variant="secondary" size="md" loading={retrying} onPress={retryNow} style={styles.retryBtn} />
+            )}
+          </Card>
+        )}
 
         {sighting.sceneTags.length > 0 && (
           <View style={styles.tags}>
@@ -263,6 +285,8 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm + 2, paddingVertical: 4 },
   statusText: { fontSize: font.tiny, fontFamily: fonts.bodyBold },
   caption: { fontSize: font.body, color: colors.muted, marginTop: spacing.sm, lineHeight: 22 },
+  queuedText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },
+  retryBtn: { marginTop: spacing.md },
   tags: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.xs, marginBottom: spacing.sm },
   block: { marginTop: spacing.lg },
   blockTitle: { fontSize: font.body, fontFamily: fonts.heading, color: colors.text, marginBottom: spacing.sm },

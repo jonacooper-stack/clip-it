@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './Card';
 import { Button } from './Button';
@@ -36,7 +36,8 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
   }
 
   const submit = () => {
-    update(sighting.id, { idStatus: 'disputed', proposedSpecies: text.trim() || undefined });
+    const guess = text.trim().slice(0, 80);
+    if (guess) update(sighting.id, { idStatus: 'disputed', proposedSpecies: guess });
   };
 
   return (
@@ -47,12 +48,15 @@ export function DisputeBox({ sighting }: { sighting: Sighting }) {
         onChangeText={setText}
         placeholder="e.g. Coyote — or describe what you saw"
         placeholderTextColor={colors.faint}
-        style={styles.input}
+        style={[styles.input, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null]}
+        maxLength={80}
         autoFocus
+        returnKeyType="done"
+        onSubmitEditing={submit}
       />
       <View style={styles.actions}>
         <Button label="Cancel" variant="ghost" onPress={() => setOpen(false)} style={styles.action} />
-        <Button label="Save" onPress={submit} style={styles.action} />
+        <Button label="Save" onPress={submit} disabled={!text.trim()} style={styles.action} />
       </View>
     </Card>
   );

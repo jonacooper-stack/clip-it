@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
-import { identifySighting, OfflineError } from '@/lib/identify';
+import { identifySighting, isPermanentFailure, OfflineError } from '@/lib/identify';
 import { applyIdentifyOutcome, processAnalysisQueue, hashPhotoBase64 } from '@/lib/analysis';
 import { savePhotoBase64, resolvePhoto } from '@/lib/photoStore';
 import { takePendingPhoto } from '@/state/pendingCaptures';
@@ -19,6 +19,15 @@ export default function Identifying() {
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const ran = useRef(false);
   const cancelled = useRef(false);
+  // If the player leaves this screen another way (the Android back button),
+  // the result is still saved to the journal, but we don't yank them back.
+  const onScreen = useRef(true);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => {
+      onScreen.current = false;
+    };
+  }, []);
 
   // Bail out of an in-flight identification: drop the draft and go home. The
   // async guards on `cancelled` so a late result can't navigate us back.
@@ -55,12 +64,13 @@ export default function Identifying() {
         });
         if (cancelled.current) return;
         applyIdentifyOutcome(id, outcome, base64 ? hashPhotoBase64(base64) : undefined);
-        router.replace(`/capture/result?id=${id}`);
+        if (onScreen.current) router.replace(`/capture/result?id=${id}`);
         // We just reached the AI, so flush anything that was queued while offline.
         processAnalysisQueue();
       } catch (err) {
         if (cancelled.current) return;
-        if (err instanceof OfflineError) {
+        // The web app has no background queue: there, "try later" has to be said now.
+        if (err instanceof OfflineError && !isPermanentFailure(err) && Platform.OS !== 'web') {
           // No signal: queue it. The photo was already persisted at capture; if it
           // somehow wasn't, stash the base64 now so the retry still has it.
           let photoUri = current?.photoUri;
@@ -68,9 +78,10 @@ export default function Identifying() {
           if (cancelled.current) return;
           updateSighting(id, { idStatus: 'queued', photoUri });
         } else {
-          updateSighting(id, { idStatus: 'rejected' });
+          // Keep the server's reason (too large, today's limit reached…) for the result screen.
+          updateSighting(id, { idStatus: 'rejected', note: err instanceof OfflineError ? err.detail : undefined });
         }
-        router.replace(`/capture/result?id=${id}`);
+        if (onScreen.current) router.replace(`/capture/result?id=${id}`);
       }
     })();
   }, [id]);

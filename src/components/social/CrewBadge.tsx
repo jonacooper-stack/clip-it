@@ -1,8 +1,9 @@
 // "AI" badge shown next to Scout's name everywhere (posts, comments), so
 // players always know when they're reading the AI companion, not a person.
-import { Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import { Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radius } from '@/theme';
+import { notify } from '@/lib/dialogs';
 
 export const SCOUT_EXPLAINER =
   'Scout is ClipIt’s AI field guide, made by the ClipIt team. It isn’t a real player and never competes with you. ' +
@@ -10,8 +11,7 @@ export const SCOUT_EXPLAINER =
   'Prefer a quieter feed? Turn off “Show Scout in my feed” in Profile.';
 
 export function explainScout() {
-  if (Platform.OS === 'web') (globalThis as any).alert?.(`Scout is an AI\n\n${SCOUT_EXPLAINER}`);
-  else Alert.alert('Scout is an AI', SCOUT_EXPLAINER);
+  notify('Scout is an AI', SCOUT_EXPLAINER);
 }
 
 export function CrewBadge({ small = false }: { small?: boolean }) {

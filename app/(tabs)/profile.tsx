@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Switch, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,24 +16,10 @@ import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
 import { regionByKey } from '../../shared/crew';
 import { saveDiscoverable } from '@/lib/crew/api';
+import { useCrewStore } from '@/state/useCrewStore';
+import { confirmAction, notify } from '@/lib/dialogs';
+import { currentStreak } from '@/lib/streak';
 import type { AgeBracket } from '@/types';
-
-// Alert with buttons is a no-op on react-native-web; fall back to confirm().
-function confirmAction(title: string, message: string, actionLabel: string, onConfirm: () => void) {
-  if (Platform.OS === 'web') {
-    if ((globalThis as any).confirm?.(`${title}\n\n${message}`)) onConfirm();
-    return;
-  }
-  Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: actionLabel, style: 'destructive', onPress: onConfirm },
-  ]);
-}
-
-function notify(title: string, message: string) {
-  if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${message}`);
-  else Alert.alert(title, message);
-}
 
 const BRACKET_LABEL: Record<AgeBracket, string> = {
   under_13: 'Kid (under 13)',
@@ -47,7 +33,6 @@ export default function Profile() {
   const avatarUrl = useAppStore((s) => s.avatarUrl);
   const setAvatarUrl = useAppStore((s) => s.setAvatarUrl);
   const ageBracket = useAppStore((s) => s.ageBracket);
-  const streak = useAppStore((s) => s.streakCount);
   const saveToCameraRoll = useAppStore((s) => s.saveToCameraRoll);
   const setSaveToCameraRoll = useAppStore((s) => s.setSaveToCameraRoll);
   const showCrew = useAppStore((s) => s.showCrew);
@@ -64,8 +49,13 @@ export default function Profile() {
   const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
+  const resetCrew = useCrewStore((s) => s.reset);
   const points = useMemo(() => playerPoints(sightings), [sightings]);
   const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  const streak = useMemo(() => currentStreak(sightings), [sightings]);
+  // Sightings in the journal: photos that turned out not to be wildlife (or
+  // found no animal) aren't kept there, so they aren't counted here either.
+  const sightingCount = useMemo(() => sightings.filter((s) => s.idStatus !== 'rejected' && s.idStatus !== 'ineligible').length, [sightings]);
 
   // Restore my saved avatar on this device (e.g. after a fresh install / sign-in).
   useEffect(() => {
@@ -85,10 +75,14 @@ export default function Profile() {
     const { url, error } = await uploadAvatar(res.assets[0].uri);
     setUploading(false);
     if (url) setAvatarUrl(url);
-    else if (error) Alert.alert('Couldn’t update photo', error);
+    else if (error) notify('Couldn’t update photo', 'Please try a different photo, or try again in a moment.');
   };
 
-  const onSignOut = () => confirmAction('Sign out?', 'You can sign back in anytime.', 'Sign out', () => signOut());
+  const onSignOut = () =>
+    confirmAction('Sign out?', 'You can sign back in anytime.', 'Sign out', async () => {
+      await signOut();
+      resetCrew();
+    });
 
   // App Store Guideline 5.1.1(v): full account deletion from inside the app.
   // Two confirmations, then: delete server data → sign out → wipe local data.
@@ -113,6 +107,7 @@ export default function Profile() {
             }
             await signOut();
             resetJournal();
+            resetCrew();
             resetApp();
             setDeleting(false);
             router.replace('/onboarding/welcome');
@@ -122,19 +117,13 @@ export default function Profile() {
     );
 
   const onReset = () =>
-    Alert.alert('Reset app data?', 'This clears your journal and onboarding (for testing).', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          resetJournal();
-          resetApp();
-          router.replace('/onboarding/welcome');
-        },
-      },
-    ]);
+    confirmAction('Reset app data?', 'This clears your journal and onboarding (for testing).', 'Reset', async () => {
+      await signOut();
+      resetJournal();
+      resetCrew();
+      resetApp();
+      router.replace('/onboarding/welcome');
+    });
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -161,7 +150,7 @@ export default function Profile() {
         <View style={styles.statGrid}>
           <Stat value={points} label="points" />
           <Stat value={speciesCount} label="species" />
-          <Stat value={sightings.length} label="sightings" />
+          <Stat value={sightingCount} label="sightings" />
           <Stat value={streak} label="day streak" />
         </View>
 

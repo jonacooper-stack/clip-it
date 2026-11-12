@@ -126,8 +126,14 @@ async function fetchForCheck(url: string): Promise<string | null> {
 }
 
 // Ask Claude which candidates really show the animal. Throws if the check
-// itself can't run (then nothing unchecked is used).
-export async function verifyPhotos(species: string, sci: string | null | undefined, candidates: PhotoRef[]): Promise<PhotoRef[]> {
+// itself can't run (then nothing unchecked is used). `judged` lists every
+// candidate the model actually looked at, kept or not (one that couldn't be
+// downloaded isn't in it, and gets another chance later).
+export async function verifyPhotos(
+  species: string,
+  sci: string | null | undefined,
+  candidates: PhotoRef[],
+): Promise<{ ok: PhotoRef[]; judged: PhotoRef[] }> {
   const loaded = (await Promise.all(candidates.map(async (c) => ({ c, data: await fetchForCheck(c.url) })))).filter((x) => x.data);
   if (!loaded.length) throw new Error('could not download any candidate photos');
   const content: Anthropic.Beta.BetaContentBlockParam[] = [
@@ -137,43 +143,90 @@ export async function verifyPhotos(species: string, sci: string | null | undefin
     content.push({ type: 'text', text: `Image ${i + 1}:` });
     content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: x.data! } });
   });
-  const out = await askJSON<{ results: { index: number; ok: boolean; reason: string }[] }>({ system: VERIFY_SYSTEM, prompt: content, schema: VERIFY_SCHEMA, maxTokens: 4000 });
+  const out = await askJSON<{ results: { index: number; ok: boolean; reason: string }[] }>({
+    job: 'photo_check',
+    system: VERIFY_SYSTEM,
+    prompt: content,
+    schema: VERIFY_SCHEMA,
+    maxTokens: 4000,
+  });
   const okIdx = new Set((out.results ?? []).filter((r) => r.ok).map((r) => r.index));
   const rejected = (out.results ?? []).filter((r) => !r.ok).map((r) => `${loaded[r.index - 1]?.c.species ?? r.index}: ${r.reason}`.slice(0, 140));
   if (rejected.length) log('species_photos_rejected', { species, rejected });
-  return loaded.filter((_, i) => okIdx.has(i + 1)).map((x) => x.c);
+  return { ok: loaded.filter((_, i) => okIdx.has(i + 1)).map((x) => x.c), judged: loaded.map((x) => x.c) };
+}
+
+// The outside world the lookup talks to (replaced in tests).
+export interface LookupDeps {
+  search: typeof commonsSearch;
+  verify: typeof verifyPhotos;
+  blocked: (refs: PhotoRef[]) => Promise<Set<string>>;
+}
+
+// What an earlier lookup of the same species already settled.
+export interface PriorLookup {
+  accepted?: PhotoRef[]; // photos already in use (library and checked Commons photos)
+  checked?: string[]; // photoKeys of Commons candidates already judged, kept or not
 }
 
 // Up to `max` photos of a species: library first, then checked Commons
 // photos. `failed` means the lookup or the check couldn't run (worth retrying
-// soon), as opposed to there being nothing suitable.
-export async function speciesPhotoLookup(species: string, sci?: string | null, max = 5): Promise<{ photos: PhotoRef[]; failed: boolean }> {
-  const db = adminClient();
-  const blocked = (refs: PhotoRef[]) => blockedKeys(db, refs.map((r) => r.url));
+// soon), as opposed to there being nothing suitable. `checked` is every
+// Commons photo judged so far.
+//
+// The check is the expensive part (the model looks at each candidate), so it
+// only ever sees photos it hasn't judged before, and only as many as could
+// still be needed.
+export async function speciesPhotoLookup(
+  species: string,
+  sci?: string | null,
+  max = 5,
+  prior: PriorLookup = {},
+  deps: Partial<LookupDeps> = {},
+): Promise<{ photos: PhotoRef[]; failed: boolean; checked: string[] }> {
+  const search = deps.search ?? commonsSearch;
+  const verify = deps.verify ?? verifyPhotos;
+  const blocked = deps.blocked ?? ((refs: PhotoRef[]) => blockedKeys(adminClient(), refs.map((r) => r.url)));
+  const checked = new Set(prior.checked ?? []);
+
+  // Library photos, then Commons photos accepted before (minus anything
+  // retired or reported since).
   const lib = libraryPhotos(species, sci);
-  const libBlocked = await blocked(lib);
-  const out = lib.filter((p) => !libBlocked.has(photoKey(p.url))).slice(0, max);
-  if (out.length >= max) return { photos: out, failed: false };
+  const earlier = (prior.accepted ?? []).filter((p) => COMMONS_HOST.test(p.url));
+  const known = [...lib, ...earlier];
+  const knownBlocked = await blocked(known);
+  const out: PhotoRef[] = [];
+  for (const p of known) {
+    const key = photoKey(p.url);
+    if (out.length < max && !knownBlocked.has(key) && !out.some((o) => photoKey(o.url) === key)) out.push(p);
+  }
+  if (out.length >= max) return { photos: out, failed: false, checked: [...checked] };
+
   const q = sci?.trim() ? `"${sci.trim()}"` : `"${species.trim()}"`;
+  // A few more candidates than photos still needed: some will be turned down.
+  const wanted = Math.min(8, max - out.length + 3);
   try {
     const candidates: PhotoRef[] = [];
     for (const extra of ['incategory:Quality_images', '']) {
-      if (candidates.length >= 8) break;
-      for (const p of await commonsSearch(`${q} filetype:bitmap ${extra}`.trim(), 15)) {
-        if (candidates.length < 8 && !candidates.some((c) => photoKey(c.url) === photoKey(p.url))) candidates.push({ ...p, species });
+      if (candidates.length >= wanted) break;
+      for (const p of await search(`${q} filetype:bitmap ${extra}`.trim(), 15)) {
+        const key = photoKey(p.url);
+        const seen = checked.has(key) || out.some((o) => photoKey(o.url) === key) || candidates.some((c) => photoKey(c.url) === key);
+        if (candidates.length < wanted && !seen) candidates.push({ ...p, species });
       }
     }
     const flagged = await blocked(candidates);
     const fresh = candidates.filter((c) => !flagged.has(photoKey(c.url)));
     if (fresh.length) {
-      const good = await verifyPhotos(species, sci, fresh);
-      for (const p of good) if (out.length < max) out.push(p);
+      const { ok, judged } = await verify(species, sci, fresh);
+      for (const p of judged) checked.add(photoKey(p.url));
+      for (const p of ok) if (out.length < max) out.push(p);
     }
   } catch (err: any) {
     log('species_photos_error', { species, detail: String(err?.message ?? err).slice(0, 160) });
-    return { photos: out, failed: true };
+    return { photos: out, failed: true, checked: [...checked] };
   }
-  return { photos: out, failed: false };
+  return { photos: out, failed: false, checked: [...checked] };
 }
 
 export async function speciesPhotos(species: string, sci?: string | null, max = 5): Promise<PhotoRef[]> {

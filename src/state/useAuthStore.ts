@@ -54,10 +54,32 @@ interface AuthState {
 }
 
 let subscribed = false;
+// Accounts we've already tried to save the age range on (once per launch).
+const ageSaved = new Set<string>();
+
+// The session to sync once the local store has loaded from disk.
+let awaitingHydration: Session | null = null;
+let hydrationHooked = false;
 
 // Pull displayName / ageBracket off the account into the local store the UI reads.
 function syncMetadata(session: Session | null) {
   if (!session) return;
+  // The local store loads from disk a moment after launch, and loading
+  // replaces whatever is in it: wait for that, or the values copied from the
+  // account here would be overwritten by the saved ones (and a signed-in
+  // player could be asked for their birth year again).
+  if (!useAppStore.persist.hasHydrated()) {
+    awaitingHydration = session;
+    if (!hydrationHooked) {
+      hydrationHooked = true;
+      useAppStore.persist.onFinishHydration(() => {
+        const s = awaitingHydration;
+        awaitingHydration = null;
+        syncMetadata(s);
+      });
+    }
+    return;
+  }
   const meta = (session.user.user_metadata ?? {}) as {
     displayName?: string;
     ageBracket?: AgeBracket;
@@ -72,9 +94,20 @@ function syncMetadata(session: Session | null) {
   if (name && name !== app.displayName) app.setDisplayName(name);
   if (meta.ageBracket && meta.ageBracket !== app.ageBracket) {
     app.setAge(meta.ageBracket, Boolean(meta.isChild));
+  } else if (!meta.ageBracket && app.ageBracket && app.ageBracket !== 'under_13' && supabase && !ageSaved.has(session.user.id)) {
+    // The account doesn't carry the age range yet (Google sign-in never saved
+    // it): save the one given at the age check, so the teen privacy defaults
+    // follow the player to their other devices.
+    ageSaved.add(session.user.id);
+    supabase.auth.updateUser({ data: { ageBracket: app.ageBracket, isChild: false } }).catch(() => {});
   }
   // Home region picked on another device.
   if (meta.homeRegion && !app.homeRegion && regionByKey(meta.homeRegion)) app.setHomeRegion(meta.homeRegion as RegionKey);
+}
+
+function forgetAccount() {
+  awaitingHydration = null;
+  useAppStore.getState().clearAccount();
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -93,7 +126,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Never leave the launch spinner up forever (e.g. a storage read error):
       // fall through to signed-out and let the user sign in again.
       .catch(() => set({ session: null, initialized: true }));
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
+      // Signed out (here, or because the session ended): forget this person's
+      // profile on the device, so the next account doesn't inherit their name,
+      // age range or privacy choice.
+      if (event === 'SIGNED_OUT') forgetAccount();
       syncMetadata(session);
       set({ session });
     });
@@ -221,6 +258,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    forgetAccount();
     set({ session: null });
   },
 }));
+
+// Re-check the signed-in account against the local profile right now: used
+// after the age check is answered while already signed in, so the age range
+// is saved on the account straight away (see syncMetadata).
+export function syncAccountNow(): void {
+  syncMetadata(useAuthStore.getState().session);
+}

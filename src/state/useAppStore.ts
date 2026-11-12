@@ -4,13 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AgeBracket } from '@/types';
 import type { RegionKey } from '../../shared/crew';
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-function daysBetween(a: string, b: string): number {
-  return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
-}
-
+// (The day streak isn't stored here: it's worked out from the journal, see
+// lib/streak.)
 interface AppState {
   hasHydrated: boolean;
   hasOnboarded: boolean;
@@ -18,8 +13,6 @@ interface AppState {
   isChild: boolean;
   displayName: string;
   avatarUrl: string | null;
-  streakCount: number;
-  lastActiveDate: string | null;
   saveToCameraRoll: boolean;
   /** Show Scout (the AI companion, always labeled) in the feed and comments. */
   showCrew: boolean;
@@ -28,6 +21,10 @@ interface AppState {
   /** Whether Scout may suggest this player to others (null = not chosen yet:
    *  on for adults, off for ages 13–17). */
   discoverable: boolean | null;
+  /** Set when someone under 13 tried to sign up on this device: the age gate
+   *  stays closed until this time (so a different year can't simply be
+   *  entered straight away). */
+  ageBlockedUntil: number | null;
 
   setHasHydrated: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
@@ -38,25 +35,26 @@ interface AppState {
   setShowCrew: (v: boolean) => void;
   setHomeRegion: (r: RegionKey | null) => void;
   setDiscoverable: (v: boolean) => void;
-  registerActivityToday: () => void;
+  setAgeBlockedUntil: (t: number | null) => void;
+  /** Forget what belongs to the signed-in person (not the device's settings). */
+  clearAccount: () => void;
   reset: () => void;
 }
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       hasHydrated: false,
       hasOnboarded: false,
       ageBracket: null,
       isChild: false,
       displayName: 'Explorer',
       avatarUrl: null,
-      streakCount: 0,
-      lastActiveDate: null,
       saveToCameraRoll: true,
       showCrew: true,
       homeRegion: null,
       discoverable: null,
+      ageBlockedUntil: null,
 
       setHasHydrated: (v) => set({ hasHydrated: v }),
       setOnboarded: (v) => set({ hasOnboarded: v }),
@@ -67,15 +65,12 @@ export const useAppStore = create<AppState>()(
       setShowCrew: (showCrew) => set({ showCrew }),
       setHomeRegion: (homeRegion) => set({ homeRegion }),
       setDiscoverable: (discoverable) => set({ discoverable }),
+      setAgeBlockedUntil: (ageBlockedUntil) => set({ ageBlockedUntil }),
 
-      registerActivityToday: () => {
-        const today = todayStr();
-        const last = get().lastActiveDate;
-        if (last === today) return;
-        let streak = 1;
-        if (last && daysBetween(last, today) === 1) streak = get().streakCount + 1;
-        set({ streakCount: streak, lastActiveDate: today });
-      },
+      // On sign-out. The next person to sign in on this device must not
+      // inherit this one's name, picture, age range or privacy choice.
+      clearAccount: () =>
+        set({ ageBracket: null, isChild: false, displayName: 'Explorer', avatarUrl: null, discoverable: null }),
 
       reset: () =>
         set({
@@ -84,12 +79,11 @@ export const useAppStore = create<AppState>()(
           isChild: false,
           displayName: 'Explorer',
           avatarUrl: null,
-          streakCount: 0,
-          lastActiveDate: null,
           saveToCameraRoll: true,
           showCrew: true,
           homeRegion: null,
           discoverable: null,
+          ageBlockedUntil: null,
         }),
     }),
     {

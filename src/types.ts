@@ -1,5 +1,7 @@
 // Shared client types for Clip-It.
 
+import type { Retry } from '@/lib/retry';
+
 export type IdStatus =
   | 'identifying'
   | 'queued' // captured offline; awaiting analysis when back online
@@ -66,6 +68,11 @@ export interface Sighting {
   science?: Record<string, string[]>;
   /** Scout's notes on this sighting (facts, and other players' photos of the species). */
   crew?: CrewNotes;
+  /** The wall post this sighting was shared as (so it can't be shared twice). */
+  wallPostId?: string;
+  /** For a queued capture: how many times identifying it has failed, and when
+   * to try again (see lib/analysis). */
+  retry?: Retry;
 }
 
 export interface CrewOtherPost {

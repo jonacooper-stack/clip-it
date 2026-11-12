@@ -89,7 +89,11 @@ export async function pickImageWithMetadata(): Promise<ImportedPhoto | null> {
     observedAt = parseExifDate(ex.DateTimeOriginal ?? exif.DateTimeOriginal ?? exif.DateTime);
   }
 
-  const base64 = Platform.OS === 'web' ? a.base64 ?? undefined : await resizedBase64(a.uri);
+  // Shrink a copy for the AI on every platform (a full-size upload can be too
+  // big for the server to accept); on web the picker's own bytes are the
+  // fallback if the browser can't resize.
+  const small = await resizedBase64(a.uri, { width: a.width, height: a.height });
+  const base64 = small ?? (Platform.OS === 'web' ? a.base64 ?? undefined : undefined);
   // Persist a copy so it survives app updates (stored as a stable relative ref).
   const uri = Platform.OS === 'web' ? a.uri : (await savePhoto(a.uri)) ?? a.uri;
   return { uri, base64, lat, lng, observedAt: observedAt ?? Date.now() };

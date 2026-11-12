@@ -5,9 +5,11 @@
 import { supabase } from './supabase';
 import { useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
+import { useJournalStore } from '@/state/useJournalStore';
 import { resizedBase64, WALL_PHOTO, AVATAR_PHOTO } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { checkText, reservedName } from './moderation';
+import { publicStorageUrl } from '../../shared/storage';
 
 export type Scope = 'everyone' | 'friends';
 // The wall's own scope: everyone, or people I follow (+ accepted friends).
@@ -16,6 +18,14 @@ export type FeedScope = 'everyone' | 'following';
 // Public Storage bucket that holds wall photos. Create it in Supabase (see
 // supabase/migrations/0003_feed_photos.sql); sharing degrades gracefully without it.
 const WALL_BUCKET = 'feed-photos';
+// Public bucket for profile pictures (supabase/migrations/0005_profiles_avatars.sql).
+const AVATAR_BUCKET = 'avatars';
+
+// Only links into our own public storage are ever displayed (the rule, and
+// why, is in shared/storage).
+export function ownStorageUrl(url: string | null | undefined, bucket: string): string | null {
+  return publicStorageUrl(url, process.env.EXPO_PUBLIC_SUPABASE_URL ?? '', bucket);
+}
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = globalThis.atob(b64);
@@ -86,6 +96,13 @@ function myId(): string | null {
   return useAuthStore.getState().session?.user?.id ?? null;
 }
 
+// The name to put on a new profile row: the player's display name if it's one
+// the board accepts, otherwise a neutral one.
+function publicName(): string {
+  const shown = useAppStore.getState().displayName.trim().slice(0, 40);
+  return !shown || checkText(shown) || reservedName(shown) ? 'Explorer' : shown;
+}
+
 // Most social tables reference profiles(id), and a fresh account has no profile
 // row until it first syncs. Create a minimal one (never overwriting) so inserts
 // like blocks, reports and posts can't fail on a foreign key.
@@ -93,7 +110,7 @@ async function ensureProfile(uid: string) {
   if (!supabase) return;
   await supabase
     .from('profiles')
-    .upsert({ id: uid, display_name: useAppStore.getState().displayName }, { onConflict: 'id', ignoreDuplicates: true });
+    .upsert({ id: uid, display_name: publicName() }, { onConflict: 'id', ignoreDuplicates: true });
 }
 
 // --- blocking (cached so every list can filter cheaply) ---
@@ -117,25 +134,30 @@ export async function getBlockedIds(): Promise<Set<string>> {
 // The journal lives on the device, so a fresh install (or a second phone)
 // starts at zero locally. Never let that overwrite a higher score already on
 // the board: only ever raise the stored totals.
-export async function syncMyProfile(displayName: string, points: number, speciesCount: number) {
+// Returns true when the stored row changed (so an open leaderboard can refresh).
+export async function syncMyProfile(displayName: string, points: number, speciesCount: number): Promise<boolean> {
   const uid = myId();
-  if (!supabase || !uid) return;
+  if (!supabase || !uid) return false;
   const { data: current } = await supabase
     .from('profiles')
-    .select('points, species_count')
+    .select('display_name, points, species_count')
     .eq('id', uid)
     .maybeSingle();
-  const name = checkText(displayName) || reservedName(displayName) ? 'Explorer' : displayName;
-  await supabase.from('profiles').upsert(
-    {
-      id: uid,
-      display_name: name,
-      points: Math.max(points, (current as any)?.points ?? 0),
-      species_count: Math.max(speciesCount, (current as any)?.species_count ?? 0),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' },
-  );
+  // Names from Google or Apple can be long; the board keeps the first 40 characters.
+  const shown = displayName.trim().slice(0, 40) || 'Explorer';
+  const name = checkText(shown) || reservedName(shown) ? 'Explorer' : shown;
+  const next = {
+    display_name: name,
+    points: Math.max(points, (current as any)?.points ?? 0),
+    species_count: Math.max(speciesCount, (current as any)?.species_count ?? 0),
+  };
+  const row = current as { display_name?: string; points?: number; species_count?: number } | null;
+  // Nothing new to say: skip the write.
+  if (row && row.display_name === next.display_name && row.points === next.points && row.species_count === next.species_count) return false;
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({ id: uid, ...next, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  return !error;
 }
 
 // Change my public display name (Profile → Display name). Filtered like
@@ -170,6 +192,12 @@ async function selectWithFallback(build: (cols: string) => any, cols: string, fa
   return first;
 }
 
+// A profile's avatar, if it's one we can show. Scout's is set by our server
+// (players can't mark themselves as a bot), so it's trusted as-is.
+function avatarOf(p: { avatar_url?: string | null; is_bot?: boolean | null }): string | null {
+  return p.is_bot ? p.avatar_url ?? null : ownStorageUrl(p.avatar_url, AVATAR_BUCKET);
+}
+
 // Profiles (name, avatar, bot flag) for a set of user ids.
 async function profilesFor(ids: string[]): Promise<Map<string, { name: string; avatar: string | null; isBot: boolean }>> {
   const out = new Map<string, { name: string; avatar: string | null; isBot: boolean }>();
@@ -180,7 +208,7 @@ async function profilesFor(ids: string[]): Promise<Map<string, { name: string; a
     'id, display_name, avatar_url',
   );
   for (const p of (data ?? []) as any[]) {
-    out.set(p.id, { name: p.display_name || 'Explorer', avatar: p.avatar_url ?? null, isBot: Boolean(p.is_bot) });
+    out.set(p.id, { name: p.display_name || 'Explorer', avatar: avatarOf(p), isBot: Boolean(p.is_bot) });
   }
   return out;
 }
@@ -230,7 +258,7 @@ export async function getLeaderboard(scope: Scope): Promise<LeaderboardEntry[]> 
     .map((r: any) => ({
       id: r.id,
       displayName: r.display_name || 'Explorer',
-      avatarUrl: r.avatar_url ?? null,
+      avatarUrl: avatarOf(r),
       points: r.points ?? 0,
       speciesCount: r.species_count ?? 0,
       isMe: r.id === uid,
@@ -284,7 +312,7 @@ async function enrichPosts(rows: any[], uid: string): Promise<FeedPost[]> {
     scientificName: r.scientific_name,
     points: r.points ?? 0,
     caption: r.caption,
-    photoUrl: r.photo_url ?? null,
+    photoUrl: ownStorageUrl(r.photo_url, WALL_BUCKET),
     createdAt: r.created_at,
     isMine: r.user_id === uid,
     likeCount: likeCount.get(r.id) ?? 0,
@@ -478,6 +506,9 @@ export async function deletePost(postId: string, photoUrl?: string | null): Prom
   if (!supabase || !uid) return { error: 'Accounts are not set up yet.' };
   const { error } = await supabase.from('feed_posts').delete().eq('id', postId).eq('user_id', uid);
   if (error) return { error: error.message };
+  // The sighting it came from can be shared again.
+  const journal = useJournalStore.getState();
+  for (const sg of journal.sightings) if (sg.wallPostId === postId) journal.updateSighting(sg.id, { wallPostId: undefined });
   if (photoUrl) {
     const marker = `/${WALL_BUCKET}/`;
     const i = photoUrl.indexOf(marker);
@@ -493,8 +524,6 @@ export async function deletePost(postId: string, photoUrl?: string | null): Prom
 }
 
 // --- profile picture ---
-
-const AVATAR_BUCKET = 'avatars';
 
 // Upload a chosen image as my avatar and save its public URL on my profile.
 // Returns the URL so the caller can mirror it locally for instant display.
@@ -512,7 +541,7 @@ export async function uploadAvatar(localUri: string): Promise<{ url?: string; er
   const url = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
   const { error: dbErr } = await supabase
     .from('profiles')
-    .upsert({ id: uid, display_name: useAppStore.getState().displayName, avatar_url: url }, { onConflict: 'id' });
+    .upsert({ id: uid, display_name: publicName(), avatar_url: url }, { onConflict: 'id' });
   if (dbErr) return { error: dbErr.message };
   return { url };
 }
@@ -522,7 +551,7 @@ export async function getMyAvatarUrl(): Promise<string | null> {
   const uid = myId();
   if (!supabase || !uid) return null;
   const { data } = await supabase.from('profiles').select('avatar_url').eq('id', uid).maybeSingle();
-  return (data as any)?.avatar_url ?? null;
+  return ownStorageUrl((data as any)?.avatar_url, AVATAR_BUCKET);
 }
 
 // --- friends (double opt-in) ---
@@ -549,7 +578,7 @@ export async function getFriends(): Promise<FriendsState> {
     if (blocked.has(otherId)) continue;
     const other = iAmRequester ? r.addressee : r.requester;
     const otherName = other?.display_name || 'Explorer';
-    const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName, avatarUrl: other?.avatar_url ?? null };
+    const row: FriendRow = { id: r.id, userId: otherId, displayName: otherName, avatarUrl: ownStorageUrl(other?.avatar_url, AVATAR_BUCKET) };
     if (r.status === 'accepted') state.friends.push(row);
     else if (iAmRequester) state.outgoing.push(row);
     else state.incoming.push(row);
@@ -569,7 +598,7 @@ export async function searchUsers(query: string): Promise<{ id: string; displayN
   const blocked = await getBlockedIds();
   return (data ?? [])
     .filter((r: any) => !blocked.has(r.id) && !r.is_bot)
-    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: r.avatar_url ?? null, isBot: false }));
+    .map((r: any) => ({ id: r.id, displayName: r.display_name || 'Explorer', avatarUrl: avatarOf(r), isBot: false }));
 }
 
 export async function sendFriendRequest(userId: string): Promise<{ error?: string }> {
@@ -638,7 +667,7 @@ export async function getBlockedUsers(): Promise<BlockedUser[]> {
   return ids.map((id) => ({
     id,
     displayName: byId.get(id)?.display_name || 'Explorer',
-    avatarUrl: byId.get(id)?.avatar_url ?? null,
+    avatarUrl: ownStorageUrl(byId.get(id)?.avatar_url, AVATAR_BUCKET),
   }));
 }
 

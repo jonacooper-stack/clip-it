@@ -8,9 +8,10 @@ import { CrewBadge } from '@/components/social/CrewBadge';
 import { useCrewStore } from '@/state/useCrewStore';
 import { followUser, unfollowUser } from '@/lib/social';
 import { timeAgo } from '@/lib/timeAgo';
+import { resolvePhoto } from '@/lib/photoStore';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import type { Moment, Slide, Tone } from '@/lib/crew/moments';
-import type { StoryRef } from '@/lib/crew/api';
+import { setStoryCover, type StoryRef } from '@/lib/crew/api';
 import { askReportPhoto } from './reportPhoto';
 
 // One Scout post in the feed, shaped like a wall post: header, a square
@@ -28,9 +29,12 @@ const TONES: Record<Tone, { bg: string; ring: string }> = {
 // module needed, so it ships over the air).
 const FADE = Array.from({ length: 14 }, (_, i) => 0.78 * Math.pow((i + 1) / 14, 1.6));
 
-// Open the full-screen story reader for a post or slide.
-export function openStory(router: ReturnType<typeof useRouter>, r: StoryRef, emoji?: string) {
-  router.push({ pathname: '/story', params: { ...r, emoji: emoji ?? '' } } as any);
+// Open the full-screen story reader for a post or slide. The tapped slide's
+// photo and emoji go along (in memory) so the reader opens on something
+// familiar while the story loads.
+export function openStory(router: ReturnType<typeof useRouter>, r: StoryRef, from?: Pick<Slide, 'photo' | 'emoji'>) {
+  setStoryCover(r, { photo: from?.photo?.credit ? from.photo : undefined, emoji: from?.emoji });
+  router.push({ pathname: '/story', params: { ...r } } as any);
 }
 
 export function ScoutPost({ moment }: { moment: Moment }) {
@@ -56,7 +60,7 @@ export function ScoutPost({ moment }: { moment: Moment }) {
       {(n > 1 || story) && (
         <View style={styles.actions}>
           {story ? (
-            <Pressable onPress={() => openStory(router, story)} style={styles.storyBtn} hitSlop={6} accessibilityRole="button">
+            <Pressable onPress={() => openStory(router, story, moment.slides[index])} style={styles.storyBtn} hitSlop={6} accessibilityRole="button">
               <Ionicons name="book-outline" size={15} color={colors.accentInk} />
               <Text style={styles.storyText} numberOfLines={1}>
                 Read the story
@@ -176,7 +180,10 @@ function FollowButton({ userId, name }: { userId: string; name: string }) {
 
 function SlideView({ slide, size, story, context }: { slide: Slide; size: number; story?: StoryRef; context: string }) {
   const router = useRouter();
-  const open = slide.href ? () => router.push(slide.href as any) : story ? () => openStory(router, story, slide.emoji) : undefined;
+  // A photo that can't be loaded (a purged file, a dead link) falls back to
+  // the slide's emoji card instead of an empty frame.
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const open = slide.href ? () => router.push(slide.href as any) : story ? () => openStory(router, story, slide) : undefined;
   const cta = slide.follow ? (
     <FollowButton userId={slide.follow.userId} name={slide.follow.name} />
   ) : slide.cta ? (
@@ -187,10 +194,18 @@ function SlideView({ slide, size, story, context }: { slide: Slide; size: number
   ) : null;
   const big = !slide.title; // story slides: the fact itself is the headline
 
-  if (slide.photo) {
+  if (slide.photo && !photoFailed) {
     return (
       <Pressable onPress={open} disabled={!open} style={{ width: size, height: size }}>
-        <Image source={{ uri: slide.photo.uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+        {/* The player's own photos are stored as refs relative to the app's
+            documents folder; resolvePhoto turns them into loadable paths. */}
+        <Image
+          source={{ uri: resolvePhoto(slide.photo.uri) ?? slide.photo.uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={150}
+          onError={() => setPhotoFailed(true)}
+        />
         <View style={styles.fade} pointerEvents="none">
           {FADE.map((a, i) => (
             <View key={i} style={{ flex: 1, backgroundColor: `rgba(0,0,0,${a.toFixed(3)})` }} />

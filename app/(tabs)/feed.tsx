@@ -4,13 +4,16 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { WallFeed } from '@/components/WallFeed';
 import { colors, spacing, font, fonts, radius } from '@/theme';
-import { useAppStore } from '@/state/useAppStore';
+import { useMemo } from 'react';
+import { useJournalStore } from '@/state/useJournalStore';
+import { currentStreak } from '@/lib/streak';
 
 // The app's home is the community Feed — the wall front-and-center. Capturing a
 // new sighting is the raised camera button in the middle of the tab bar.
 export default function Feed() {
   const router = useRouter();
-  const streak = useAppStore((s) => s.streakCount);
+  const sightings = useJournalStore((s) => s.sightings);
+  const streak = useMemo(() => currentStreak(sightings), [sightings]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -20,7 +23,7 @@ export default function Feed() {
         </Text>
         <View style={styles.headerRight}>
           {streak > 0 && (
-            <View style={styles.streak}>
+            <View style={styles.streak} accessibilityLabel={`${streak} day streak`}>
               <Ionicons name="flame" size={14} color={colors.accent} />
               <Text style={styles.streakText}>{streak}</Text>
             </View>

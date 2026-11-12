@@ -18,13 +18,56 @@ const hasAbsoluteIdentifyUrl = /^https?:\/\//i.test(IDENTIFY_URL);
 // identification through it just because Supabase is configured for auth/social.
 const USE_SUPABASE_IDENTIFY = process.env.EXPO_PUBLIC_USE_SUPABASE_IDENTIFY === 'true';
 
-// Thrown when the identify endpoint can't be reached (no connectivity) so the
-// caller can queue the capture and analyze it once the device is back online.
+// Thrown when a capture couldn't be identified right now, so the caller can
+// queue it and try again later. `status` is the server's HTTP status when it
+// answered with an error (a server problem, too many requests, signed out…);
+// it's undefined when the server couldn't be reached at all (no connection).
 export class OfflineError extends Error {
-  constructor(message = 'offline') {
+  status?: number;
+  /** The server's own words for the player, when it gave a reason. */
+  detail?: string;
+  /** How long the server asked us to wait before trying again, in seconds. */
+  retryAfterS?: number;
+  constructor(message = 'offline', status?: number, extra: { detail?: string; retryAfterS?: number } = {}) {
     super(message);
     this.name = 'OfflineError';
+    this.status = status;
+    this.detail = extra.detail;
+    this.retryAfterS = extra.retryAfterS;
   }
+}
+
+// Statuses that mean "this photo can never be identified" (unreadable, too
+// large, or the identifier declined it): trying again won't help.
+const PERMANENT = new Set([400, 413, 415, 422]);
+
+export function isPermanentFailure(err: unknown): boolean {
+  return err instanceof OfflineError && err.status != null && PERMANENT.has(err.status);
+}
+
+// The identify endpoint answered, but with an error.
+class EndpointError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly detail?: string,
+    readonly retryAfterS?: number,
+  ) {
+    super(message);
+    this.name = 'EndpointError';
+  }
+}
+
+// The server understood the request and said no: this photo can't be
+// identified, or the player has to wait. A made-up result is never right then.
+function turnedDown(err: unknown): err is EndpointError {
+  return err instanceof EndpointError && (err.status === 429 || PERMANENT.has(err.status));
+}
+
+function asOffline(err: any): OfflineError {
+  if (err instanceof OfflineError) return err;
+  if (err instanceof EndpointError) return new OfflineError(err.message, err.status, { detail: err.detail, retryAfterS: err.retryAfterS });
+  return new OfflineError(String(err?.message ?? err));
 }
 
 // Fast, local connectivity check (no network round trip) so we can queue an
@@ -100,10 +143,9 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
       // In release builds on the phone, never invent a result: any failure
       // (offline, server error, timeout) queues the capture, which is retried
       // automatically and scored once the AI answers. Only dev builds and the
-      // web demo fall back to the mock identifier.
-      if (Platform.OS !== 'web' && !__DEV__) {
-        throw err instanceof OfflineError ? err : new OfflineError(String(err?.message ?? err));
-      }
+      // web demo fall back to the mock identifier, and not when the server
+      // turned the photo down or asked the player to wait.
+      if ((Platform.OS !== 'web' && !__DEV__) || turnedDown(err)) throw asOffline(err);
       if (err instanceof OfflineError) {
         // Native dev builds queue the capture too; web just uses the demo identifier.
         if (Platform.OS !== 'web') throw err;
@@ -138,7 +180,9 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
   };
 }
 
-const IDENTIFY_TIMEOUT_MS = 20000;
+// A little longer than the server allows itself (24s), so a slow answer still
+// arrives instead of being paid for and thrown away.
+const IDENTIFY_TIMEOUT_MS = 28000;
 
 async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcome> {
   let resp: Response;
@@ -180,7 +224,13 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     } catch {
       // body wasn't JSON; the status code alone is the signal
     }
-    throw new Error(`identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`);
+    const wait = Number(resp.headers.get('Retry-After'));
+    throw new EndpointError(
+      `identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`,
+      resp.status,
+      detail || undefined,
+      Number.isFinite(wait) && wait > 0 ? wait : undefined,
+    );
   }
   const data = await resp.json();
   return {

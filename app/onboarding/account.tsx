@@ -15,10 +15,14 @@ import { checkText, reservedName } from '@/lib/moderation';
 const webInputReset: any =
   Platform.OS === 'web' ? { outlineStyle: 'none', borderWidth: 0, backgroundColor: 'transparent' } : null;
 
-// After creating an account (or signing in with Apple/Google), ask for the
-// home region unless we already know it, then the ethos screen.
+// After creating an account (or signing in with Apple/Google): the age check
+// if this account has never passed it (a Google or Apple account that is new
+// to ClipIt), then the home region unless we already know it, then the ethos
+// screen.
 function afterAuth(): string {
-  return useAppStore.getState().homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos';
+  const { ageBracket, homeRegion } = useAppStore.getState();
+  if (!ageBracket) return '/onboarding/age-gate';
+  return homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos';
 }
 
 export default function Account() {
@@ -46,6 +50,12 @@ export default function Account() {
   const [sent, setSent] = useState(false);
 
   const isSignup = mode === 'signup';
+  // Creating an account needs the age check first. (This screen can also be
+  // reached through "Sign in", which skips it.)
+  const needsAgeCheck = !ageBracket || ageBracket === 'under_13';
+  useEffect(() => {
+    if (isSignup && needsAgeCheck) router.replace('/onboarding/age-gate');
+  }, [isSignup, needsAgeCheck, router]);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid = emailOk && password.length >= 6 && (!isSignup || name.trim().length >= 1);
 
@@ -189,6 +199,7 @@ export default function Account() {
               onChangeText={setName}
               placeholder="What should we call you?"
               placeholderTextColor={colors.faint}
+              maxLength={30}
               style={[styles.input, webInputReset]}
               autoCapitalize="words"
               returnKeyType="next"

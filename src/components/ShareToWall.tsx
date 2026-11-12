@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './Card';
 import { Button } from './Button';
 import { colors, spacing, font, fonts } from '@/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuthStore } from '@/state/useAuthStore';
+import { useJournalStore } from '@/state/useJournalStore';
 import { shareToWall, friendlyError } from '@/lib/social';
 import { fetchCrewNotes } from '@/lib/crew/api';
 import type { Sighting } from '@/types';
@@ -14,8 +16,10 @@ import type { Sighting } from '@/types';
 // only species, points, and caption go up, never the location. Renders nothing
 // unless accounts are on, the user is signed in, and it's a real animal ID.
 export function ShareToWall({ sighting }: { sighting: Sighting }) {
+  const router = useRouter();
   const session = useAuthStore((s) => s.session);
-  const [state, setState] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
+  const updateSighting = useJournalStore((s) => s.updateSighting);
+  const [state, setState] = useState<'idle' | 'sharing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const eligible =
@@ -23,11 +27,16 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
     (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed');
   if (!isSupabaseConfigured || !session || !eligible) return null;
 
-  if (state === 'done') {
+  // Already on the wall (remembered on the sighting, so it can't be posted
+  // twice): link to the post instead of offering to share again.
+  if (sighting.wallPostId) {
     return (
       <Card style={styles.done}>
         <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
         <Text style={styles.doneText}>Shared to the wall</Text>
+        <Pressable onPress={() => router.push(`/post/${sighting.wallPostId}`)} hitSlop={8} accessibilityRole="button">
+          <Text style={styles.view}>View post</Text>
+        </Pressable>
       </Card>
     );
   }
@@ -46,9 +55,12 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       setErrorMsg(friendlyError(res.error, 'Couldn’t share right now. Please try again in a moment.'));
       setState('error');
     } else {
-      setState('done');
-      // Scout drops a fun fact on the new post (and Scout's notes refresh).
-      if (res.postId) fetchCrewNotes(sighting.id, { postId: res.postId });
+      setState('idle');
+      if (res.postId) {
+        updateSighting(sighting.id, { wallPostId: res.postId });
+        // Scout drops a fun fact on the new post (and Scout's notes refresh).
+        fetchCrewNotes(sighting.id, { postId: res.postId }).catch(() => {});
+      }
     }
   };
 
@@ -77,6 +89,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
     borderColor: colors.primarySoft,
   },
-  doneText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.onPrimary },
+  doneText: { flex: 1, fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.onPrimary },
+  view: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.primary, textDecorationLine: 'underline' },
   errorText: { fontSize: font.tiny, color: colors.danger, marginTop: spacing.sm, textAlign: 'center', lineHeight: 18 },
 });

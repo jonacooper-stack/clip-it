@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,6 +12,8 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { timeAgo } from '@/lib/timeAgo';
 import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet';
 import { CrewBadge } from '@/components/social/CrewBadge';
+import { confirmAction, notify } from '@/lib/dialogs';
+import { withArticle } from '../../shared/crew';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import {
   getPost, getComments, addComment, likePost, unlikePost, deletePost, friendlyError,
@@ -38,18 +40,11 @@ export default function PostDetail() {
 
   const unshare = () => {
     if (!post) return;
-    Alert.alert('Remove from wall?', 'This unshares the post for everyone. Your sighting stays in your journal.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Unshare',
-        style: 'destructive',
-        onPress: async () => {
-          const res = await deletePost(post.id, post.photoUrl);
-          if (res.error) Alert.alert('Couldn’t unshare', friendlyError(res.error));
-          else goBack();
-        },
-      },
-    ]);
+    confirmAction('Remove from wall?', 'This unshares the post for everyone. Your sighting stays in your journal.', 'Unshare', async () => {
+      const res = await deletePost(post.id, post.photoUrl);
+      if (res.error) notify('Couldn’t unshare', friendlyError(res.error));
+      else goBack();
+    });
   };
 
   const loadComments = useCallback(() => {
@@ -75,7 +70,7 @@ export default function PostDetail() {
       setPost((p) => (p ? { ...p, commentCount: p.commentCount + 1 } : p));
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     } else {
-      Alert.alert('Couldn’t post comment', friendlyError(res.error));
+      notify('Couldn’t post comment', friendlyError(res.error));
     }
   };
 
@@ -169,6 +164,7 @@ export default function PostDetail() {
               placeholderTextColor={colors.faint}
               style={[styles.input, webInputReset]}
               multiline
+              maxLength={500}
               onSubmitEditing={send}
             />
             <Pressable
@@ -259,7 +255,7 @@ function PostHeader({ post, onCountChange }: { post: FeedPost; onCountChange: (n
 
       <Text style={styles.caption}>
         <Text style={styles.captionName}>{post.displayName}</Text>
-        {post.commonName ? <Text> spotted a </Text> : <Text> shared a sighting</Text>}
+        {post.commonName ? <Text> spotted {withArticle(post.commonName).split(' ')[0]} </Text> : <Text> shared a sighting</Text>}
         {post.commonName && <Text style={styles.species}>{post.commonName}</Text>}
       </Text>
       {!!post.caption && <Text style={styles.captionText}>{post.caption}</Text>}
