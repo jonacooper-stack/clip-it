@@ -33,11 +33,11 @@ preview work with zero backend. Set them and accounts turn on.
 
 ## Row-Level Security
 RLS is what makes the publishable key safe: it's the only thing stopping anyone
-with that public key from reading/writing everyone's rows. `supabase/migrations/
-0001_init.sql` already `enable row level security` on every table plus
-owner-scoped policies (`auth.uid()`), including parent→child access via
-`guardian_id`. Run that migration when we add the cloud data tables (next step);
-until then there are no app tables, so nothing is exposed.
+with that public key from reading/writing everyone's rows. Every table the
+app uses has row-level security on, with rules written for what each table is
+for (`0002`–`0011`). `0001_init.sql` is an earlier design for a science
+database (PostGIS, a species catalog) that was never run and is not needed:
+the cloud journal lives in `0011_cloud_journal.sql`.
 
 ## Migrations and their tests
 Migrations in `supabase/migrations/` are run by hand in the SQL editor, in
@@ -54,8 +54,11 @@ the current set lives.
 ## Status & roadmap
 - **Now — identity:** email + password sign-up / sign-in / sign-out; name + age
   saved to the account and mirrored into the local store the UI reads.
-- **Next — journal cloud sync:** run the migration, then store sightings per-user
-  (RLS-scoped) so a journal follows you across devices and unlocks the social /
-  science features.
+- **Now — the cloud journal** (`0011_cloud_journal.sql`): each account's
+  sightings are stored in `journal_sightings` (readable only by their owner,
+  written only by the server), with a copy of each photo in the private
+  `journal-photos` bucket. The server scores every sighting and writes the
+  leaderboard totals; `journal_state` holds where each account stands. How it
+  is rolled out: [RELEASE.md](RELEASE.md), "The cloud journal".
 - **Native:** when the iOS build is unblocked, the same two keys get added to the
   EAS build environment.

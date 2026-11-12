@@ -320,7 +320,109 @@ Day to day:
 - The open product decisions from the audit are in
   [DECISIONS.md](DECISIONS.md).
 
-### h. Before submitting
+### h. The cloud journal (November 2026): what it is and how to turn it on
+Journals now belong to accounts and live in the cloud; the server works out
+every score; photos that aren't a player's own don't score; and the database
+checks comments, captions and names for blocked language. All of it is
+JavaScript, SQL and server code: **no new build is needed.**
+
+Do these in one sitting, in this order. Each step is safe on its own (nothing
+breaks if you stop in between), but players only get the whole thing once all
+are done.
+
+1. **Supabase → SQL editor: run `0010_hardening.sql` (if you haven't) and then
+   `0011_cloud_journal.sql`.** 0011 creates the journal tables, the private
+   photo bucket and the rules, and takes a one-time snapshot: every account
+   that exists at that moment gets a *baseline* (its leaderboard score, at
+   most 10,000) and an *allowance* for sightings scored on the phone (500
+   points per day the account has existed, at most 20,000). Safe to run more
+   than once; the snapshot is only taken the first time.
+2. **Vercel → Settings → Environment Variables: add `RECEIPT_SECRET`** (any
+   long random string). Optional but recommended: without it the server signs
+   its receipts with a key derived from the Supabase key, and receipts
+   waiting on phones stop working if that key is ever changed. Check that
+   `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` are set (they are needed
+   already for Scout).
+3. **Merge the branch.** Vercel deploys the server and the web app.
+4. **App Store Connect → App Privacy: tick Precise Location** and update the
+   Photos answer ([APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md) has the exact
+   entries). The journal's places are now saved to the account, so the label
+   must say so before the update goes out. This is a listing change; it needs
+   no build and no review.
+5. **Run the "EAS Update (OTA)" workflow** (channel `production`). Phones
+   download it on their next launch and use it from the launch after.
+6. **Vercel → Cron Jobs → `/api/crew-daily` → Run** (or wait for tonight's
+   run). The first run starts the 30-day clock (below) and fingerprints the
+   photos already on the wall, about a hundred per run: press Run again until
+   the result shows `"wallPrints": 0`. Until the wall photos are
+   fingerprinted, a photo copied from the wall could be scored by someone
+   else.
+
+**What players see.** Someone who already has a journal on their phone is
+asked once, "Save your journal to your account?", before anything is
+uploaded. Yes: their sightings go up (photos follow on Wi-Fi) and their score
+is kept by the server from then on. Not now: nothing changes for them, and
+Profile → Journal backup lets them turn it on later. New accounts aren't
+asked. Profile also has "Save places with my journal" for anyone who wants
+where their photos were taken to stay on the phone.
+
+**The 30-day clock.** App versions from before this change score sightings
+on the phone and report their own totals. That stays accepted for 30 days
+from the first nightly run after the deploy, and so does the upload of each
+player's existing journal (up to the allowance from step 1). After that only
+sightings the server identified itself count, and an account that never
+updated goes back to its baseline. A sighting that arrives too late is not
+lost: while its photo is on the phone, the updated app sends it through the
+identifier again and it counts from then on. To change the date:
+
+```sql
+insert into public.app_settings (key, value)
+values ('legacy_import_until', to_jsonb(now() + interval '30 days'))
+on conflict (key) do update set value = excluded.value, updated_at = now();
+```
+
+**New installs.** A fresh install runs the code it shipped with for its first
+session, and gets the update from its second launch. Those first sightings
+are picked up by the same re-check. The next time you make a store build for
+any reason, the new code ships inside it and this stops mattering.
+
+**Storage.** Each sighting that counts keeps a copy of its photo (about
+150–400 KB) in the private `journal-photos` bucket. Supabase's free plan
+includes 1 GB across all buckets, which is roughly 3,000–6,000 photos
+together with wall photos and avatars. Watch Storage in the Supabase
+dashboard as the game grows.
+
+**If something goes wrong.** Each of these is reversible:
+- Stop recording and syncing: set `JOURNAL_SYNC=off` in Vercel, then
+  **Deployments → Redeploy** (a changed variable only reaches a new
+  deployment). The app carries on scoring on the phone and syncs again when
+  it is switched back on.
+- Stop refusing camera-roll uploads without camera details: `IMPORT_CHECK=off`,
+  then Redeploy.
+- A database rule misbehaving: switch that one trigger off (and on again with
+  `enable trigger`):
+
+```sql
+alter table public.profiles      disable trigger profiles_protect_score;
+alter table public.profiles      disable trigger profiles_clean_display_name;
+alter table public.feed_posts    disable trigger feed_posts_from_journal;
+alter table public.feed_posts    disable trigger feed_posts_language;
+alter table public.post_comments disable trigger post_comments_language;
+```
+
+**Where to look.**
+- Vercel → Logs: `identify_failure` with reason `not_own_photo` (a photo was
+  turned down, and `why`), `picture_doubt`, `journal_record_failed`,
+  `journal_sync_failure`, `legacy_window_set`, `crew_daily_run` (its `journal`
+  part).
+- Supabase → Table editor: `journal_refusals` lists every photo turned down as
+  a copy, with what it matched. If a player says a refusal was wrong, this is
+  where to check.
+- A player's score looks wrong: `journal_state` has their baseline, allowance
+  and what is still carried over; `journal_sightings` has every row with its
+  points and whether the server identified it (`verified`).
+
+### i. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
   support address and company name, and make sure that inbox exists.
 - Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.

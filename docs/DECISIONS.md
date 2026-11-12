@@ -1,177 +1,168 @@
 # Open decisions
 
-*From the November 2026 audit. Everything that was a bug, a security gap or a
-safe improvement was fixed directly (see the commit history and
-[RELEASE.md](RELEASE.md) → "After the November 2026 audit"). What is left here
-changes how the product works, costs money to verify, or needs your call
-between real alternatives. Each has a recommendation; none blocks shipping the
-fixes.*
+*Started with the November 2026 audit; updated after your answers on 12
+November. What you approved has been built (see the next section). What is
+left here needs your call, a step only you can take, or costs money to
+verify. Each has a recommendation.*
 
-## Decide soon
+## Built since you decided
 
-### 1. Which model identifies photos?
-The identifier is nearly the whole AI bill: about $16 per 1,000 photos on
-Claude Opus 4.8. Claude Haiku 5.5 would be about $0.50, Claude Sonnet 5.5 about
-$7–11. Nobody has measured whether the cheaper models name species as well.
+| You said | What happened |
+|---|---|
+| A separate journal per account, in the cloud | Built. Each account has its own journal on a device, saved to the account. How to turn it on: [RELEASE.md](RELEASE.md), "The cloud journal". |
+| The score should be kept by the server | Built. The server identifies, scores and totals; the leaderboard shows only its numbers. |
+| Ask the birth month at the age check | Built. Month and year for everyone; a birthday in the current month counts as not reached. |
+| A server check on comment language, across the app | Built as a database rule on comments, captions, species names on posts and display names, generated from the app's own word list. |
+| A filter for AI-made, stock and copied photos | Built: see "The photo check" below for what it catches and what it can't. |
+| Compare identifier models ($5) | **Not run yet**: this workspace can't hold your Anthropic key. One click for you: decision 1. |
+| Upgrade the Expo SDK | **Not started**: it needs its own branch and a store build. Decision 2. |
+| Swap the black "gray" squirrel photo | **Not done**: Wikimedia refused downloads from this workspace all session. Decision 3. |
 
-- **Recommended:** approve about $5 of API spend to run
-  `npm run eval:identify -- --yes` (99 labelled photos × 4 models). If Haiku 5.5
-  or Sonnet 5.5 is within a few points of Opus on the right-species rate, switch
-  with one environment variable (`CLAUDE_MODEL_IDENTIFY`) and re-check on a few
-  dozen real player photos.
-- Alternative: stay on Opus 4.8. Nothing to do; costs as above.
-- Later option if Haiku is close but not equal: answer with Haiku, and re-ask a
-  larger model only when Haiku says it is unsure. Needs building.
+## Needs you
 
-Details and all the numbers: [AI_COSTS.md](AI_COSTS.md).
+### 1. Run the model comparison (about $5.50)
+The identifier is nearly the whole AI bill: about $18 per 1,000 photos on
+Claude Opus 4.8. Claude Haiku 5.5 would be about $0.50, Claude Sonnet 5.5
+about $7–13. Whether they name species as well has not been measured
+([AI_COSTS.md](AI_COSTS.md) has the detail).
 
-### 2. Put a spending limit on the Anthropic key
-Not a code change. Anyone can create an account, and each account now has a
-daily allowance, but there is no ceiling across all accounts. In the Claude
-Console, set a monthly spend limit on the workspace the key belongs to. Also
-turn Supabase's "Confirm email" back on before a public launch (RELEASE.md
-already says so): with it off, accounts are free to mass-produce.
+- **To run it:** add your Anthropic key as a repository secret named
+  `ANTHROPIC_API_KEY` (GitHub → Settings → Secrets and variables → Actions),
+  merge the branch, then Actions → "Compare identifier models" → Run workflow,
+  and type `run` in the confirm box. Leave it empty first to see the plan and
+  cost without spending anything. The result appears on the run's summary
+  page: right-species rate, speed and cost per model, how many real photos
+  each wrongly refused as "not the player's own", and how many of twelve
+  sample cheat pictures each refused.
+- **Then:** if Haiku 5.5 or Sonnet 5.5 is within a few points of Opus on the
+  right-species rate and refuses no real photos, switch with one environment
+  variable (`CLAUDE_MODEL_IDENTIFY`) and tell me the numbers if you want a
+  second opinion.
 
-- **Recommended:** do both before any public promotion.
+### 2. The Expo SDK upgrade: say go, and where
+The app is on Expo SDK 52; the current one is 58. The upgrade must stay off
+the branch that ships over the air: it changes native code, so it needs a
+store build and a full test on a phone. One detail matters: the app's update
+setting (`runtimeVersion: appVersion`) only keeps incompatible updates away
+from old installs if the app version number is raised, so the upgrade has to
+bump `version` in `app.json`.
 
-### 3. The journal only exists on the phone
-Two consequences today:
-- A reinstall or a new phone starts from an empty journal.
-- If one person signs out and another signs in on the same device, the second
-  person sees the first person's journal, photos and locations, and those
-  points are synced to the second person's leaderboard row.
+- **Recommended:** after the cloud journal has shipped and settled, tell me to
+  start it on a new branch (I need your OK to push to a second branch). I'd do
+  it one or two SDK versions at a time, with the type checks, tests and web
+  build passing at each step, and hand you a checklist for the phone test.
 
-Options:
-- **(a) Recommended now:** keep a separate journal per account on the device.
-  Small change, fixes the mix-up, loses nothing.
-- (b) Clear the journal on sign-out. Simple, but it deletes the only copy.
-- (c) Store journals in the cloud (the "journal cloud sync" item already on the
-  roadmap). The real fix for both problems; goes with decision 4.
+### 3. The squirrel photo
+The library's "Eastern gray squirrel" is an all-black individual. I couldn't
+download a replacement: Wikimedia Commons rate-limited this workspace for the
+whole session.
 
-### 4. Scores are reported by the app
-The leaderboard shows whatever points each app reports. The database now
-refuses negative or absurd totals, but a modified app can still claim a
-plausible high score. The server sees every identification and could keep the
-score itself.
+- **Either** send me a photo you have the rights to (or the name of a
+  Commons file you like) in a later session, **or** do it yourself: replace
+  `site/img/library/squirrel.jpg` (1200 px wide), update its credit in
+  `api/_lib/photoLibrary.ts` and `site/credits.html`, and run
+  `npx tsx scripts/hash-library.ts` (a test fails until you do).
 
-- **Recommended:** build server-side scoring together with the cloud journal
-  (3c) before the leaderboard carries prizes or public bragging rights. About a
-  week of work; the scoring code already exists in two places and would become
-  one.
-- Alternative: leave it while the game is among friends.
+### 4. Have the privacy changes looked at
+Saving journals to accounts changes what the app collects: the place and a
+copy of the photo for each sighting, for players aged 13 and up. I updated the
+in-app policy, the FAQ and the App Store notes so they say what the app now
+does, and set the effective date to 12 November 2026. Existing players are
+asked before their journal is uploaded.
 
-### 5. Under-13s
-- The age check asks for a birth year only, so anyone turning 13 at any point
-  this year is let in while still 12. Options: ask for the month as well when
-  the year is the borderline one (**recommended**), or treat the whole
-  borderline year as under 13.
-- An account made through Google or Apple that then answers "under 13" is
-  signed out and blocked on the device, but the account still exists. Deleting
-  it automatically is the usual practice. **Recommended:** delete it, after
-  counsel confirms (CONCEPT.md already plans that review).
+- **You need to:** tick Precise Location in App Store Connect before the
+  update goes out ([APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md)); change the
+  effective date in `src/lib/legal.ts` to the day you publish; and have the
+  wording read by whoever advises you on this (CONCEPT.md already plans that
+  review). I wrote it to be accurate, not as legal advice.
 
-### 6. One sentence for the privacy policy
-Once migration 0010 is run, the server keeps a daily count per account of
-photos identified, new Scout content requested and photos reported, for seven
-days, to enforce the daily limits. The policy doesn't mention it. Suggested
-addition under "Photos and identification":
+### 5. A spending limit and email confirmation (unchanged)
+In the Claude Console, set a monthly spend limit on the key's workspace. Turn
+Supabase's "Confirm email" back on before any public promotion. Each account
+now has daily limits, but accounts are free to create while confirmation is
+off.
 
-> To prevent abuse, we keep a daily count of how many photos your account has
-> had identified. Counts are deleted after a week.
+## The photo check: what it does, what it can't
 
-Your call whether that also means updating the effective date and the App
-Store privacy answers (docs/APP_STORE_PRIVACY.md). I left the legal text alone.
+What stops a photo scoring, in the order it is checked:
 
-## Community safety
+1. **What the picture shows** (in the same AI call that identifies the
+   animal, about 200 extra tokens): a photo of a screen or a print, a
+   screenshot, a drawing or render, a stock or photographer's watermark, an
+   unmistakably computer-made image. The AI is told to say so only on clear
+   evidence.
+2. **Camera details on uploads:** a photo from the camera roll must carry
+   what a camera saves (make, lens, exposure). A saved web image, a
+   screenshot or a generated picture almost never does.
+3. **The same photo twice:** each sighting's photo gets a fingerprint.
+   Someone else's sighting, a photo on the wall, or one of Scout's own photos
+   handed in again is refused, also when re-saved, resized or mirrored. A
+   player's own photo again scores nothing.
+4. **Daily brakes:** at most 100 scored sightings a day; after 10 photos
+   turned down in a day, scoring pauses until tomorrow.
+5. **Reports:** players can report a post as "Not their own photo".
 
-### 7. Comments are only language-filtered inside the app
-The word filter runs in the app before posting. A modified app can post
-anything; reports and your review are the only backstop. (Scout no longer
-repeats unchecked text, and length limits are now enforced by the database.)
+What gets through, honestly:
+- **A good AI-made image with no telltale signs**, photographed off a screen
+  carefully or uploaded with faked camera details. No AI reliably detects
+  these today.
+- **A stock or web photo nobody has used yet**, uploaded with faked camera
+  details.
+- **A heavily cropped or edited copy** of someone's photo.
+- Anything a modified app claims about how a photo was taken: those claims
+  are hints, which is why the limits in point 4 don't depend on them.
 
-- **Recommended:** send comments and captions through a small server endpoint
-  that applies the same filter. Optionally add an AI check there with Claude
-  Haiku 5.5, at roughly a hundredth of a cent per comment.
-- Cheaper alternative: the same word list as a database trigger. Blunt, and the
-  list would then live in two places.
+### 6. If cheating shows up anyway
+- **A review queue for refused or doubtful photos** (recommended next).
+  Refusals are already recorded (`journal_refusals`) and doubts logged; there
+  is no screen for you to review them or for a player to say "that was
+  mine". Small to build once there is something to review.
+- **A reverse image search or AI-image detector service.** These exist, cost
+  per photo, and mean sending players' photos to another company (a privacy
+  policy change). Worth it only if the leaderboard carries real stakes.
+- **Only in-app camera photos score.** The strongest rule and the simplest,
+  but it shuts out people who shoot with a real camera and upload.
 
-### 8. Teens and "explorers you might like"
-Suggestions are meant to be off for ages 13–17 until they turn them on. The
-server now only suggests players who have a saved "yes". But the earlier
-migration (0008) created rows that default to "yes" for everyone, and a teen's
-row stays that way until their app has saved the teen default, so the server
-cannot tell those apart from a real yes.
+### 7. Wrongly refused photos
+Until there is a review queue (6), a player whose real photo is refused has
+only Help & Support. With `journal_refusals` and the Vercel logs you can see
+what happened; putting it right means the player taking the photo again or
+you adjusting their score by hand. If refusals of real photos turn out to be
+common, the switches are in RELEASE.md ("If something goes wrong").
 
-- **Recommended:** save the age range next to that setting so the server
-  applies the teen default itself. Small change (one column, one line in the
-  app).
-- Alternative: reset everyone to "no" once. Adults would have to switch it back
-  on by hand.
+## Still open from the audit
 
-### 9. One report hides a Scout photo for everyone
-Deliberate, and right for a young audience. The risk is one account hiding
-many photos; each account is now limited to 20 reports a day.
+### 8. Under-13s who signed in with Google or Apple
+An account that then answers "under 13" is signed out and blocked on the
+device, but the account still exists. **Recommended:** delete it
+automatically, after whoever advises you confirms.
 
-- **Recommended:** keep as is. Revisit if it is abused (for example, require
-  two reports for the hand-checked library photos).
-
-## Product
+### 9. Teens and "explorers you might like"
+Suggestions are meant to be off for ages 13–17 until they turn them on, but
+the database can't tell a real "yes" from the default on rows made before
+the teen default existed. **Recommended:** save the age range next to that
+setting so the server applies the default itself. Small.
 
 ### 10. Rapid-fire shots that aren't wildlife disappear
-In a burst, a shot the AI can't identify, or identifies as a pet or person, is
-never shown again: it isn't in the journal and nothing says why.
-
-- **Recommended:** after a burst, show a short "3 shots couldn't be identified"
-  summary with the photos and a way to retry or discard them.
+In a burst, a shot that can't be identified or isn't wildlife is never shown
+again. **Recommended:** a short "3 shots couldn't be identified" summary
+after a burst.
 
 ### 11. "Suggest an ID" goes nowhere
-Suggesting a different species marks the sighting on the phone only. There is
-no review queue behind it. (The label said "In review"; it now says
-"Disputed".)
+A suggested species is now saved with the cloud journal, but nobody reviews
+it. It could feed the same review queue as decision 6.
 
-- Options: save suggestions to a table you can review (small); ask the AI again
-  with the player's suggestion (one more identification per dispute); or leave
-  it as a personal note.
+### 12. Storage as the game grows
+Each scored sighting keeps a photo copy (150–400 KB). Supabase's free plan
+has 1 GB for everything. **Recommended:** check Storage monthly; move to a
+paid plan (or shrink the copies) before it fills.
 
-### 12. Scout's eastern gray squirrel is black
-The library photo for "Eastern gray squirrel" is a melanistic (all-black)
-individual. It is the right species, but it reads as a mistake next to the
-name. Swapping it for a gray one is a small change if you agree; say the word.
-
-### 13. Is the web version a product or a demo?
-On the web, journal photos don't survive a page reload (the browser can't keep
-them the way the phone does) and there is no offline queue. Fine for a demo. If
-the web app is meant for real use, it needs photo storage, which decision 3c
-would also provide.
-
-## Engineering
-
-### 14. Expo SDK 52 is six versions behind
-The app is on Expo SDK 52 (React Native 0.76); the current SDK is 58 (0.88).
-Nothing is broken because of it today, but security fixes stop reaching old
-SDKs, app store build requirements move forward every year, and one of the
-bugs fixed in this audit needed a workaround for a router bug in this version.
-An upgrade is a new native build and a full test pass, not an over-the-air
-update.
-
-- **Recommended:** schedule it as its own piece of work in the next couple of
-  months, one or two SDK versions at a time.
-
-### 15. Stories written ahead of time
-The nightly job writes at most six stories. With a few active regions that
-covers the next day; with all fourteen, most stories would be written when the
-first player taps (a wait of ten seconds or more, now with a proper loading
-screen).
-
-- Options: raise the cap or run the job more often (depends on the Vercel
-  plan), or use a faster model for Scout's writing (ties in with decision 1).
-  Not urgent at today's size.
-
-### 16. Smaller items, when convenient
-- A Content-Security-Policy header for the web app. The other security headers
-  are in place; this one needs testing against sign-in, fonts and photo hosts.
-- The wall loads the latest 100 posts. It scrolls efficiently now, but will
-  need "load more" once the wall is busier than that.
-- The Supabase function `identify-and-score` is unfinished scaffolding. It now
-  checks who is calling, but should either be completed as part of decision 4
-  or removed.
+### 13. Smaller items, when convenient
+- A Content-Security-Policy header for the web app. The web camera also
+  loads a QR-code script from a public CDN (part of the camera component):
+  worth removing or self-hosting when the header is added.
+- The wall loads the latest 100 posts; it will need "load more" beyond that.
+- Scout's nightly job writes at most six stories ahead; with all fourteen
+  regions active most stories are written on first tap.
+- One report hides a Scout photo for everyone (20 reports a day per
+  account). Keep unless abused.

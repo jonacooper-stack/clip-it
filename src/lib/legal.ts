@@ -57,7 +57,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     bullets: [
       'Account details: your email address, a password (stored only in hashed form by our authentication provider), your display name, and the age range you choose. If you sign in with Apple or Google, we receive your name and email (or Apple’s private relay email if you choose to hide it) from them.',
       'Profile picture: if you add one, it is visible to other signed-in players.',
-      'Your field journal: the sightings that count (the species, when and where you took the photo, its points, your field-note answers and a copy of the photo). It is saved to your account so it survives a new phone or a reinstall. It is private: only you can read it.',
+      'Your field journal: the sightings that count (the species, when and where you took the photo, its points, your field-note answers and a copy of the photo). It is saved to your account so it survives a new phone or a reinstall. It is private: only you can read it. If you already had a journal on your phone before journals were saved to accounts, the app asks before uploading it, and you can turn the backup off in Profile (your score then stops counting on the leaderboard).',
       'Things you share: sightings you post to the wall (photo, species, points and caption), comments, likes, follows, friend requests, and reports or blocks you make.',
       'Home region: the region you choose (for example “Northeast”), so Scout can post what animals are up to where you explore and suggest explorers near you. It is kept private: other players never see it. If you tap “use my current location”, your phone suggests a region on the device; your location is not sent to us.',
     ],
@@ -81,7 +81,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Location',
     paragraphs: [
-      'If you allow location access, ClipIt tags each sighting with where you took it so it appears correctly in your field journal. That location is saved with the sighting in your journal, on your device and in your account, so your journal is complete on any device you sign in to. Only you can see it: it is never shown to other players, never included in wall posts, and never sent to our AI provider. You can turn off location access at any time in your device settings; the app still works without it.',
+      'If you allow location access, ClipIt tags each sighting with where you took it so it appears correctly in your field journal. That location is saved with the sighting in your journal, on your device and in your account, so your journal is complete on any device you sign in to. Only you can see it: it is never shown to other players, never included in wall posts, and never sent to our AI provider. If you’d rather places stayed on your phone only, turn off “Save places with my journal” in Profile. You can turn off location access at any time in your device settings; the app still works without it.',
     ],
   },
   {
