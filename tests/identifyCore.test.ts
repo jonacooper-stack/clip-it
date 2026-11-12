@@ -78,3 +78,50 @@ test('the image type comes from the bytes, not the label', () => {
 test('the prompt lists every scene tag the app can score', () => {
   for (const tag of SCENE_TAG_CODES) assert.ok(IDENTIFY_SYSTEM.includes(tag), tag);
 });
+
+test('a picture of a picture does not score, and the player is told why', () => {
+  for (const [answer, reason] of [
+    [{ photoOf: 'screen' }, 'screen'],
+    [{ photoOf: 'print' }, 'print'],
+    [{ photoOf: 'screenshot' }, 'screenshot'],
+    [{ photoOf: 'artwork' }, 'artwork'],
+    [{ photoOf: 'scene', watermark: true }, 'watermark'],
+    [{ photoOf: 'scene', aiMade: 'yes' }, 'synthetic'],
+  ] as const) {
+    const r = normalizeIdentification({ ...deer, ...answer });
+    assert.equal(r.eligible, false, reason);
+    assert.equal(r.idStatus, 'ineligible', reason);
+    assert.deepEqual(r.authenticity, { ok: false, reason, review: false });
+    assert.equal(r.rarityScore, 0);
+    assert.deepEqual(r.sceneTags, []);
+    assert.ok(r.ineligibleReason.length > 20 && !/cheat/i.test(r.ineligibleReason), 'a plain reason, not an accusation');
+    assert.equal(r.species.commonName, 'White-tailed deer'); // still says what it is
+  }
+});
+
+test('an ordinary photo scores; doubt alone only marks it for review', () => {
+  const plain = normalizeIdentification({ ...deer, photoOf: 'scene', watermark: false, aiMade: 'no' });
+  assert.equal(plain.eligible, true);
+  assert.deepEqual(plain.authenticity, { ok: true, reason: null, review: false });
+  const unsure = normalizeIdentification({ ...deer, photoOf: 'scene', watermark: false, aiMade: 'maybe' });
+  assert.equal(unsure.eligible, true);
+  assert.deepEqual(unsure.authenticity, { ok: true, reason: null, review: true });
+});
+
+test('missing or odd answers about how the picture was made never refuse a photo', () => {
+  for (const answer of [{}, { photoOf: 'hologram' }, { watermark: 'yes' }, { aiMade: true }, { photoOf: null, watermark: 1, aiMade: 'probably' }]) {
+    const r = normalizeIdentification({ ...deer, ...answer });
+    assert.equal(r.eligible, true, JSON.stringify(answer));
+    assert.equal(r.authenticity.ok, true);
+  }
+});
+
+test('a pet on a screen is still just a pet: the model\'s own reason is kept', () => {
+  const r = normalizeIdentification({ ...deer, category: 'pet', commonName: 'Domestic dog', ineligibleReason: 'Domestic pets don\'t count.', photoOf: 'screen' });
+  assert.equal(r.idStatus, 'ineligible');
+  assert.equal(r.ineligibleReason, 'Domestic pets don\'t count.');
+});
+
+test('the prompt asks how the picture was made', () => {
+  for (const key of ['photoOf', 'watermark', 'aiMade', '"screen"', '"screenshot"', 'trail-camera']) assert.ok(IDENTIFY_SYSTEM.includes(key), key);
+});
