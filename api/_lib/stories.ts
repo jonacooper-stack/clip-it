@@ -150,10 +150,17 @@ const PHOTO_WAIT_MS = 2500;
 
 export async function getStory(db: SupabaseClient | null, r: StoryRequest, opts: GenerateOptions = {}): Promise<Story> {
   const key = storyKey(r);
-  // Start finding photos now; it runs alongside the writing.
-  const lookup = getSpeciesPhotos(db, r.species, r.sci)
-    .then((photos) => ({ photos, partial: false }))
-    .catch(() => ({ photos: libraryPhotos(r.species, r.sci), partial: false }));
+  const findPhotos = () =>
+    getSpeciesPhotos(db, r.species, r.sci)
+      .then((photos) => ({ photos, partial: false }))
+      .catch(() => ({ photos: libraryPhotos(r.species, r.sci), partial: false }));
+  // Finding photos costs AI credit too (each new one is looked at before
+  // Scout may use it). For the daily job and for themes Scout posted, start
+  // now, alongside the writing. A species named by a player's app waits until
+  // the story exists: by then the name is known to be an animal and the
+  // player to be within today's allowance.
+  const vetted = !opts.allow || r.kind === 'theme';
+  let lookup = vetted ? findPhotos() : null;
   if (!memo.has(key)) {
     memo.set(key, write(db, r, key, opts).catch((e) => { memo.delete(key); throw e; }));
     setTimeout(() => memo.delete(key), 30 * 60_000).unref?.();
@@ -167,6 +174,7 @@ export async function getStory(db: SupabaseClient | null, r: StoryRequest, opts:
     const waited = new Promise<{ photos: PhotoRef[]; partial: boolean }>((resolve) =>
       setTimeout(() => resolve({ photos: libraryPhotos(r.species, r.sci), partial: true }), PHOTO_WAIT_MS).unref?.(),
     );
+    lookup ??= findPhotos();
     const got = await Promise.race([lookup, waited]);
     partial = got.partial;
     pages = placePhotos(pages, got.photos);

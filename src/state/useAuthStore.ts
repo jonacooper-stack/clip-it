@@ -57,9 +57,29 @@ let subscribed = false;
 // Accounts we've already tried to save the age range on (once per launch).
 const ageSaved = new Set<string>();
 
+// The session to sync once the local store has loaded from disk.
+let awaitingHydration: Session | null = null;
+let hydrationHooked = false;
+
 // Pull displayName / ageBracket off the account into the local store the UI reads.
 function syncMetadata(session: Session | null) {
   if (!session) return;
+  // The local store loads from disk a moment after launch, and loading
+  // replaces whatever is in it: wait for that, or the values copied from the
+  // account here would be overwritten by the saved ones (and a signed-in
+  // player could be asked for their birth year again).
+  if (!useAppStore.persist.hasHydrated()) {
+    awaitingHydration = session;
+    if (!hydrationHooked) {
+      hydrationHooked = true;
+      useAppStore.persist.onFinishHydration(() => {
+        const s = awaitingHydration;
+        awaitingHydration = null;
+        syncMetadata(s);
+      });
+    }
+    return;
+  }
   const meta = (session.user.user_metadata ?? {}) as {
     displayName?: string;
     ageBracket?: AgeBracket;
@@ -85,6 +105,11 @@ function syncMetadata(session: Session | null) {
   if (meta.homeRegion && !app.homeRegion && regionByKey(meta.homeRegion)) app.setHomeRegion(meta.homeRegion as RegionKey);
 }
 
+function forgetAccount() {
+  awaitingHydration = null;
+  useAppStore.getState().clearAccount();
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   initialized: !isSupabaseConfigured,
@@ -101,7 +126,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Never leave the launch spinner up forever (e.g. a storage read error):
       // fall through to signed-out and let the user sign in again.
       .catch(() => set({ session: null, initialized: true }));
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
+      // Signed out (here, or because the session ended): forget this person's
+      // profile on the device, so the next account doesn't inherit their name,
+      // age range or privacy choice.
+      if (event === 'SIGNED_OUT') forgetAccount();
       syncMetadata(session);
       set({ session });
     });
@@ -229,6 +258,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    forgetAccount();
     set({ session: null });
   },
 }));

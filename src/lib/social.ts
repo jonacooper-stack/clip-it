@@ -9,6 +9,7 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { resizedBase64, WALL_PHOTO, AVATAR_PHOTO } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { checkText, reservedName } from './moderation';
+import { publicStorageUrl } from '../../shared/storage';
 
 export type Scope = 'everyone' | 'friends';
 // The wall's own scope: everyone, or people I follow (+ accepted friends).
@@ -20,15 +21,10 @@ const WALL_BUCKET = 'feed-photos';
 // Public bucket for profile pictures (supabase/migrations/0005_profiles_avatars.sql).
 const AVATAR_BUCKET = 'avatars';
 
-// Photo and avatar links are saved by the app that posted them, so a tampered
-// app could point them at any server (to log who opens the wall, or to show
-// something that never went through our storage). Only links into our own
-// public storage are ever displayed; anything else is treated as "no photo".
-const STORAGE_PUBLIC = `${(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')}/storage/v1/object/public/`;
-
+// Only links into our own public storage are ever displayed (the rule, and
+// why, is in shared/storage).
 export function ownStorageUrl(url: string | null | undefined, bucket: string): string | null {
-  if (!url || !STORAGE_PUBLIC.startsWith('http')) return null;
-  return url.startsWith(`${STORAGE_PUBLIC}${bucket}/`) ? url : null;
+  return publicStorageUrl(url, process.env.EXPO_PUBLIC_SUPABASE_URL ?? '', bucket);
 }
 
 function base64ToBytes(b64: string): Uint8Array {

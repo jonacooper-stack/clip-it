@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
-import { adminClient, dailyLimitReached, rateLimited, verifyUser } from './_lib/server';
+import { adminClient, dailyLimitReached, rateLimited, secondsToUtcMidnight, verifyUser } from './_lib/server';
 import { askText, ConfigError, ModelRefusal } from './_lib/claude';
 import {
   detectMediaType, IDENTIFY_SYSTEM, IDENTIFY_USER, MAX_IMAGE_BASE64, normalizeIdentification, parseModelJson, stripDataUrl,
@@ -39,6 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!userId) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
   if (rateLimited(`identify:${userId}`, RATE_MAX)) {
     logFailure('rate_limited', { userId });
+    res.setHeader('Retry-After', '60');
     return res.status(429).json({ error: 'too many requests', detail: 'Slow down a little — try again in a minute.' });
   }
 
@@ -59,6 +60,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (await dailyLimitReached(adminClient(), userId, 'identify')) {
     logFailure('daily_limit', { userId });
+    // The allowance resets at midnight UTC: tell the app not to ask before then.
+    res.setHeader('Retry-After', String(secondsToUtcMidnight()));
     return res.status(429).json({ error: 'daily limit reached', detail: 'You’ve reached today’s limit for identifying photos. It resets tomorrow.' });
   }
 

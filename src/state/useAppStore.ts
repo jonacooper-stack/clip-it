@@ -36,6 +36,8 @@ interface AppState {
   setHomeRegion: (r: RegionKey | null) => void;
   setDiscoverable: (v: boolean) => void;
   setAgeBlockedUntil: (t: number | null) => void;
+  /** Forget what belongs to the signed-in person (not the device's settings). */
+  clearAccount: () => void;
   reset: () => void;
 }
 
@@ -64,6 +66,11 @@ export const useAppStore = create<AppState>()(
       setHomeRegion: (homeRegion) => set({ homeRegion }),
       setDiscoverable: (discoverable) => set({ discoverable }),
       setAgeBlockedUntil: (ageBlockedUntil) => set({ ageBlockedUntil }),
+
+      // On sign-out. The next person to sign in on this device must not
+      // inherit this one's name, picture, age range or privacy choice.
+      clearAccount: () =>
+        set({ ageBracket: null, isChild: false, displayName: 'Explorer', avatarUrl: null, discoverable: null }),
 
       reset: () =>
         set({

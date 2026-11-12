@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { placePhotos, storyKey, storyPrompt, type StoryPage } from '../api/_lib/stories';
 import type { PhotoRef } from '../api/_lib/library';
+import { isNotAnimal } from '../api/_lib/crewFacts';
 
 const pages = (n: number): StoryPage[] => Array.from({ length: n }, (_, i) => ({ heading: `Page ${i + 1}`, emoji: '🦊', text: 'Words.' }));
 const photos = (n: number): PhotoRef[] => Array.from({ length: n }, (_, i) => ({ url: `https://x/${i}.jpg`, credit: 'c', species: 's' }));
@@ -40,4 +41,14 @@ test('a species story (shared by all regions) is written without naming one', ()
   assert.ok(!/northeast|New England/i.test(p));
   const t = storyPrompt({ kind: 'theme', species: 'Osprey', title: 'Ospreys head south', region: 'northeast', weekOf: '2026-11-09' }, new Date());
   assert.ok(/New England/.test(t) && t.includes('"Ospreys head south"') && t.includes('November 9'));
+});
+
+test('"not an animal" is remembered for a month, not forever', () => {
+  const now = Date.parse('2026-11-12T00:00:00Z');
+  const day = 86_400_000;
+  assert.equal(isNotAnimal({ notAnimal: true, notAnimalAt: now - day }, now), true);
+  assert.equal(isNotAnimal({ notAnimal: true, notAnimalAt: now - 31 * day }, now), false); // the model gets another look
+  assert.equal(isNotAnimal({ notAnimal: true }, now), false);
+  assert.equal(isNotAnimal({}, now), false);
+  assert.equal(isNotAnimal(null, now), false);
 });

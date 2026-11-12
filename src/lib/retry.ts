@@ -22,3 +22,11 @@ export function nextRetry(attempts: number, now = Date.now()): Retry {
 export function dueForRetry(retry: Retry | undefined, now = Date.now()): boolean {
   return !retry || (retry.attempts < MAX_AUTO_RETRIES && now >= retry.nextAt);
 }
+
+// How long to hold the whole queue after the server said "too many requests".
+// It names the wait itself (a minute for a burst, until midnight UTC when the
+// day's allowance is used up); never less than a minute, never more than a day.
+export function retryWaitMs(retryAfterS: number | undefined): number {
+  const s = typeof retryAfterS === 'number' && Number.isFinite(retryAfterS) ? retryAfterS : 60;
+  return Math.min(Math.max(s, 60), 86_400) * 1000;
+}

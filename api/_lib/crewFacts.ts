@@ -17,7 +17,16 @@ export interface SpeciesFacts {
   photosAt?: number; // when photos were last looked up
   photosV?: number; // PHOTOS_V: lookups before the vision check are redone
   photoChecked?: string[]; // Commons photos already judged (kept or turned down), so none is ever checked twice
-  notAnimal?: boolean; // the name wasn't a real animal: remembered, so it's never asked about again
+  notAnimal?: boolean; // the name wasn't a real animal: remembered, so it isn't asked about again...
+  notAnimalAt?: number; // ...for a while (see NOT_ANIMAL_MS)
+}
+
+// How long a "that's not an animal" answer is remembered. Not forever: the
+// model can be wrong about an unusual name, and a wrong answer shouldn't
+// block a real species for good.
+const NOT_ANIMAL_MS = 30 * 86_400_000;
+export function isNotAnimal(row: Pick<SpeciesFacts, 'notAnimal' | 'notAnimalAt'> | null | undefined, now = Date.now()): boolean {
+  return Boolean(row?.notAnimal) && now - (row?.notAnimalAt ?? 0) < NOT_ANIMAL_MS;
 }
 
 // The name a player's app sent isn't a real animal.
@@ -106,9 +115,9 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
         if (db) {
           const { data } = await db.from('crew_facts').select('facts').eq('species_key', key).maybeSingle();
           const row = data?.facts as SpeciesFacts | undefined;
-          if (row?.notAnimal) throw new NotAnAnimal(key);
+          if (isNotAnimal(row)) throw new NotAnAnimal(key);
           if (row?.facts?.length) return withPhotos(db, key, common, sci, row);
-          if (row) cachedPhotos = { photos: row.photos, photosAt: row.photosAt, photosV: row.photosV, photoChecked: row.photoChecked };
+          if (row && !row.notAnimal) cachedPhotos = { photos: row.photos, photosAt: row.photosAt, photosV: row.photosV, photoChecked: row.photoChecked };
         }
         if (opts.allow && !(await opts.allow())) throw new QuotaExceeded(key);
         const out = await askJSON<SpeciesFacts & { isAnimal: boolean }>({
@@ -120,7 +129,7 @@ export async function getFacts(db: SupabaseClient | null, common: string, sci?: 
           maxTokens: 4000,
         });
         if (out.isAnimal === false) {
-          if (db) await db.from('crew_facts').upsert({ species_key: key, common_name: common, facts: { facts: [], tip: '', notAnimal: true } });
+          if (db) await db.from('crew_facts').upsert({ species_key: key, common_name: common, facts: { facts: [], tip: '', notAnimal: true, notAnimalAt: Date.now() } });
           log('crew_facts_not_animal', { species: key });
           throw new NotAnAnimal(key);
         }
@@ -155,7 +164,8 @@ export function getSpeciesPhotos(db: SupabaseClient | null, common: string, sci?
           const { data } = await db.from('crew_facts').select('facts').eq('species_key', key).maybeSingle();
           if (data?.facts) row = data.facts as SpeciesFacts;
         }
-        if (row.notAnimal) return [];
+        if (isNotAnimal(row)) return [];
+        if (row.notAnimal) row = { facts: [], tip: '' }; // an expired "not an animal": start over
         return (await withPhotos(db, key, common, sci, row)).photos ?? [];
       })().catch((err) => {
         photoMemo.delete(key);

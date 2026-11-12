@@ -69,7 +69,8 @@ export default function Identifying() {
         processAnalysisQueue();
       } catch (err) {
         if (cancelled.current) return;
-        if (err instanceof OfflineError && !isPermanentFailure(err)) {
+        // The web app has no background queue: there, "try later" has to be said now.
+        if (err instanceof OfflineError && !isPermanentFailure(err) && Platform.OS !== 'web') {
           // No signal: queue it. The photo was already persisted at capture; if it
           // somehow wasn't, stash the base64 now so the retry still has it.
           let photoUri = current?.photoUri;
@@ -77,7 +78,8 @@ export default function Identifying() {
           if (cancelled.current) return;
           updateSighting(id, { idStatus: 'queued', photoUri });
         } else {
-          updateSighting(id, { idStatus: 'rejected' });
+          // Keep the server's reason (too large, today's limit reached…) for the result screen.
+          updateSighting(id, { idStatus: 'rejected', note: err instanceof OfflineError ? err.detail : undefined });
         }
         if (onScreen.current) router.replace(`/capture/result?id=${id}`);
       }

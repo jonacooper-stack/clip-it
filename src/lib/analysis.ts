@@ -13,7 +13,7 @@ import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { useJournalStore } from '@/state/useJournalStore';
-import { dueForRetry, nextRetry } from './retry';
+import { dueForRetry, nextRetry, retryWaitMs } from './retry';
 
 export { MAX_AUTO_RETRIES } from './retry';
 
@@ -145,8 +145,10 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
         const status = err instanceof OfflineError ? err.status : undefined;
         if (err instanceof OfflineError && status == null) break; // no connection: nothing will get through, retry later
         if (status === 401 || status === 429) {
-          // Signed out, or asked to slow down: not this capture's fault.
-          pausedUntil = Date.now() + (status === 429 ? 60_000 : 2 * 60_000);
+          // Signed out, or asked to wait: not this capture's fault. Wait as
+          // long as the server says (the rest of the day, when today's
+          // allowance is used up) rather than sending the photo again each minute.
+          pausedUntil = Date.now() + (status === 429 ? retryWaitMs((err as OfflineError).retryAfterS) : 2 * 60_000);
           break;
         }
         if (isPermanentFailure(err)) {

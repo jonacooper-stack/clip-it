@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
@@ -13,8 +13,9 @@ export function useProfileSync(): void {
   const uid = useAuthStore((s) => s.session?.user?.id);
   const displayName = useAppStore((s) => s.displayName);
   const sightings = useJournalStore((s) => s.sightings);
-  const points = playerPoints(sightings);
-  const speciesCount = distinctSpecies(sightings).length;
+  // Only when the journal changes, not on every render of the tab bar.
+  const points = useMemo(() => playerPoints(sightings), [sightings]);
+  const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
 
   useEffect(() => {
     if (!uid) return;

@@ -69,16 +69,20 @@ async function saveCaptureToCameraRoll(uri: string): Promise<void> {
 type Where = { lat: number; lng: number; accuracyM?: number };
 
 // Where the player is, without holding up the capture: a fresh fix if one
-// arrives within a few seconds, otherwise the last known position. Asks for
-// permission the first time. Best-effort: undefined when location is off.
-async function locate(timeoutMs = 4000): Promise<Where | undefined> {
+// arrives within `waitMs`, otherwise the last known position (`waitMs: 0`
+// goes straight to the last known one). Asks for permission the first time
+// unless `ask` is false. Best-effort: undefined when location is off.
+async function locate({ waitMs = 4000, ask = true }: { waitMs?: number; ask?: boolean } = {}): Promise<Where | undefined> {
   try {
     const perm = await Location.getForegroundPermissionsAsync();
-    const granted = perm.granted || (await Location.requestForegroundPermissionsAsync()).granted;
+    const granted = perm.granted || (ask && (await Location.requestForegroundPermissionsAsync()).granted);
     if (!granted) return undefined;
-    const fresh = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    fresh.catch(() => {}); // may finish (or fail) after we've stopped waiting
-    const waited = await Promise.race([fresh, new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))]);
+    let waited: Location.LocationObject | null = null;
+    if (waitMs > 0) {
+      const fresh = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      fresh.catch(() => {}); // may finish (or fail) after we've stopped waiting
+      waited = await Promise.race([fresh, new Promise<null>((resolve) => setTimeout(() => resolve(null), waitMs))]);
+    }
     const pos = waited ?? (await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000 }));
     return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: pos.coords.accuracy ?? undefined } : undefined;
   } catch {
@@ -105,7 +109,7 @@ export default function CameraScreen() {
   const flashAnim = useRef(new Animated.Value(0)).current;
   // One GPS fix for the whole burst, so rapid shots get a location without each
   // one waiting on the locator.
-  const burstLoc = useRef<{ lat: number; lng: number } | null>(null);
+  const burstLoc = useRef<Where | null>(null);
 
   // Quick white flash to confirm each rapid-fire shot landed.
   const flashShutter = () => {
@@ -121,17 +125,9 @@ export default function CameraScreen() {
       return;
     }
     let active = true;
-    (async () => {
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        const granted = perm.granted || (await Location.requestForegroundPermissionsAsync()).granted;
-        if (!granted) return;
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (active) burstLoc.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      } catch {
-        // location is best-effort
-      }
-    })();
+    locate({ waitMs: 15_000 }).then((where) => {
+      if (active && where) burstLoc.current = where;
+    });
     return () => {
       active = false;
     };
@@ -322,22 +318,7 @@ export default function CameraScreen() {
 
       // Use the burst's warmed-up fix; fall back to the last known position. Never
       // block a burst waiting on a fresh locate.
-      let lat: number | undefined = burstLoc.current?.lat;
-      let lng: number | undefined = burstLoc.current?.lng;
-      if (lat == null) {
-        try {
-          const perm = await Location.getForegroundPermissionsAsync();
-          if (perm.granted) {
-            const pos = await Location.getLastKnownPositionAsync();
-            if (pos) {
-              lat = pos.coords.latitude;
-              lng = pos.coords.longitude;
-            }
-          }
-        } catch {
-          // location is best-effort
-        }
-      }
+      const where = burstLoc.current ?? (await locate({ waitMs: 0, ask: false }));
 
       const id = newId();
       const now = Date.now();
@@ -347,8 +328,9 @@ export default function CameraScreen() {
         createdAt: now,
         observedAt: now,
         photoUri: stored ?? photo.uri,
-        lat,
-        lng,
+        lat: where?.lat,
+        lng: where?.lng,
+        accuracyM: where?.accuracyM,
         sceneTags: [],
         idStatus: 'queued',
       });

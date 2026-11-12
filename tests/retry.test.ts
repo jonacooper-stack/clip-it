@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dueForRetry, MAX_AUTO_RETRIES, nextRetry, RETRY_WAITS_MS } from '../src/lib/retry';
+import { dueForRetry, MAX_AUTO_RETRIES, nextRetry, RETRY_WAITS_MS, retryWaitMs } from '../src/lib/retry';
 
 test('waits grow with each failed try, then hold at the longest', () => {
   const waits = [1, 2, 3, 4, 5, 6, 20].map((n) => nextRetry(n, 0).nextAt);
@@ -25,4 +25,12 @@ test('a capture that always fails costs at most a handful of tries a day', () =>
   let t = 0;
   for (let n = 1; n <= MAX_AUTO_RETRIES; n++) t = nextRetry(n, t).nextAt;
   assert.ok(t > 24 * 3600_000, `only ${t / 3600_000}h`);
+});
+
+test('"too many requests" holds the queue for as long as the server asks', () => {
+  assert.equal(retryWaitMs(undefined), 60_000); // no hint: a minute
+  assert.equal(retryWaitMs(5), 60_000); // never less than a minute
+  assert.equal(retryWaitMs(3 * 3600), 3 * 3600_000); // today's allowance is used up: until it resets
+  assert.equal(retryWaitMs(10 * 86_400), 86_400_000); // never more than a day
+  assert.equal(retryWaitMs(NaN), 60_000);
 });

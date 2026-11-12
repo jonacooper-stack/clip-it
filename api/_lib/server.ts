@@ -2,6 +2,7 @@
 // rate limiting, and database clients. (Files under api/_lib aren't endpoints.)
 import { createHash, timingSafeEqual } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { publicStorageUrl } from '../../shared/storage';
 
 // The app's public project URL + publishable key (also in eas.json),
 // overridable via Vercel env vars.
@@ -103,6 +104,11 @@ export const DAILY_LIMITS = {
 
 let warnedNoCounters = false;
 
+// Seconds until the daily allowances reset (the counters are per UTC day).
+export function secondsToUtcMidnight(now = Date.now()): number {
+  return Math.max(60, Math.ceil((86_400_000 - (now % 86_400_000)) / 1000));
+}
+
 // Count one use and say whether the player is now over today's allowance.
 // Without the service key or the migration there is nothing to count in, so it
 // allows the request (and says so once in the logs).
@@ -121,9 +127,10 @@ export async function dailyLimitReached(db: SupabaseClient | null, userId: strin
 
 // Photo and avatar links in the database are written by the app that posted
 // them. Only pass on links into our own public storage (the app applies the
-// same rule): anything else could point at a server that logs who looks.
+// same rule, shared/storage): anything else could point at a server that logs
+// who looks.
 export function ownStorageUrl(url: unknown, bucket: 'feed-photos' | 'avatars'): string | null {
-  return typeof url === 'string' && url.startsWith(`${SUPABASE_URL}/storage/v1/object/public/${bucket}/`) ? url : null;
+  return publicStorageUrl(url, SUPABASE_URL, bucket);
 }
 
 // Service-role client (bypasses RLS) — only when SUPABASE_SERVICE_ROLE_KEY is

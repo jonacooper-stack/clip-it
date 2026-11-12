@@ -134,10 +134,10 @@ export default function Result() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.rejected}>
           <Ionicons name="help-circle-outline" size={54} color={colors.faint} style={styles.rejEmoji} />
-          <Text style={styles.rejTitle}>Nothing to identify</Text>
+          <Text style={styles.rejTitle}>{sighting.note ? 'Couldn’t identify this one' : 'Nothing to identify'}</Text>
           <Text style={styles.rejText}>
-            We couldn't find an animal or person in that photo. Try getting your subject clearly in
-            frame.
+            {sighting.note ||
+              'We couldn’t find an animal or person in that photo. Try getting your subject clearly in frame.'}
           </Text>
           <Button label="Try again" icon="camera" onPress={retry} />
           <Button label="Back home" variant="ghost" onPress={discard} style={styles.rejBack} />

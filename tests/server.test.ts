@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bearer, DAILY_LIMITS, dailyLimitReached, ownStorageUrl, rateLimited, safeEqual, SUPABASE_URL } from '../api/_lib/server';
+import { bearer, DAILY_LIMITS, dailyLimitReached, ownStorageUrl, rateLimited, safeEqual, secondsToUtcMidnight, SUPABASE_URL } from '../api/_lib/server';
 import { modelFor, traitsOf } from '../api/_lib/claude';
 
 test('the burst limit allows a burst, then says no', () => {
@@ -51,4 +51,10 @@ test('each job has a model, and each model is asked the way it accepts', () => {
   assert.equal(traitsOf('claude-sonnet-5-5').fallback?.fallbacks, 'default');
   assert.ok(traitsOf('claude-opus-5-5').fallback);
   assert.deepEqual(traitsOf('some-future-model'), {}); // unknown models get a plain request
+});
+
+test('a player over the daily allowance is told to come back after midnight UTC', () => {
+  assert.equal(secondsToUtcMidnight(Date.parse('2026-11-12T21:00:00Z')), 3 * 3600);
+  assert.equal(secondsToUtcMidnight(Date.parse('2026-11-12T00:00:00Z')), 86_400);
+  assert.equal(secondsToUtcMidnight(Date.parse('2026-11-12T23:59:50Z')), 60); // never "retry at once"
 });

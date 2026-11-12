@@ -24,10 +24,16 @@ const USE_SUPABASE_IDENTIFY = process.env.EXPO_PUBLIC_USE_SUPABASE_IDENTIFY === 
 // it's undefined when the server couldn't be reached at all (no connection).
 export class OfflineError extends Error {
   status?: number;
-  constructor(message = 'offline', status?: number) {
+  /** The server's own words for the player, when it gave a reason. */
+  detail?: string;
+  /** How long the server asked us to wait before trying again, in seconds. */
+  retryAfterS?: number;
+  constructor(message = 'offline', status?: number, extra: { detail?: string; retryAfterS?: number } = {}) {
     super(message);
     this.name = 'OfflineError';
     this.status = status;
+    this.detail = extra.detail;
+    this.retryAfterS = extra.retryAfterS;
   }
 }
 
@@ -44,10 +50,24 @@ class EndpointError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly detail?: string,
+    readonly retryAfterS?: number,
   ) {
     super(message);
     this.name = 'EndpointError';
   }
+}
+
+// The server understood the request and said no: this photo can't be
+// identified, or the player has to wait. A made-up result is never right then.
+function turnedDown(err: unknown): err is EndpointError {
+  return err instanceof EndpointError && (err.status === 429 || PERMANENT.has(err.status));
+}
+
+function asOffline(err: any): OfflineError {
+  if (err instanceof OfflineError) return err;
+  if (err instanceof EndpointError) return new OfflineError(err.message, err.status, { detail: err.detail, retryAfterS: err.retryAfterS });
+  return new OfflineError(String(err?.message ?? err));
 }
 
 // Fast, local connectivity check (no network round trip) so we can queue an
@@ -123,12 +143,9 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
       // In release builds on the phone, never invent a result: any failure
       // (offline, server error, timeout) queues the capture, which is retried
       // automatically and scored once the AI answers. Only dev builds and the
-      // web demo fall back to the mock identifier.
-      if (Platform.OS !== 'web' && !__DEV__) {
-        throw err instanceof OfflineError
-          ? err
-          : new OfflineError(String(err?.message ?? err), err instanceof EndpointError ? err.status : undefined);
-      }
+      // web demo fall back to the mock identifier, and not when the server
+      // turned the photo down or asked the player to wait.
+      if ((Platform.OS !== 'web' && !__DEV__) || turnedDown(err)) throw asOffline(err);
       if (err instanceof OfflineError) {
         // Native dev builds queue the capture too; web just uses the demo identifier.
         if (Platform.OS !== 'web') throw err;
@@ -207,7 +224,13 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     } catch {
       // body wasn't JSON; the status code alone is the signal
     }
-    throw new EndpointError(`identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`, resp.status);
+    const wait = Number(resp.headers.get('Retry-After'));
+    throw new EndpointError(
+      `identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`,
+      resp.status,
+      detail || undefined,
+      Number.isFinite(wait) && wait > 0 ? wait : undefined,
+    );
   }
   const data = await resp.json();
   return {
