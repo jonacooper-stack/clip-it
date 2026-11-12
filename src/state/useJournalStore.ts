@@ -83,7 +83,11 @@ export const useJournalStore = create<JournalState>()(
           const gone = st.sightings.find((s) => s.id === id);
           if (!gone) return {};
           if (gone.photoUri) void deletePhoto(gone.photoUri);
-          tellCloud = isSupabaseConfigured && !opts.quiet && gone.source !== 'mock' && MAY_BE_IN_CLOUD.has(gone.idStatus);
+          // The cloud is told only if it has this sighting, or may be about
+          // to (the journal is being saved to the account). A sighting that
+          // never left the phone has nothing to delete there.
+          tellCloud =
+            isSupabaseConfigured && !opts.quiet && gone.source !== 'mock' && MAY_BE_IN_CLOUD.has(gone.idStatus) && (Boolean(gone.cloudAt) || st.cloud?.backup === true);
           return {
             sightings: st.sightings.filter((s) => s.id !== id),
             // In the same step, so a sync can never see the sighting gone but the deletion not yet queued.
