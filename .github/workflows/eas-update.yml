@@ -63,4 +63,9 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: "https://oybkykeoatfgcfqgaqpl.supabase.co"
           EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_yq-VQEcUYjYAHDlYqd_4jQ_CFxawxdY"
           EXPO_PUBLIC_IDENTIFY_URL: "https://clip-it-rose.vercel.app/api/identify"
-        run: eas update --branch ${{ inputs.channel }} --message "${{ inputs.message }}" --non-interactive
+          # The channel and message go through the environment rather than
+          # being pasted into the command, so a message with quotes or shell
+          # characters in it can't break the command (or run as one).
+          UPDATE_CHANNEL: ${{ inputs.channel }}
+          UPDATE_MESSAGE: ${{ inputs.message }}
+        run: eas update --branch "$UPDATE_CHANNEL" --message "$UPDATE_MESSAGE" --non-interactive

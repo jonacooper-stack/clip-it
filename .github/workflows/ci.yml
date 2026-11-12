@@ -1,0 +1,62 @@
+name: CI
+
+# Runs on every pull request and on pushes to main: type checks (app and
+# server), the unit tests, the database rules tests against a real Postgres,
+# and the same web build Vercel runs on deploy. Nothing here deploys anything.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check (app and server)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Database rules (row-level security, limits)
+        run: npm run test:db
+
+      - name: Web build (as Vercel runs it)
+        run: npx expo export -p web && node scripts/build-web.mjs
+        env:
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
