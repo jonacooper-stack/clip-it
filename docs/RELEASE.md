@@ -319,8 +319,9 @@ be done in any order, and nothing breaks in between.
 
 Day to day:
 - `npm run check` runs the type checks and unit tests; `npm run test:db` tests
-  the database rules against a local Postgres. CI runs both, plus the web
-  build, on every pull request.
+  the database rules against a local Postgres, and then runs the server's
+  journal code against those same tables. CI runs both, plus the web build,
+  on every pull request.
 - Vercel → Logs: `claude_usage` (tokens per call), `identify_failure`,
   `crew_`.
 - The open product decisions from the audit are in

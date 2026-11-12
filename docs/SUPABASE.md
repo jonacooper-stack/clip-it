@@ -44,7 +44,11 @@ Migrations in `supabase/migrations/` are run by hand in the SQL editor, in
 order (`0001_init.sql`, the PostGIS science schema, is not part of the live
 database yet). `npm run test:db` applies them to a fresh local Postgres and
 checks the rules as different players: add a check to
-`supabase/tests/rules.test.sql` whenever a migration changes a policy.
+`supabase/tests/rules.test.sql` whenever a migration changes a policy. It then
+runs the server's own journal code against that database
+(`supabase/tests/server/journal.flows.ts`), which is where a mismatch between
+the code and the tables shows up: a column the code names that a table doesn't
+have, a value a constraint refuses.
 
 The publishable key ships inside the app, so assume anyone can call the
 database directly: every limit that matters has to hold in a policy, a

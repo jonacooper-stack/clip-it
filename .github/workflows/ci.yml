@@ -1,8 +1,9 @@
 name: CI
 
 # Runs on every pull request and on pushes to main: type checks (app and
-# server), the unit tests, the database rules tests against a real Postgres,
-# and the same web build Vercel runs on deploy. Nothing here deploys anything.
+# server), the unit tests, the database rules and the server's journal code
+# against a real Postgres, and the same web build Vercel runs on deploy.
+# Nothing here deploys anything.
 
 on:
   pull_request:
@@ -52,7 +53,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Database rules (row-level security, limits)
+      # The database's own rules, then the server's journal code run against
+      # the same real tables (supabase/tests/server).
+      - name: Database rules, and the server against a real database
         run: npm run test:db
 
       - name: Web build (as Vercel runs it)

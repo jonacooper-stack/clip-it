@@ -37,7 +37,7 @@ Social play, the sightings map, freemium, and science-data export come in later 
 npm ci
 npm run web          # the app in a browser (mock identifier unless a backend is configured)
 npm run check        # type checks (app + server) and unit tests
-npm run test:db      # database rules, against a local Postgres
+npm run test:db      # database rules and the server's journal code, against a local Postgres
 ```
 
 The app is `app/` (screens) and `src/`; the server is `api/` (Vercel functions);
