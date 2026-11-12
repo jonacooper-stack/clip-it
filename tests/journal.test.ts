@@ -180,6 +180,16 @@ test('a photo taken from the wall is refused; the poster\'s own later sighting i
   assert.equal(stolen.kind, 'refused');
   const own = await recordSighting(jdb, sighting({ uid: A, phash: flip(posted, 9) })); // A photographing the same scene again
   assert.equal(own.kind, 'recorded');
+  // The poster's own sighting of that photo is not a "duplicate" of their wall post: the post is a share of the
+  // sighting, not a second one. (An uploaded photo that was shared to the wall, identified by the server later.)
+  const second = fakeDb();
+  const sharedPhoto = fresh();
+  second.wall.push({ post_id: '20000000-0000-4000-8000-0000000000a2', user_id: A, photo_sha: 'wall-sha-2', photo_phash: sharedPhoto, photo_mask: CLEAR });
+  const shared = sighting({ uid: A, phash: flip(sharedPhoto, 3), capture: 'library', cameraEvidence: true, id: { sci: 'Lynx rufus', common: 'Bobcat' } });
+  const recorded = await recordSighting(second.jdb, shared);
+  assert.ok(recorded.kind === 'recorded' && recorded.row.points > 0, JSON.stringify(recorded.kind === 'recorded' ? recorded.row.score : recorded));
+  // …while someone else handing in that wall photo is still refused
+  assert.equal((await recordSighting(second.jdb, sighting({ uid: B, phash: flip(sharedPhoto, 3), capture: 'library', cameraEvidence: true }))).kind, 'refused');
 });
 
 test('a photo that cannot be fingerprinted (not a JPEG) is not recorded at all', async () => {

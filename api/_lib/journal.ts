@@ -330,7 +330,10 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
   let duplicatePhoto = false;
   for (const m of await jdb.lookAlikes(p.uid, print)) {
     if (m.user_id !== p.uid) return refused(jdb, p, 'copied', m); // someone else logged (or posted) this picture first
-    if (m.ref === p.sid) continue;
+    // The sighting itself (recorded before: this is the server identifying a
+    // phone-scored one), or the player's own wall post, which is a share of
+    // one of their sightings and not a second sighting.
+    if (m.ref === p.sid || m.source === 'wall') continue;
     // The player's own photo again: recorded, worth nothing. The very same
     // file always counts as that. A look-alike does only for an upload: with
     // the ClipIt camera, the frames of a burst, or a phone left watching one
