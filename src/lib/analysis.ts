@@ -13,7 +13,6 @@ import { scoreSighting } from './scoring';
 import { resizedBase64 } from './prepareImage';
 import { resolvePhoto } from './photoStore';
 import { useJournalStore } from '@/state/useJournalStore';
-import { useAppStore } from '@/state/useAppStore';
 
 // Cheap, stable hash of a photo's bytes (FNV-1a, salted with length) for detecting
 // an exact-duplicate resubmission within a player's own journal.
@@ -86,6 +85,7 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
   }
 
   updateSighting(id, {
+    retry: undefined, // identified: any queue back-off is over
     species: outcome.species,
     sceneTags: outcome.sceneTags,
     caption: outcome.caption,
@@ -100,22 +100,45 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
     source: outcome.source,
     note: outcome.note,
   });
-  useAppStore.getState().registerActivityToday();
   // Scout looks it up in the background (facts, other players' photos).
   // Best-effort; real AI results only.
   if (outcome.source !== 'mock' && outcome.eligible) fetchCrewNotes(id).catch(() => {});
 }
 
 let running = false;
+// When the server says "not now" for everyone (too many requests, signed out),
+// hold the whole queue until this time instead of knocking again every tick.
+let pausedUntil = 0;
+
+// A capture the server answered for but couldn't identify (a server error, a
+// photo it can't read) is retried after a growing wait, then left alone: each
+// try uploads the photo and may spend AI credit, so a capture that keeps
+// failing must not be retried forever. Players can still retry it by hand.
+export const RETRY_WAITS_MS = [30_000, 2 * 60_000, 10 * 60_000, 3600_000, 6 * 3600_000];
+export const MAX_AUTO_RETRIES = 8;
+
+export function nextRetry(attempts: number, now = Date.now()): { attempts: number; nextAt: number } {
+  const step = Math.min(Math.max(attempts, 1), RETRY_WAITS_MS.length) - 1;
+  return { attempts, nextAt: now + RETRY_WAITS_MS[step] };
+}
+
+// Whether the queue should try this capture now.
+export function dueForRetry(retry: { attempts: number; nextAt: number } | undefined, now = Date.now()): boolean {
+  return !retry || (retry.attempts < MAX_AUTO_RETRIES && now >= retry.nextAt);
+}
 
 // Retries every queued (offline) capture. Safe to call often: it no-ops when
-// there's nothing queued or a run is already going, and leaves a capture queued
-// if the device is still offline.
-export async function processAnalysisQueue(): Promise<void> {
+// there's nothing due or a run is already going, and leaves a capture queued
+// if the device is still offline. `force` (the player asked) ignores waits.
+export async function processAnalysisQueue(opts: { force?: boolean } = {}): Promise<void> {
   if (running || Platform.OS === 'web') return;
+  if (opts.force) pausedUntil = 0;
+  if (Date.now() < pausedUntil) return;
   running = true;
   try {
-    const queued = useJournalStore.getState().sightings.filter((s) => s.idStatus === 'queued');
+    const queued = useJournalStore
+      .getState()
+      .sightings.filter((s) => s.idStatus === 'queued' && (opts.force || dueForRetry(s.retry)));
     for (const s of queued) {
       const photoUri = resolvePhoto(s.photoUri);
       if (!photoUri) continue;
@@ -133,11 +156,38 @@ export async function processAnalysisQueue(): Promise<void> {
       try {
         applyIdentifyOutcome(s.id, await identifySighting(input), hashPhotoBase64(base64));
       } catch (err) {
-        if (err instanceof OfflineError) break; // still offline — stop and retry later
-        // Any other error: leave this capture queued and move on.
+        const status = err instanceof OfflineError ? err.status : undefined;
+        if (err instanceof OfflineError && status == null) break; // no connection: nothing will get through, retry later
+        if (status === 401 || status === 429) {
+          // Signed out, or asked to slow down: not this capture's fault.
+          pausedUntil = Date.now() + (status === 429 ? 60_000 : 2 * 60_000);
+          break;
+        }
+        // The server answered but couldn't identify this one. Wait longer
+        // before trying it again, and move on to the next capture.
+        useJournalStore.getState().updateSighting(s.id, { retry: nextRetry((s.retry?.attempts ?? 0) + 1) });
       }
     }
   } finally {
     running = false;
   }
+}
+
+// A capture whose identification was cut short (the app was closed while the
+// "Identifying…" screen was up) would sit at "Identifying…" forever: the
+// photo bytes it was waiting on lived in memory. Put it in the queue instead
+// (its photo file is saved), or drop it when there's nothing left to identify
+// it from. Skips anything recent enough to still be in flight.
+export function recoverInterruptedCaptures(now = Date.now()): void {
+  const { sightings, updateSighting, removeSighting } = useJournalStore.getState();
+  for (const s of sightings) {
+    if (s.idStatus !== 'identifying' || now - s.createdAt < 2 * 60_000) continue;
+    if (Platform.OS !== 'web' && s.photoUri) updateSighting(s.id, { idStatus: 'queued' });
+    else removeSighting(s.id);
+  }
+}
+
+// The player asked to identify a queued capture now.
+export function retryCaptureNow(): Promise<void> {
+  return processAnalysisQueue({ force: true });
 }

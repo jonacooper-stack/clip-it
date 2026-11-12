@@ -4,6 +4,9 @@
 
 import type { IdStatus, SpeciesGuess } from '@/types';
 import { SCENE_TAGS } from './sceneTags';
+import { withArticle } from '../../shared/crew';
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export interface MockSpecies {
   scientificName: string;
@@ -83,7 +86,7 @@ export function mockIdentify(): MockOutcome {
     },
     rarityScore: species.rarityScore,
     sceneTags: tags,
-    caption: `A ${species.commonName.toLowerCase()} spotted in the wild.`,
+    caption: `${cap(withArticle(species.commonName.toLowerCase()))} spotted in the wild.`,
     dangerous: Boolean(species.dangerous),
     idStatus: needsReview ? 'needs_review' : 'ai_confident',
   };

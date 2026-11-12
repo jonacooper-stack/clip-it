@@ -66,6 +66,26 @@ async function saveCaptureToCameraRoll(uri: string): Promise<void> {
   }
 }
 
+type Where = { lat: number; lng: number; accuracyM?: number };
+
+// Where the player is, without holding up the capture: a fresh fix if one
+// arrives within a few seconds, otherwise the last known position. Asks for
+// permission the first time. Best-effort: undefined when location is off.
+async function locate(timeoutMs = 4000): Promise<Where | undefined> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    const granted = perm.granted || (await Location.requestForegroundPermissionsAsync()).granted;
+    if (!granted) return undefined;
+    const fresh = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    fresh.catch(() => {}); // may finish (or fail) after we've stopped waiting
+    const waited = await Promise.race([fresh, new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))]);
+    const pos = waited ?? (await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000 }));
+    return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: pos.coords.accuracy ?? undefined } : undefined;
+  } catch {
+    return undefined; // the sighting still works without a location
+  }
+}
+
 export default function CameraScreen() {
   const router = useRouter();
   // `?rapid=1` opens straight into rapid-fire (used by "switch to rapid fire").
@@ -148,13 +168,28 @@ export default function CameraScreen() {
     }),
   ).current;
 
-  // Web fallback: if the browser can't give us a camera, still let the loop run.
-  const proceedWithoutCamera = () => {
+  // Add the new sighting to the journal and hand it to the identifying screen
+  // (the photo bytes for the AI travel in memory, never in saved storage).
+  const startIdentify = (shot: { photoUri?: string; base64?: string; observedAt?: number; where?: Partial<Where> }) => {
     const id = newId();
     const now = Date.now();
-    addSighting({ id, createdAt: now, observedAt: now, sceneTags: [], idStatus: 'identifying' });
+    if (shot.base64) setPendingPhoto(id, shot.base64);
+    addSighting({
+      id,
+      createdAt: now,
+      observedAt: shot.observedAt ?? now,
+      photoUri: shot.photoUri,
+      lat: shot.where?.lat,
+      lng: shot.where?.lng,
+      accuracyM: shot.where?.accuracyM,
+      sceneTags: [],
+      idStatus: 'identifying',
+    });
     router.replace(`/capture/identifying?id=${id}`);
   };
+
+  // Web fallback: if the browser can't give us a camera, still let the loop run.
+  const proceedWithoutCamera = () => startIdentify({});
 
   // Upload an existing photo from the camera roll, carrying its real date and
   // location from the photo's metadata. Works without camera permission.
@@ -164,20 +199,7 @@ export default function CameraScreen() {
     try {
       const picked = await pickImageWithMetadata();
       if (!picked) return;
-      const id = newId();
-      const now = Date.now();
-      if (picked.base64) setPendingPhoto(id, picked.base64);
-      addSighting({
-        id,
-        createdAt: now,
-        observedAt: picked.observedAt,
-        photoUri: picked.uri,
-        lat: picked.lat,
-        lng: picked.lng,
-        sceneTags: [],
-        idStatus: 'identifying',
-      });
-      router.replace(`/capture/identifying?id=${id}`);
+      startIdentify({ photoUri: picked.uri, base64: picked.base64, observedAt: picked.observedAt, where: { lat: picked.lat, lng: picked.lng } });
     } finally {
       setBusy(false);
     }
@@ -231,10 +253,10 @@ export default function CameraScreen() {
     if (busy || !camRef.current) return;
     setBusy(true);
     try {
-      let photo: { uri?: string; base64?: string } | undefined;
+      let photo: { uri?: string; base64?: string; width?: number; height?: number } | undefined;
       try {
-        // Only pull base64 straight from the camera on web; on native we downscale
-        // from the file so the AI payload stays under the request-size limit.
+        // On web the camera's base64 is kept as a fallback in case the browser
+        // can't downscale; on native we always downscale from the file.
         photo = await camRef.current.takePictureAsync({
           base64: Platform.OS === 'web',
           quality: CAPTURE_QUALITY,
@@ -243,51 +265,20 @@ export default function CameraScreen() {
         // Some browsers can't capture; continue without a photo so the demo loop still completes.
         photo = undefined;
       }
+      const uri = photo?.uri;
 
-      // Keep a copy in the player's camera roll (opt-out in Settings). Best-effort.
-      if (photo?.uri && saveToCameraRoll) await saveCaptureToCameraRoll(photo.uri);
+      // Keep a copy in the player's camera roll (opt-out in Settings).
+      // Best-effort, and not waited on: it must never slow the capture down.
+      if (uri && saveToCameraRoll) void saveCaptureToCameraRoll(uri);
 
-      // Shrink for the AI (native), or use the browser's base64 (web).
-      const b64 =
-        Platform.OS === 'web'
-          ? photo?.base64
-          : photo?.uri
-            ? await resizedBase64(photo.uri)
-            : undefined;
-
-      let lat: number | undefined;
-      let lng: number | undefined;
-      let accuracyM: number | undefined;
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        let granted = perm.granted;
-        if (!granted) granted = (await Location.requestForegroundPermissionsAsync()).granted;
-        if (granted) {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-          accuracyM = pos.coords.accuracy ?? undefined;
-        }
-      } catch {
-        // Location is best-effort; the sighting still works without it.
-      }
-
-      const id = newId();
-      const now = Date.now();
-      if (b64) setPendingPhoto(id, b64);
-      const photoRef = photo?.uri ? await savePhoto(photo.uri) : undefined;
-      addSighting({
-        id,
-        createdAt: now,
-        observedAt: now,
-        photoUri: photoRef,
-        lat,
-        lng,
-        accuracyM,
-        sceneTags: [],
-        idStatus: 'identifying',
-      });
-      router.replace(`/capture/identifying?id=${id}`);
+      // Shrink a copy for the AI, find out where we are and file the photo
+      // away, all at the same time, so the shutter feels instant.
+      const [small, where, photoRef] = await Promise.all([
+        uri ? resizedBase64(uri, { width: photo?.width, height: photo?.height }) : undefined,
+        locate(),
+        uri ? savePhoto(uri) : undefined,
+      ]);
+      startIdentify({ photoUri: photoRef, base64: small ?? photo?.base64, where });
     } finally {
       setBusy(false);
     }
@@ -303,43 +294,13 @@ export default function CameraScreen() {
       const res = await ImagePicker.launchCameraAsync({ quality: CAPTURE_QUALITY, exif: true });
       if (res.canceled || !res.assets?.length) return;
       const a = res.assets[0];
-
-      let lat: number | undefined;
-      let lng: number | undefined;
-      let accuracyM: number | undefined;
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        let granted = perm.granted;
-        if (!granted) granted = (await Location.requestForegroundPermissionsAsync()).granted;
-        if (granted) {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-          accuracyM = pos.coords.accuracy ?? undefined;
-        }
-      } catch {
-        // location is best-effort
-      }
-
-      if (saveToCameraRoll) await saveCaptureToCameraRoll(a.uri);
-
-      const id = newId();
-      const now = Date.now();
-      const b64 = await resizedBase64(a.uri);
-      if (b64) setPendingPhoto(id, b64);
-      const photoRef = await savePhoto(a.uri);
-      addSighting({
-        id,
-        createdAt: now,
-        observedAt: now,
-        photoUri: photoRef,
-        lat,
-        lng,
-        accuracyM,
-        sceneTags: [],
-        idStatus: 'identifying',
-      });
-      router.replace(`/capture/identifying?id=${id}`);
+      if (saveToCameraRoll) void saveCaptureToCameraRoll(a.uri);
+      const [small, where, photoRef] = await Promise.all([
+        resizedBase64(a.uri, { width: a.width, height: a.height }),
+        locate(),
+        savePhoto(a.uri),
+      ]);
+      startIdentify({ photoUri: photoRef, base64: small, where });
     } finally {
       setBusy(false);
     }

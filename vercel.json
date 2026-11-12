@@ -3,6 +3,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/credits",
+      "destination": "/credits.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/app.html"
     }

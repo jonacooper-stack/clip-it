@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Sighting } from '@/types';
+import { deletePhoto } from '@/lib/photoStore';
 
 interface JournalState {
   hasHydrated: boolean;
@@ -24,9 +25,18 @@ export const useJournalStore = create<JournalState>()(
         set((st) => ({
           sightings: st.sightings.map((s) => (s.id === id ? { ...s, ...patch } : s)),
         })),
+      // Removing a sighting also deletes its photo file from the device.
       removeSighting: (id) =>
-        set((st) => ({ sightings: st.sightings.filter((s) => s.id !== id) })),
-      reset: () => set({ sightings: [] }),
+        set((st) => {
+          const gone = st.sightings.find((s) => s.id === id);
+          if (gone?.photoUri) void deletePhoto(gone.photoUri);
+          return { sightings: st.sightings.filter((s) => s.id !== id) };
+        }),
+      reset: () =>
+        set((st) => {
+          for (const s of st.sightings) if (s.photoUri) void deletePhoto(s.photoUri);
+          return { sightings: [] };
+        }),
     }),
     {
       name: 'clipit-journal',

@@ -51,6 +51,20 @@ export async function savePhotoBase64(base64: string): Promise<string | undefine
   }
 }
 
+// Delete a stored photo file when its sighting is removed, so photos don't
+// pile up on the device (and a deleted sighting really is gone). Only ever
+// touches files inside the app's own documents folder. Best-effort.
+export async function deletePhoto(ref?: string | null): Promise<void> {
+  if (Platform.OS === 'web' || !DOC || !ref) return;
+  const uri = resolvePhoto(ref);
+  if (!uri || !uri.startsWith(DOC)) return;
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch {
+    // an orphaned file is harmless
+  }
+}
+
 // Turn a stored photo ref into a uri loadable against the CURRENT container.
 export function resolvePhoto(ref?: string | null): string | undefined {
   if (!ref) return undefined;

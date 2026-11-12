@@ -18,12 +18,27 @@ const hasAbsoluteIdentifyUrl = /^https?:\/\//i.test(IDENTIFY_URL);
 // identification through it just because Supabase is configured for auth/social.
 const USE_SUPABASE_IDENTIFY = process.env.EXPO_PUBLIC_USE_SUPABASE_IDENTIFY === 'true';
 
-// Thrown when the identify endpoint can't be reached (no connectivity) so the
-// caller can queue the capture and analyze it once the device is back online.
+// Thrown when a capture couldn't be identified right now, so the caller can
+// queue it and try again later. `status` is the server's HTTP status when it
+// answered with an error (a server problem, too many requests, signed out…);
+// it's undefined when the server couldn't be reached at all (no connection).
 export class OfflineError extends Error {
-  constructor(message = 'offline') {
+  status?: number;
+  constructor(message = 'offline', status?: number) {
     super(message);
     this.name = 'OfflineError';
+    this.status = status;
+  }
+}
+
+// The identify endpoint answered, but with an error.
+class EndpointError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'EndpointError';
   }
 }
 
@@ -102,7 +117,9 @@ export async function identifySighting(input: IdentifyInput): Promise<IdentifyOu
       // automatically and scored once the AI answers. Only dev builds and the
       // web demo fall back to the mock identifier.
       if (Platform.OS !== 'web' && !__DEV__) {
-        throw err instanceof OfflineError ? err : new OfflineError(String(err?.message ?? err));
+        throw err instanceof OfflineError
+          ? err
+          : new OfflineError(String(err?.message ?? err), err instanceof EndpointError ? err.status : undefined);
       }
       if (err instanceof OfflineError) {
         // Native dev builds queue the capture too; web just uses the demo identifier.
@@ -180,7 +197,7 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     } catch {
       // body wasn't JSON; the status code alone is the signal
     }
-    throw new Error(`identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`);
+    throw new EndpointError(`identify endpoint ${resp.status}${detail ? `: ${detail}` : ''}`, resp.status);
   }
   const data = await resp.json();
   return {

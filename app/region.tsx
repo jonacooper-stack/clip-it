@@ -22,7 +22,10 @@ const DISPLAY_ORDER: RegionKey[] = [
 // only the region the player chooses is saved.
 export default function RegionPicker() {
   const router = useRouter();
-  const { next } = useLocalSearchParams<{ next?: string }>();
+  const params = useLocalSearchParams<{ next?: string }>();
+  // Where to go after saving. Only a path inside the app: this comes from the
+  // URL, and anything else (another site) is ignored.
+  const next = typeof params.next === 'string' && /^\/(?!\/)[\w\-/()\[\]]*$/.test(params.next) ? params.next : undefined;
   const current = useAppStore((s) => s.homeRegion);
   const setHomeRegion = useAppStore((s) => s.setHomeRegion);
   const [choice, setChoice] = useState<RegionKey | null>(current);

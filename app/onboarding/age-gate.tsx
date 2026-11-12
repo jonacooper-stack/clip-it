@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { colors, spacing, font, fonts, radius, shadow } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
+import { useAuthStore, syncAccountNow } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type { AgeBracket } from '@/types';
 
@@ -20,9 +21,17 @@ function bracketFor(age: number): AgeBracket {
   return 'adult';
 }
 
+// How long the gate stays closed on this device after an under-13 year.
+const BLOCK_MS = 24 * 3600_000;
+
 export default function AgeGate() {
   const router = useRouter();
   const setAge = useAppStore((s) => s.setAge);
+  const blockedUntil = useAppStore((s) => s.ageBlockedUntil);
+  const setBlockedUntil = useAppStore((s) => s.setAgeBlockedUntil);
+  const hasOnboarded = useAppStore((s) => s.hasOnboarded);
+  const session = useAuthStore((s) => s.session);
+  const signOut = useAuthStore((s) => s.signOut);
   const [text, setText] = useState('');
 
   const year = /^\d{4}$/.test(text) ? Number(text) : null;
@@ -30,20 +39,30 @@ export default function AgeGate() {
   const outOfRange = year != null && !valid; // four digits entered, but not a viable year
   const age = valid ? CURRENT_YEAR - year! : null;
   const bracket = age != null ? bracketFor(age) : null;
-  const tooYoung = bracket === 'under_13';
-  // ClipIt is 13+. Once an under-13 year is entered, keep the gate closed for
-  // this visit rather than inviting a retry with a different year.
-  const [blocked, setBlocked] = useState(false);
-  if (tooYoung && !blocked) setBlocked(true);
+  // ClipIt is 13+. The question is asked neutrally (no hint about the cut-off
+  // while typing); an under-13 answer closes the gate on this device for a
+  // day, so a different year can't just be entered straight afterwards.
+  const blocked = blockedUntil != null && Date.now() < blockedUntil;
 
   // Numbers only, capped at four digits.
   const onChangeText = (t: string) => setText(t.replace(/[^0-9]/g, '').slice(0, 4));
 
   const onContinue = () => {
     if (!bracket || blocked) return;
+    if (bracket === 'under_13') {
+      setBlockedUntil(Date.now() + BLOCK_MS);
+      // Someone who got an account another way (Google / Apple sign-in) can't keep using it.
+      if (session) signOut().catch(() => {});
+      return;
+    }
     setAge(bracket, false);
-    // With accounts enabled, create/sign in next; otherwise go straight to ethos.
-    router.push(isSupabaseConfigured ? '/onboarding/account' : '/onboarding/ethos');
+    if (!isSupabaseConfigured) return router.push('/onboarding/ethos');
+    // Not signed in yet: create an account / sign in next. Already signed in
+    // (asked here after a Google or Apple sign-in): carry on where they were headed.
+    if (!session) return router.push('/onboarding/account');
+    syncAccountNow(); // save the age range on the account
+    if (hasOnboarded) return router.replace('/feed');
+    router.replace(useAppStore.getState().homeRegion ? '/onboarding/ethos' : '/region?next=/onboarding/ethos');
   };
 
   return (
@@ -59,28 +78,28 @@ export default function AgeGate() {
         </Text>
       </View>
 
-      <View style={[styles.readout, valid && styles.readoutActive]}>
-        <Text style={[styles.readoutLabel, valid && styles.readoutLabelActive]}>BIRTH YEAR</Text>
-        <TextInput
-          value={text}
-          onChangeText={onChangeText}
-          keyboardType="number-pad"
-          inputMode="numeric"
-          maxLength={4}
-          placeholder="YYYY"
-          placeholderTextColor={colors.faint}
-          style={[styles.input, valid && styles.inputActive, webInputReset]}
-          autoFocus
-          returnKeyType="done"
-          onSubmitEditing={onContinue}
-          accessibilityLabel="Birth year, four digits"
-        />
-        {age != null && !blocked && (
-          <Text style={styles.readoutAge}>{`You're ${age} · ${bracketLabel(bracket!)}`}</Text>
-        )}
-      </View>
+      {!blocked && (
+        <View style={[styles.readout, valid && styles.readoutActive]}>
+          <Text style={[styles.readoutLabel, valid && styles.readoutLabelActive]}>BIRTH YEAR</Text>
+          <TextInput
+            value={text}
+            onChangeText={onChangeText}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="YYYY"
+            placeholderTextColor={colors.faint}
+            style={[styles.input, valid && styles.inputActive, webInputReset]}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={onContinue}
+            accessibilityLabel="Birth year, four digits"
+          />
+          {age != null && <Text style={styles.readoutAge}>{`You're ${age}`}</Text>}
+        </View>
+      )}
 
-      {outOfRange && (
+      {outOfRange && !blocked && (
         <Text style={styles.error}>{`Enter a year between ${MIN_YEAR} and ${MAX_YEAR}.`}</Text>
       )}
 
@@ -106,11 +125,6 @@ export default function AgeGate() {
       />
     </ScreenContainer>
   );
-}
-
-function bracketLabel(b: AgeBracket): string {
-  if (b === '13_17') return 'Teen explorer';
-  return 'Explorer';
 }
 
 // react-native-web renders TextInput as an <input> that carries a default border

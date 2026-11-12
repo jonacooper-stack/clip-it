@@ -54,6 +54,8 @@ interface AuthState {
 }
 
 let subscribed = false;
+// Accounts we've already tried to save the age range on (once per launch).
+const ageSaved = new Set<string>();
 
 // Pull displayName / ageBracket off the account into the local store the UI reads.
 function syncMetadata(session: Session | null) {
@@ -72,6 +74,12 @@ function syncMetadata(session: Session | null) {
   if (name && name !== app.displayName) app.setDisplayName(name);
   if (meta.ageBracket && meta.ageBracket !== app.ageBracket) {
     app.setAge(meta.ageBracket, Boolean(meta.isChild));
+  } else if (!meta.ageBracket && app.ageBracket && app.ageBracket !== 'under_13' && supabase && !ageSaved.has(session.user.id)) {
+    // The account doesn't carry the age range yet (Google sign-in never saved
+    // it): save the one given at the age check, so the teen privacy defaults
+    // follow the player to their other devices.
+    ageSaved.add(session.user.id);
+    supabase.auth.updateUser({ data: { ageBracket: app.ageBracket, isChild: false } }).catch(() => {});
   }
   // Home region picked on another device.
   if (meta.homeRegion && !app.homeRegion && regionByKey(meta.homeRegion)) app.setHomeRegion(meta.homeRegion as RegionKey);
@@ -224,3 +232,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ session: null });
   },
 }));
+
+// Re-check the signed-in account against the local profile right now: used
+// after the age check is answered while already signed in, so the age range
+// is saved on the account straight away (see syncMetadata).
+export function syncAccountNow(): void {
+  syncMetadata(useAuthStore.getState().session);
+}

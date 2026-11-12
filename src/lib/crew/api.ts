@@ -21,12 +21,12 @@ async function authHeaders(): Promise<Record<string, string> | null> {
   return token ? { Authorization: `Bearer ${token}` } : null;
 }
 
-async function crewFetch<T>(path: string, init: RequestInit = {}): Promise<T | null> {
+async function crewFetch<T>(path: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<T | null> {
   if (!hasServer) return null;
   const auth = await authHeaders();
   if (!auth) return null;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...init,
@@ -179,15 +179,46 @@ export function storyId(r: StoryRef): string {
   return [r.kind, r.region ?? '', r.weekOf ?? '', (r.sci || r.species).toLowerCase(), (r.title ?? '').toLowerCase()].join('|');
 }
 
+// A story nobody has opened yet is written on the spot, which can take a
+// while; the server allows 60 seconds, so wait nearly that long before giving
+// up (the next try is instant once the server has finished it).
+const STORY_TIMEOUT_MS = 55_000;
+const storiesInFlight = new Map<string, Promise<Story | null>>();
+
 // The deeper story behind a post, from the device cache or the server
-// (written once on the server, then shared).
-export async function loadStory(r: StoryRef): Promise<Story | null> {
+// (written once on the server, then shared). Repeat calls while one is in
+// flight share the same request.
+export function loadStory(r: StoryRef): Promise<Story | null> {
   const id = storyId(r);
   const cached = useCrewStore.getState().stories[id];
-  if (cached && Date.now() - (cached.fetchedAt ?? 0) < 7 * 86_400_000) return cached;
-  const s = await crewFetch<Story>('/api/crew/story', { method: 'POST', body: JSON.stringify(r) });
-  if (s?.pages?.length) useCrewStore.getState().saveStory(id, s);
-  return s ?? cached ?? null;
+  if (cached && Date.now() - (cached.fetchedAt ?? 0) < 7 * 86_400_000) return Promise.resolve(cached);
+  const running = storiesInFlight.get(id);
+  if (running) return running;
+  const request = crewFetch<Story>('/api/crew/story', { method: 'POST', body: JSON.stringify(r) }, STORY_TIMEOUT_MS)
+    .then((s) => {
+      if (s?.pages?.length) useCrewStore.getState().saveStory(id, s);
+      return s?.pages?.length ? s : cached ?? null;
+    })
+    .finally(() => storiesInFlight.delete(id));
+  storiesInFlight.set(id, request);
+  return request;
+}
+
+// What the player tapped to open a story (the slide's photo and emoji), handed
+// to the story screen in memory so it has something to show while the story
+// loads. Not part of the URL: a link can't put an arbitrary image on screen.
+export interface StoryCover {
+  photo?: { uri: string; credit?: string; source?: string };
+  emoji?: string;
+}
+let pendingCover: { id: string; cover: StoryCover } | null = null;
+
+export function setStoryCover(r: StoryRef, cover: StoryCover): void {
+  pendingCover = { id: storyId(r), cover };
+}
+
+export function storyCover(r: StoryRef): StoryCover | null {
+  return pendingCover?.id === storyId(r) ? pendingCover.cover : null;
 }
 
 // ---------- "Wrong photo?" ----------

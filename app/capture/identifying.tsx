@@ -19,6 +19,15 @@ export default function Identifying() {
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const ran = useRef(false);
   const cancelled = useRef(false);
+  // If the player leaves this screen another way (the Android back button),
+  // the result is still saved to the journal, but we don't yank them back.
+  const onScreen = useRef(true);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => {
+      onScreen.current = false;
+    };
+  }, []);
 
   // Bail out of an in-flight identification: drop the draft and go home. The
   // async guards on `cancelled` so a late result can't navigate us back.
@@ -55,7 +64,7 @@ export default function Identifying() {
         });
         if (cancelled.current) return;
         applyIdentifyOutcome(id, outcome, base64 ? hashPhotoBase64(base64) : undefined);
-        router.replace(`/capture/result?id=${id}`);
+        if (onScreen.current) router.replace(`/capture/result?id=${id}`);
         // We just reached the AI, so flush anything that was queued while offline.
         processAnalysisQueue();
       } catch (err) {
@@ -70,7 +79,7 @@ export default function Identifying() {
         } else {
           updateSighting(id, { idStatus: 'rejected' });
         }
-        router.replace(`/capture/result?id=${id}`);
+        if (onScreen.current) router.replace(`/capture/result?id=${id}`);
       }
     })();
   }, [id]);

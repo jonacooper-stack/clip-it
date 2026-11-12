@@ -16,7 +16,7 @@ import { applyGlobalFont } from '@/lib/fonts';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { processAnalysisQueue } from '@/lib/analysis';
+import { processAnalysisQueue, recoverInterruptedCaptures } from '@/lib/analysis';
 import { APP_MAX_WIDTH, isWideWeb } from '@/lib/layout';
 
 applyGlobalFont();
@@ -53,9 +53,12 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Once the journal has loaded, flush anything captured while offline.
+  // Once the journal has loaded, rescue any capture that was interrupted
+  // mid-identification, then flush anything captured while offline.
   useEffect(() => {
-    if (journalHydrated) processAnalysisQueue();
+    if (!journalHydrated) return;
+    recoverInterruptedCaptures();
+    processAnalysisQueue();
   }, [journalHydrated]);
 
   useEffect(() => {
@@ -69,10 +72,21 @@ export default function RootLayout() {
         <View style={[styles.column, wide && styles.columnWide]}>
           {ready ? (
             <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: colors.bg },
-                animation: 'slide_from_right',
+              // Per-screen options are decided here, by route name, so they
+              // are known before a screen opens. The native stack reads how a
+              // screen is presented when it is pushed; changing that from
+              // inside an already-open screen (as the story reader used to do
+              // with `presentation`) leaves a blank black screen on iOS.
+              // (A function rather than <Stack.Screen> children: in this
+              // expo-router version, listing a screen as a child drops its
+              // default getId and leaks an internal key into the web URL.)
+              screenOptions={({ route }) => {
+                const story = route.name === 'story'; // Scout's story reader fades in over the feed
+                return {
+                  headerShown: false,
+                  contentStyle: { backgroundColor: story ? '#000' : colors.bg },
+                  animation: story ? 'fade' : 'slide_from_right',
+                };
               }}
             />
           ) : (
