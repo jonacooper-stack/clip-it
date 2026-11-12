@@ -39,6 +39,18 @@ owner-scoped policies (`auth.uid()`), including parent→child access via
 `guardian_id`. Run that migration when we add the cloud data tables (next step);
 until then there are no app tables, so nothing is exposed.
 
+## Migrations and their tests
+Migrations in `supabase/migrations/` are run by hand in the SQL editor, in
+order (`0001_init.sql`, the PostGIS science schema, is not part of the live
+database yet). `npm run test:db` applies them to a fresh local Postgres and
+checks the rules as different players: add a check to
+`supabase/tests/rules.test.sql` whenever a migration changes a policy.
+
+The publishable key ships inside the app, so assume anyone can call the
+database directly: every limit that matters has to hold in a policy, a
+constraint or a trigger, not only in the app. `0010_hardening.sql` is where
+the current set lives.
+
 ## Status & roadmap
 - **Now — identity:** email + password sign-up / sign-in / sign-out; name + age
   saved to the account and mirrored into the local store the UI reads.

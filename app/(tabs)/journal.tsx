@@ -8,6 +8,7 @@ import { useAppWidth } from '@/lib/layout';
 import { Ionicons } from '@expo/vector-icons';
 import { SightingThumb } from '@/components/SightingThumb';
 import { Card } from '@/components/Card';
+import { Button } from '@/components/Button';
 import { WildlifeGallery } from '@/components/WildlifeGallery';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -222,6 +223,7 @@ export default function Journal() {
               <Text style={styles.emptyText}>
                 No photos yet. Tap the camera to ClipIt your first sighting — every shot lands here.
               </Text>
+              <Button label="Open camera" icon="camera" variant="accent" size="md" onPress={() => router.push('/capture/camera')} style={styles.emptyBtn} />
             </Card>
           ) : (
             <View style={styles.noResults}>
@@ -302,6 +304,7 @@ const styles = StyleSheet.create({
 
   empty: { alignItems: 'center', paddingVertical: spacing.xl, marginHorizontal: PAD, marginTop: spacing.lg },
   emptyIcon: { marginBottom: spacing.sm },
+  emptyBtn: { marginTop: spacing.md, alignSelf: 'stretch' },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   noResults: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl, paddingHorizontal: spacing.lg },
 

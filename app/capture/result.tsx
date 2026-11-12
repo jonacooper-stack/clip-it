@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated, Pressable } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, Easing, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -18,6 +18,11 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { applyFieldNotesBonus } from '@/lib/scoring';
 import { questionsForSighting, coerceScience, SCIENCE_QUESTIONS } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
+import { groupOf } from '@/lib/quests';
+import { challengeStatus } from '@/lib/crew/challenges';
+import { crewSeed } from '@/lib/crew/seed';
+import { startOfWeek } from '@/lib/crew/time';
+import { currentStreak } from '@/lib/streak';
 
 export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,6 +36,45 @@ export default function Result() {
   useEffect(() => {
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5 }).start();
   }, [scale]);
+
+  // The points count up once, when the result first appears. Later changes
+  // (field notes add a point each) just show the new total.
+  const target = sighting?.points ?? 0;
+  const [shownPoints, setShownPoints] = useState(0);
+  const countedUp = useRef(false);
+  useEffect(() => {
+    if (countedUp.current || target <= 0) {
+      setShownPoints(target);
+      return;
+    }
+    countedUp.current = true;
+    const value = new Animated.Value(0);
+    const sub = value.addListener((v) => setShownPoints(Math.round(v.value)));
+    Animated.timing(value, {
+      toValue: target,
+      duration: Math.min(1000, 350 + target * 40),
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false, // drives a number in state, not a native style
+    }).start(() => setShownPoints(target));
+    return () => value.removeListener(sub);
+  }, [target]);
+
+  // What this sighting moved forward: this week's quests it counted toward,
+  // and the day streak. (The reason to head out again tomorrow.)
+  const sightings = useJournalStore((s) => s.sightings);
+  const progress = useMemo(() => {
+    if (!sighting || typeof sighting.points !== 'number') return null;
+    const week = startOfWeek(Date.now());
+    const seed = crewSeed();
+    const quests =
+      startOfWeek(sighting.observedAt) === week
+        ? (() => {
+            const before = challengeStatus(week, sightings.filter((x) => x.id !== sighting.id), seed, groupOf);
+            return challengeStatus(week, sightings, seed, groupOf).filter((c, i) => c.progress > before[i].progress);
+          })()
+        : [];
+    return { quests, streak: currentStreak(sightings) };
+  }, [sighting, sightings]);
 
   const done = () => router.replace('/feed');
   const discard = () => {
@@ -224,12 +268,18 @@ export default function Result() {
             </>
           ) : (
             <>
-              <Text style={styles.points}>+{sighting.points ?? 0}</Text>
+              <Text style={styles.points} accessibilityLabel={`${sighting.points ?? 0} points`}>+{shownPoints}</Text>
               <Text style={styles.pointsLabel}>POINTS</Text>
             </>
           )}
         </Animated.View>
 
+        {(sighting.score?.bonuses.firstOfSpecies ?? 0) > 0 && (
+          <View style={styles.newPill}>
+            <Ionicons name="sparkles" size={13} color={colors.accentInk} />
+            <Text style={styles.newPillText}>New species for your journal</Text>
+          </View>
+        )}
         {(lowConf || pending) && <Text style={styles.bestGuess}>BEST GUESS</Text>}
         <Text style={styles.common}>{sighting.species?.commonName}</Text>
         <Text style={styles.sci}>{sighting.species?.scientificName}</Text>
@@ -300,6 +350,28 @@ export default function Result() {
           </Card>
         )}
 
+        {progress && (progress.quests.length > 0 || progress.streak > 0) && (
+          <Card style={styles.progress}>
+            {progress.quests.map((c) => (
+              <View key={c.def.id} style={styles.progressRow}>
+                <Text style={styles.progressEmoji}>{c.def.emoji}</Text>
+                <Text style={styles.progressText} numberOfLines={2}>
+                  {c.done ? `Quest complete: ${c.def.title}` : `${c.def.title}: ${c.progress} of ${c.def.goal}`}
+                </Text>
+                <Text style={styles.progressGain}>{c.done ? `+${c.def.reward}` : ''}</Text>
+              </View>
+            ))}
+            {progress.streak > 0 && (
+              <View style={styles.progressRow}>
+                <Ionicons name="flame" size={16} color={colors.accent} style={styles.progressIcon} />
+                <Text style={styles.progressText}>
+                  {progress.streak === 1 ? 'Day 1 of a new streak. Spot something tomorrow to keep it going.' : `${progress.streak} day streak. Spot something tomorrow to keep it going.`}
+                </Text>
+              </View>
+            )}
+          </Card>
+        )}
+
         {sighting.species && (
           <ScienceQuestions
             questions={questionsForSighting(sighting.id)}
@@ -344,6 +416,14 @@ const styles = StyleSheet.create({
   pointsWrap: { alignItems: 'center', marginBottom: spacing.md },
   points: { fontSize: 80, fontFamily: fonts.display, color: colors.accent, lineHeight: 84 },
   pointsLabel: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk, letterSpacing: 3 },
+  newPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6, marginBottom: spacing.sm },
+  newPillText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.accentInk },
+  progress: { width: '100%', marginTop: spacing.lg, gap: spacing.sm, paddingVertical: spacing.md },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  progressEmoji: { fontSize: 16, width: 22, textAlign: 'center' },
+  progressIcon: { width: 22, textAlign: 'center' },
+  progressText: { flex: 1, fontSize: font.small, color: colors.text, lineHeight: 20 },
+  progressGain: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.accentInk },
   pendingPts: { fontSize: 56, fontFamily: fonts.display, color: colors.muted, lineHeight: 60 },
   pendingLabel: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
   common: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, textAlign: 'center' },

@@ -237,7 +237,8 @@ What players see in the Feed (one timeline with wall posts):
   The home region is stored privately (`profile_private`).
 
 Photos, and how wrong ones are caught:
-- Our curated library (`site/img/library`, credits on /credits) was audited
+- Our curated library (`site/img/library`, credits on `/credits.html`; `/credits`
+  is rewritten to it) was audited
   photo by photo; wrong or unsuitable ones were replaced or retired (retired
   ones are blocked in `api/_lib/photoFlags.ts`, even in cached content).
 - Extra photos come from Wikimedia Commons (quality images first; public
@@ -256,11 +257,12 @@ Photos, and how wrong ones are caught:
 How it runs:
 - `GET /api/crew/today` (animal of the day: a regional library photo, cycling
   without repeats, plus cached facts and photos), `POST /api/crew/notes` and
-  `GET /api/crew/forecast` (signed-in only) call Claude (`claude-opus-5-5`, low
-  effort, cached per species / per region-week; cache keys start with `kid:`, so
-  older long-form content is regenerated in the new style). They work with just
-  `ANTHROPIC_API_KEY`; caching across instances and Scout's comments need the
-  service role key below.
+  `GET /api/crew/forecast` (signed-in only) call Claude (low effort, cached per
+  species / per region-week; cache keys start with `kid:`, so older long-form
+  content is regenerated in the new style). Which model does which job, and
+  what each costs, is in [AI_COSTS.md](AI_COSTS.md). They work with just
+  `ANTHROPIC_API_KEY`; caching across instances, Scout's comments and the
+  per-player daily limits need the service role key below.
 - `POST /api/crew/story` (signed-in only) writes a story once per theme and
   week, or per species and month, cached in `crew_stories`;
   `POST /api/crew/flag-photo` stores "Wrong photo?" reports.
@@ -291,7 +293,34 @@ One-time setup:
    (add `?dry=1` first to preview what it would remove).
 4. Logs: Vercel → Logs, search `crew_`.
 
-### g. Before submitting
+### g. After the November 2026 audit: three steps
+The audit's fixes are in the code; these three steps turn them all on. They can
+be done in any order, and nothing breaks in between.
+
+1. **Run `supabase/migrations/0010_hardening.sql`** in the Supabase SQL editor.
+   It closes several gaps in the database rules (a friend request could be
+   created already accepted; wall posts could link photos on any server;
+   blocking wasn't enforced by the database) and adds the table the server
+   counts daily limits in. Rows already in the tables are left alone. Safe to
+   run more than once. Until it runs, the daily limits simply don't apply.
+2. **Run the "EAS Update (OTA)" workflow** (channel `production`) once Vercel
+   has deployed, so installed builds get the app-side fixes (the blank story
+   screen, the capture and feed fixes). Everything in the audit is
+   JavaScript-only: no new build is needed.
+3. **Decide the model for the photo identifier** with
+   `npm run eval:identify` (see [AI_COSTS.md](AI_COSTS.md)), then set
+   `CLAUDE_MODEL_IDENTIFY` in Vercel if you switch.
+
+Day to day:
+- `npm run check` runs the type checks and unit tests; `npm run test:db` tests
+  the database rules against a local Postgres. CI runs both, plus the web
+  build, on every pull request.
+- Vercel → Logs: `claude_usage` (tokens per call), `identify_failure`,
+  `crew_`.
+- The open product decisions from the audit are in
+  [DECISIONS.md](DECISIONS.md).
+
+### h. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
   support address and company name, and make sure that inbox exists.
 - Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.
