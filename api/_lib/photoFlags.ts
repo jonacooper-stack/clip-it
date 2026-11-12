@@ -5,8 +5,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SITE_URL, log } from './server';
 
-// Retired from the curated library (wrong or unsuitable images).
-const RETIRED = ['beaver', 'kestrel', 'red-tailed-hawk-1'].map((slug) => `${SITE_URL}/img/library/${slug}.jpg`);
+// Retired from the curated library (wrong or unsuitable images; 'squirrel'
+// was an all-black individual standing in for the gray squirrel).
+const RETIRED = ['beaver', 'kestrel', 'red-tailed-hawk-1', 'squirrel'].map((slug) => `${SITE_URL}/img/library/${slug}.jpg`);
 
 // One key per image, whatever size or host it's served at.
 export function photoKey(url: string): string {

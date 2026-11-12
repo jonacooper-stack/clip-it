@@ -16,7 +16,7 @@ verify. Each has a recommendation.*
 | A filter for AI-made, stock and copied photos | Built: see "The photo check" below for what it catches and what it can't. |
 | Compare identifier models ($5) | **Not run yet**: this workspace can't hold your Anthropic key. One click for you: decision 1. |
 | Upgrade the Expo SDK | **Not started**: it needs its own branch and a store build. Decision 2. |
-| Swap the black "gray" squirrel photo | **Not done**: Wikimedia refused downloads from this workspace all session. Decision 3. |
+| Swap the black "gray" squirrel photo | Done: a clearly gray one from Central Park (Rhododendrites, CC BY-SA 4.0), credited on the credits page. The black one is retired, so stories written earlier stop showing it. |
 
 ## Needs you
 
@@ -52,18 +52,7 @@ bump `version` in `app.json`.
   it one or two SDK versions at a time, with the type checks, tests and web
   build passing at each step, and hand you a checklist for the phone test.
 
-### 3. The squirrel photo
-The library's "Eastern gray squirrel" is an all-black individual. I couldn't
-download a replacement: Wikimedia Commons rate-limited this workspace for the
-whole session.
-
-- **Either** send me a photo you have the rights to (or the name of a
-  Commons file you like) in a later session, **or** do it yourself: replace
-  `site/img/library/squirrel.jpg` (1200 px wide), update its credit in
-  `api/_lib/photoLibrary.ts` and `site/credits.html`, and run
-  `npx tsx scripts/hash-library.ts` (a test fails until you do).
-
-### 4. Have the privacy changes looked at
+### 3. Have the privacy changes looked at
 Saving journals to accounts changes what the app collects: the place and a
 copy of the photo for each sighting, for players aged 13 and up. I updated the
 in-app policy, the FAQ and the App Store notes so they say what the app now
@@ -76,7 +65,7 @@ asked before their journal is uploaded.
   wording read by whoever advises you on this (CONCEPT.md already plans that
   review). I wrote it to be accurate, not as legal advice.
 
-### 5. A spending limit and email confirmation (unchanged)
+### 4. A spending limit and email confirmation (unchanged)
 In the Claude Console, set a monthly spend limit on the key's workspace. Turn
 Supabase's "Confirm email" back on before any public promotion. Each account
 now has daily limits, but accounts are free to create while confirmation is
@@ -112,7 +101,7 @@ What gets through, honestly:
 - Anything a modified app claims about how a photo was taken: those claims
   are hints, which is why the limits in point 4 don't depend on them.
 
-### 6. If cheating shows up anyway
+### 5. If cheating shows up anyway
 - **A review queue for refused or doubtful photos** (recommended next).
   Refusals are already recorded (`journal_refusals`) and doubts logged; there
   is no screen for you to review them or for a player to say "that was
@@ -123,8 +112,8 @@ What gets through, honestly:
 - **Only in-app camera photos score.** The strongest rule and the simplest,
   but it shuts out people who shoot with a real camera and upload.
 
-### 7. Wrongly refused photos
-Until there is a review queue (6), a player whose real photo is refused has
+### 6. Wrongly refused photos
+Until there is a review queue (5), a player whose real photo is refused has
 only Help & Support. With `journal_refusals` and the Vercel logs you can see
 what happened; putting it right means the player taking the photo again or
 you adjusting their score by hand. If refusals of real photos turn out to be
@@ -132,32 +121,32 @@ common, the switches are in RELEASE.md ("If something goes wrong").
 
 ## Still open from the audit
 
-### 8. Under-13s who signed in with Google or Apple
+### 7. Under-13s who signed in with Google or Apple
 An account that then answers "under 13" is signed out and blocked on the
 device, but the account still exists. **Recommended:** delete it
 automatically, after whoever advises you confirms.
 
-### 9. Teens and "explorers you might like"
+### 8. Teens and "explorers you might like"
 Suggestions are meant to be off for ages 13–17 until they turn them on, but
 the database can't tell a real "yes" from the default on rows made before
 the teen default existed. **Recommended:** save the age range next to that
 setting so the server applies the default itself. Small.
 
-### 10. Rapid-fire shots that aren't wildlife disappear
+### 9. Rapid-fire shots that aren't wildlife disappear
 In a burst, a shot that can't be identified or isn't wildlife is never shown
 again. **Recommended:** a short "3 shots couldn't be identified" summary
 after a burst.
 
-### 11. "Suggest an ID" goes nowhere
+### 10. "Suggest an ID" goes nowhere
 A suggested species is now saved with the cloud journal, but nobody reviews
-it. It could feed the same review queue as decision 6.
+it. It could feed the same review queue as decision 5.
 
-### 12. Storage as the game grows
+### 11. Storage as the game grows
 Each scored sighting keeps a photo copy (150–400 KB). Supabase's free plan
 has 1 GB for everything. **Recommended:** check Storage monthly; move to a
 paid plan (or shrink the copies) before it fills.
 
-### 13. Smaller items, when convenient
+### 12. Smaller items, when convenient
 - A Content-Security-Policy header for the web app. The web camera also
   loads a QR-code script from a public CDN (part of the camera component):
   worth removing or self-hosting when the header is added.
