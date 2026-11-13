@@ -52,7 +52,8 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', uid)
         .eq('scientific_name', sci)
-        .neq('id', exceptSid);
+        .neq('id', exceptSid)
+        .or('verified.eq.true,points.gt.0'); // see JournalDb.speciesCount
       check(error, 'count species');
       return count ?? 0;
     },
@@ -87,7 +88,7 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
     },
 
     async getState(uid) {
-      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, carryover_points, legacy_allowance, backup, save_places, erased_at').eq('user_id', uid).maybeSingle();
+      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, baseline_species, carryover_points, legacy_allowance, backup, save_places, erased_at').eq('user_id', uid).maybeSingle();
       check(error, 'read journal state');
       return (data as JournalState | null) ?? null;
     },

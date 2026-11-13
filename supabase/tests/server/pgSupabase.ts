@@ -113,6 +113,17 @@ export function createClient(pool: pg.Pool, caller: Caller, authUsers?: { exists
       else throw new Error(`unsupported not(${op})`);
       return this;
     }
+    // "a.eq.1,b.gt.0": any of these (the simple comparisons only).
+    or(expr: string) {
+      const ops: Record<string, string> = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' };
+      const parts = expr.split(',').map((part) => {
+        const [col, op, ...rest] = part.split('.');
+        if (!ops[op]) throw new Error(`unsupported or(${part})`);
+        return { col, op: ops[op], value: rest.join('.') };
+      });
+      this.filters.push({ sql: (p) => `(${parts.map((x) => `${ident(x.col)} ${x.op} ${p(x.value)}`).join(' or ')})` });
+      return this;
+    }
     in(col: string, values: unknown[]) {
       this.filters.push({ sql: (p) => (values.length ? `${ident(col)} in (${values.map((v) => p(v)).join(', ')})` : 'false') });
       return this;

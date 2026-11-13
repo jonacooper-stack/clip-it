@@ -405,7 +405,14 @@ player's existing journal (up to the allowance from step 1). After that only
 sightings the server identified itself count, and an account that never
 updated goes back to its baseline. A sighting that arrives too late is not
 lost: while its photo is on the phone, the updated app sends it through the
-identifier again and it counts from then on. To change the date:
+identifier again and it counts from then on.
+
+Nobody's score drops at the switch, and nothing is counted twice. An account
+that switches keeps what the leaderboard showed for it when you ran 0011 (its
+baseline, with the species count it had then). As its old sightings arrive,
+or are identified again by the server, they take the place of that
+carried-over part instead of adding to it; once they add up to the baseline,
+the score is simply what the journal is worth. To change the date:
 
 ```sql
 insert into public.app_settings (key, value)
@@ -458,7 +465,16 @@ alter table public.post_comments disable trigger post_comments_language;
   nothing unless `backup` is yes.
 - A player's score looks wrong: `journal_state` has their baseline, allowance
   and what is still carried over; `journal_sightings` has every row with its
-  points and whether the server identified it (`verified`).
+  points and whether the server identified it (`verified`). A sighting handed
+  in more than a week after its photo was taken counts, for the weekly
+  quests, in the week it was handed in (`recorded_at`); the Quests screen
+  shows it the same way.
+- A player deleted their saved journal: their score on the leaderboard is 0
+  from then on (the dialog says so), and `journal_state.erased_at` shows when.
+- After the 30 days, the nightly job sets accounts that never switched back
+  to their baseline. If that ever fails the log shows `legacy_settle_error`
+  with the reason; one account that can't be settled no longer holds up the
+  rest (it is skipped with a warning in the Supabase Postgres logs).
 
 ### i. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real

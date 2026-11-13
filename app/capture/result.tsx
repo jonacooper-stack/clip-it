@@ -19,6 +19,7 @@ import { applyFieldNotesBonus } from '@/lib/scoring';
 import { questionsForSighting, coerceScience, SCIENCE_QUESTIONS } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
 import { groupOf } from '@/lib/quests';
+import { useQuestSightings } from '@/lib/useQuestSightings';
 import { challengeStatus } from '@/lib/crew/challenges';
 import { crewSeed } from '@/lib/crew/seed';
 import { startOfWeek } from '@/lib/crew/time';
@@ -62,19 +63,22 @@ export default function Result() {
   // What this sighting moved forward: this week's quests it counted toward,
   // and the day streak. (The reason to head out again tomorrow.)
   const sightings = useJournalStore((s) => s.sightings);
+  const counted = useQuestSightings(); // the journal as quests count it
   const progress = useMemo(() => {
     if (!sighting || typeof sighting.points !== 'number') return null;
     const week = startOfWeek(Date.now());
     const seed = crewSeed();
+    // (Not in the list: it counts for nothing. Its date there is the week it counts in.)
+    const mine = counted.find((x) => x.id === sighting.id);
     const quests =
-      startOfWeek(sighting.observedAt) === week
+      mine && startOfWeek(mine.observedAt) === week
         ? (() => {
-            const before = challengeStatus(week, sightings.filter((x) => x.id !== sighting.id), seed, groupOf);
-            return challengeStatus(week, sightings, seed, groupOf).filter((c, i) => c.progress > before[i].progress);
+            const before = challengeStatus(week, counted.filter((x) => x.id !== sighting.id), seed, groupOf);
+            return challengeStatus(week, counted, seed, groupOf).filter((c, i) => c.progress > before[i].progress);
           })()
         : [];
     return { quests, streak: currentStreak(sightings) };
-  }, [sighting, sightings]);
+  }, [sighting, sightings, counted]);
 
   const done = () => router.replace('/feed');
   const discard = () => {
@@ -101,7 +105,10 @@ export default function Result() {
     if (updated.length) next[qid] = updated;
     else delete next[qid];
     const answered = Object.keys(next).length;
-    if (sighting.score) {
+    // The bonus point per answer is for sightings the server identified. One
+    // it holds only on this phone's word keeps the points it has.
+    const phoneScoredInCloud = Boolean(sighting.cloudAt) && sighting.verified === false;
+    if (sighting.score && !phoneScoredInCloud) {
       // Shown at once with the same rule the server uses; the server
       // confirms the bonus when the answers reach it.
       const { score, points } = applyFieldNotesBonus(sighting.score, answered);

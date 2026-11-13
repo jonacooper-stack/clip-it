@@ -176,6 +176,8 @@ function animalStory(t: TodayPick, photos: CrewPhoto[]): Slide[] {
 
 export function buildMoments(opts: {
   sightings: Sighting[];
+  /** The journal as quests count it, when that differs (see lib/useQuestSightings). */
+  questSightings?: Sighting[];
   now?: number;
   region: RegionKey | null;
   forecasts: Forecast[]; // cached weekly themes for the player's region
@@ -192,7 +194,8 @@ export function buildMoments(opts: {
   const recent = (t: number) => t <= now && now - t < MOMENT_WINDOW_MS;
   const counted = sightings.filter(COUNTED).sort((a, b) => a.observedAt - b.observedAt);
   const week = startOfWeek(now);
-  const thisWeek = challengeStatus(week, sightings, seed, groupOf);
+  const forQuests = opts.questSightings ?? sightings;
+  const thisWeek = challengeStatus(week, forQuests, seed, groupOf);
   const regionLabel = opts.region ? regionByKey(opts.region)?.label ?? 'your area' : 'your area';
   const hidden = new Set(opts.hidden ?? []);
   const vis = (ps?: (CrewPhoto | null | undefined)[] | null): CrewPhoto[] => (ps ?? []).filter((p): p is CrewPhoto => Boolean(p) && !hidden.has(p!.url));
@@ -360,7 +363,7 @@ export function buildMoments(opts: {
 
   // ---------- quests done (this week and last) ----------
   for (const wk of [week, addWeeks(week, -1)]) {
-    const status = wk === week ? thisWeek : challengeStatus(wk, sightings, seed, groupOf);
+    const status = wk === week ? thisWeek : challengeStatus(wk, forQuests, seed, groupOf);
     for (const c of status) {
       if (!c.done || !c.doneAt || !recent(c.doneAt + 1000)) continue;
       out.push({

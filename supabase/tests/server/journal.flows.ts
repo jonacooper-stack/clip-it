@@ -341,7 +341,7 @@ async function main() {
     && (await sql(`select 1 from storage.objects where bucket_id = 'journal-photos' and name like $1`, [`${E}/%`])).length === 0
     && stE.tz === null && stE.backup === 'no' && stE.erased_at && sync.prefs.epoch && sync.prefs.backup === 'no', { rowsBefore, stE, prefs: sync.prefs });
   const profAfter = (await sql('select points, species_count from public.profiles where id = $1', [E]))[0];
-  check('erase: the score falls back to what is left of the carried-over baseline', profAfter && profAfter.points <= 420 && profAfter.species_count === 0, profAfter);
+  check('erase: the score goes with the journal (the leaderboard shows 0)', profAfter && profAfter.points === 0 && profAfter.species_count === 0, profAfter);
 
   // ---------- 12. what the adapter logged as errors along the way ----------
   const unexpected = (svc.log as string[]).filter((l) => !/23505/.test(l));

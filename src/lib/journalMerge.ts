@@ -14,6 +14,7 @@
 import type { Sighting, IdStatus } from '@/types';
 import type { ScoreBreakdown } from '../../shared/scoring';
 import { approxPlace } from '../../shared/place';
+import { countsAt } from '../../shared/quests';
 
 // A row of the cloud journal, as the server sends it and as the app reads it
 // from the table (public.journal_sightings).
@@ -21,6 +22,8 @@ export interface CloudRow {
   id: string;
   observed_at: string;
   logged_at: string;
+  /** When the server recorded it. */
+  recorded_at?: string;
   updated_at?: string;
   deleted_at: string | null;
   /** To two decimals (about a kilometre), and only if the player saves places. */
@@ -46,7 +49,7 @@ export interface CloudRow {
 
 // The columns the app reads (everything above; not the photo fingerprints or review notes).
 export const CLOUD_COLUMNS =
-  'id, observed_at, logged_at, updated_at, deleted_at, lat, lng, status, common_name, scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo, science, proposed_species, wall_post_id';
+  'id, observed_at, logged_at, recorded_at, updated_at, deleted_at, lat, lng, status, common_name, scientific_name, taxon_group, confidence, scene_tags, caption, dangerous, points, score, verified, capture, has_photo, science, proposed_species, wall_post_id';
 
 // A sighting as it comes off the disk, put right where an older version of
 // the app saved something the rest of the app can't use: on iPhone the place
@@ -136,6 +139,8 @@ export function pushItem(s: Sighting, groupOf: (s: Sighting) => string | undefin
 const toStatus = (status: string | null, proposed: string | null): IdStatus =>
   status === 'disputed' || proposed ? 'disputed' : status === 'human_confirmed' ? 'human_confirmed' : 'ai_confident';
 
+const recordedAt = (r: CloudRow): number | undefined => (r.recorded_at ? Date.parse(r.recorded_at) || undefined : undefined);
+
 // A sighting that exists only in the cloud (a new phone, a reinstall).
 export function fromCloudRow(r: CloudRow, now: number): Sighting {
   return {
@@ -159,6 +164,7 @@ export function fromCloudRow(r: CloudRow, now: number): Sighting {
     wallPostId: r.wall_post_id ?? undefined,
     capture: r.capture ?? undefined,
     cloudAt: now,
+    recordedAt: recordedAt(r),
     verified: r.verified,
     cloudPhoto: r.has_photo,
     cloudPoints: r.points,
@@ -172,6 +178,7 @@ export function applyCloudRow(local: Sighting, r: CloudRow, now: number): Sighti
   let next: Sighting = {
     ...local,
     cloudAt: local.cloudAt ?? now,
+    recordedAt: recordedAt(r) ?? local.recordedAt,
     verified: r.verified,
     cloudPhoto: r.has_photo,
     cloudPoints: r.points,
@@ -270,6 +277,36 @@ export function mergeRows(sightings: Sighting[], pendingDeletes: string[], rows:
   const fresh = [...byId.values()].filter((s) => !sightings.some((x) => x.id === s.id));
   const all = fresh.length ? [...kept, ...fresh].sort((a, b) => b.createdAt - a.createdAt) : kept;
   return { sightings: all, pendingDeletes: [...waiting], added, removed };
+}
+
+// The journal as the server counts it, for everything on this device that
+// shows progress toward a quest. Used once the server keeps the account's
+// score, so that the Quests screen, the result screen and Scout's "quest
+// complete" posts say what the score will say:
+//   - a sighting the server counts for nothing (the player's own photo handed
+//     in twice, a phone-scored sighting that arrived after the cut-off) or
+//     won't take at all is left out;
+//   - a sighting counts in the week the server counts it in (shared/quests
+//     countsAt): one handed in more than a week after it was taken counts in
+//     the week it was handed in.
+// A sighting the server hasn't got yet counts as this device scored it; the
+// next sync settles it. The journal's own dates and points are not touched:
+// the list returned is for counting only.
+export function asTheServerCounts(sightings: Sighting[]): Sighting[] {
+  const out: Sighting[] = [];
+  for (const s of sightings) {
+    if (s.cloudSkip) continue;
+    const worth = s.cloudAt ? s.cloudPoints ?? s.points : s.points;
+    if (worth === 0) continue;
+    const when = countsAt({
+      observedAt: s.observedAt,
+      handedInAt: s.recordedAt ?? s.createdAt,
+      // Identified by the server: recorded there, or waiting to go with the server's signed note.
+      serverScored: s.verified === true || Boolean(s.receipt),
+    });
+    out.push(when === s.observedAt ? s : { ...s, observedAt: when });
+  }
+  return out;
 }
 
 // A sighting the phone scored that the server counts for nothing (it arrived
@@ -383,7 +420,7 @@ export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPr
 export function forgetCloudCopies(sightings: Sighting[]): Sighting[] {
   return sightings.map((s) => {
     if (!s.cloudAt && !s.cloudSkip && !s.cloudPhoto) return s;
-    const { cloudAt: _a, cloudPhoto: _p, cloudPoints: _c, cloudSkip: _s, sentRev: _r, ...rest } = s;
+    const { cloudAt: _a, cloudPhoto: _p, cloudPoints: _c, cloudSkip: _s, sentRev: _r, recordedAt: _w, ...rest } = s;
     return { ...rest, photoUri: typeof s.photoUri === 'string' && s.photoUri.startsWith('cloud:') ? undefined : s.photoUri };
   });
 }

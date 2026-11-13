@@ -93,6 +93,9 @@ create table if not exists public.journal_sightings (
   -- kept even when it counts for nothing (after the legacy window), so the
   -- cut-off can be revisited.
   claimed_points integer check (claimed_points between 0 and 500),
+  -- …and the base (rarity) points the phone reported for it. Never turned
+  -- into points: one weekly quest ("a rare find") looks at it.
+  claimed_base integer check (claimed_base between 0 and 30),
   score jsonb,                                -- how the points were worked out
   -- true: the server identified the photo and scored it itself.
   -- false: scored on the phone before this change and uploaded once (legacy window).
@@ -116,6 +119,7 @@ create table if not exists public.journal_sightings (
 -- one-part look-alike fingerprint.)
 alter table public.journal_sightings drop column if exists accuracy_m;
 alter table public.journal_sightings add column if not exists photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$');
+alter table public.journal_sightings add column if not exists claimed_base integer check (claimed_base between 0 and 30);
 create index if not exists journal_sightings_user_time_idx on public.journal_sightings (user_id, observed_at desc);
 create index if not exists journal_sightings_species_idx on public.journal_sightings (scientific_name, recorded_at desc);
 create index if not exists journal_sightings_sha_idx on public.journal_sightings (photo_sha) where photo_sha is not null;
@@ -144,6 +148,8 @@ grant select (
 --                     from then on the server owns its score
 --   baseline_points   what the leaderboard showed for the account when this
 --                     migration first ran (capped)
+--   baseline_species  the species count it showed then (capped); shown while
+--                     part of that score is still carried over
 --   carryover_points  how much of that the uploaded journal doesn't account
 --                     for yet. It is added to the score so nobody's score
 --                     drops at the switch; it only ever shrinks
@@ -167,6 +173,7 @@ create table if not exists public.journal_state (
   tz text check (char_length(tz) <= 64),
   ready_at timestamptz,
   baseline_points integer not null default 0 check (baseline_points between 0 and 10000),
+  baseline_species integer not null default 0 check (baseline_species between 0 and 5000),
   carryover_points integer not null default 0 check (carryover_points between 0 and 10000),
   legacy_allowance integer not null default 0 check (legacy_allowance between 0 and 20000),
   busy_until timestamptz,
@@ -178,6 +185,7 @@ create table if not exists public.journal_state (
 alter table public.journal_state add column if not exists backup text check (backup in ('yes', 'no'));
 alter table public.journal_state add column if not exists save_places boolean;
 alter table public.journal_state add column if not exists erased_at timestamptz;
+alter table public.journal_state add column if not exists baseline_species integer not null default 0 check (baseline_species between 0 and 5000);
 alter table public.journal_state enable row level security;
 drop policy if exists journal_state_read_own on public.journal_state;
 create policy journal_state_read_own on public.journal_state
@@ -186,15 +194,17 @@ revoke insert, update, delete, truncate on public.journal_state from anon, authe
 
 -- The one-time snapshot, taken the first time this file runs (running it
 -- again changes nothing). Every account that exists now gets:
---   a baseline: its current leaderboard score, at most 10,000;
+--   a baseline: its current leaderboard score, at most 10,000 (and the
+--   species count shown with it, at most 5,000);
 --   an allowance for phone-scored sightings: 500 points for each day the
 --   account has existed, at most 20,000.
 do $$
 begin
   if not exists (select 1 from public.app_settings where key = 'cloud_journal_started') then
-    insert into public.journal_state (user_id, baseline_points, carryover_points, legacy_allowance)
+    insert into public.journal_state (user_id, baseline_points, baseline_species, carryover_points, legacy_allowance)
     select u.id,
            least(greatest(coalesce(p.points, 0), 0), 10000),
+           least(greatest(coalesce(p.species_count, 0), 0), 5000),
            least(greatest(coalesce(p.points, 0), 0), 10000),
            least(20000, 500 * greatest(1, ceil(extract(epoch from (now() - coalesce(u.created_at, now()))) / 86400.0)::integer))
     from auth.users u
@@ -434,9 +444,10 @@ create trigger profiles_protect_score
   for each row execute function public.protect_score();
 
 -- Once the legacy window has closed, an account that never switched goes
--- back to what it had when this migration ran: anything its app reported
--- since then was never checked by anyone. Called by the nightly job; does
--- nothing while the window is open. Returns how many scores it changed.
+-- back to what it had when this migration ran (points and species count):
+-- anything its app reported since then was never checked by anyone. Called
+-- by the nightly job; does nothing while the window is open. Returns how
+-- many accounts it changed.
 create or replace function public.settle_legacy_scores()
 returns integer
 language plpgsql
@@ -444,18 +455,35 @@ security definer
 set search_path = public
 as $$
 declare
-  n integer;
+  n integer := 0;
+  r record;
 begin
   if private.legacy_open() then
     return 0;
   end if;
-  update public.profiles p
-    set points = least(p.points, coalesce((select s.baseline_points from public.journal_state s where s.user_id = p.id), 0)),
-        updated_at = now()
+  -- One account at a time: a row from before the limits of migration 0010
+  -- that still breaks one of them (they are re-checked whenever a row is
+  -- updated) is left as it is, with a warning, instead of stopping the
+  -- settlement for everybody.
+  for r in
+    select p.id, coalesce(s.baseline_points, 0) as base_points, coalesce(s.baseline_species, 0) as base_species
+    from public.profiles p
+    left join public.journal_state s on s.user_id = p.id
     where not coalesce(p.is_bot, false)
-      and not exists (select 1 from public.journal_state s where s.user_id = p.id and s.ready_at is not null)
-      and p.points > coalesce((select s.baseline_points from public.journal_state s where s.user_id = p.id), 0);
-  get diagnostics n = row_count;
+      and s.ready_at is null
+      and (p.points > coalesce(s.baseline_points, 0) or p.species_count > coalesce(s.baseline_species, 0))
+  loop
+    begin
+      update public.profiles
+        set points = least(greatest(points, 0), r.base_points),
+            species_count = least(greatest(species_count, 0), r.base_species),
+            updated_at = now()
+        where id = r.id;
+      n := n + 1;
+    exception when check_violation then
+      raise warning 'settle_legacy_scores: account % was left as it is (%)', r.id, sqlerrm;
+    end;
+  end loop;
   return n;
 end;
 $$;

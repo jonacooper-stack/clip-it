@@ -8,9 +8,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
 import {
-  applyEdits, COPY_MESSAGES, deleteSightings, ensureReady, importLegacy, JournalBusy, MAX_SYNC_PHOTOS, recordSighting, refreshTotals, syncJournal,
+  applyEdits, COPY_MESSAGES, deleteSightings, ensureReady, importLegacy, JournalBusy, MAX_SYNC_PHOTOS, publicRow, recordSighting, refreshTotals, syncJournal,
   withJournalLock, type JournalDb, type JournalRow, type JournalState, type Match, type Refusal,
 } from '../api/_lib/journal';
+import { asTheServerCounts, fromCloudRow, type CloudRow } from '../src/lib/journalMerge';
 import { signReceipt, type ReceiptPayload } from '../api/_lib/receipt';
 import { LIBRARY_PRINTS } from '../api/_lib/libraryHashes';
 import { compare, mirrorPrint, photoFingerprint, samePhoto } from '../api/_lib/phash';
@@ -47,7 +48,8 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
     async getRow(uid, sid) { await tick(); return rows.get(key(uid, sid)) ?? null; },
     async liveRows(uid) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid && !r.deleted_at); },
     async countRows(uid) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid).length; },
-    async speciesCount(uid, sci, except) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid && r.scientific_name === sci && r.id !== except).length; },
+    // (Earlier sightings that count: every one the server identified, deleted or not, and phone-scored ones worth something.)
+    async speciesCount(uid, sci, except) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid && r.scientific_name === sci && r.id !== except && (r.verified || r.points > 0)).length; },
     // The same rule as public.journal_look_alikes: sightings the server identified (anyone's), wall photos (anyone's), and the asker's own.
     async lookAlikes(uid, print) {
       await tick();
@@ -377,9 +379,16 @@ test('what the phone claims is bounded per sighting, and by what a name may be',
   }
   await importLegacy(jdb, A, 'legacy-cap1', claim({ caption: 'what the fuck' }), null, NOW);
   assert.equal(row(A, 'legacy-cap1').caption, null);
-  // a sighting scored on a phone can't be older than the app
+  // a photo's own date is kept, however old (it is what the journal shows)…
   await importLegacy(jdb, A, 'legacy-old1', claim({ observedAt: Date.UTC(2015, 0, 5) }), null, NOW);
-  assert.ok(Date.parse(row(A, 'legacy-old1').observed_at) >= Date.UTC(2026, 5, 1));
+  assert.equal(Date.parse(row(A, 'legacy-old1').observed_at), Date.UTC(2015, 0, 5));
+  // …and the base (rarity) points the phone reported are kept for the one quest that looks at them, bounded
+  await importLegacy(jdb, A, 'legacy-base1', claim({ score: { basePoints: 17.4, totalPoints: 99999 } }), null, NOW);
+  await importLegacy(jdb, A, 'legacy-base2', claim({ score: { basePoints: 5000 } }), null, NOW);
+  await importLegacy(jdb, A, 'legacy-base3', claim({ score: 'nonsense' }), null, NOW);
+  assert.deepEqual([row(A, 'legacy-base1').claimed_base, row(A, 'legacy-base2').claimed_base, row(A, 'legacy-base3').claimed_base], [17, 30, null]);
+  assert.equal(row(A, 'legacy-base1').score, null); // never a breakdown, never points
+  assert.equal(row(A, 'legacy-base1').points, 12);
 });
 
 test('until an end date is set the legacy window is open (the clock starts with the server\'s first nightly job, not with the migration)', async () => {
@@ -482,6 +491,16 @@ test('a suggested species marks the sighting disputed; junk suggestions and post
   assert.deepEqual([r.status, r.proposed_species, r.points], ['disputed', 'Bald eagle', row(A, p.sid).points]);
   r = await applyEdits(jdb, row(A, p.sid), { proposedSpecies: 'http://spam.example', wallPostId: 'not-a-uuid' });
   assert.deepEqual([r.proposed_species, r.wall_post_id], ['Bald eagle', null]);
+  for (const junk of ['www.spam.example', 'mail me at a@b.co', '12345', '', '   ', 42]) {
+    assert.equal((await applyEdits(jdb, row(A, p.sid), { proposedSpecies: junk })).proposed_species, 'Bald eagle', String(junk));
+  }
+  // a suggestion that isn't a bare name is tidied, not dropped: the player meant something by it
+  const q = sighting();
+  await recordSighting(jdb, q);
+  r = await applyEdits(jdb, row(A, q.sid), { proposedSpecies: 'Coyote?' });
+  assert.deepEqual([r.status, r.proposed_species], ['disputed', 'Coyote']);
+  r = await applyEdits(jdb, row(A, q.sid), { proposedSpecies: 'I think it is a coyote, not a dog' });
+  assert.deepEqual([r.status, r.proposed_species], ['disputed', 'I think it is a coyote not']);
   r = await applyEdits(jdb, row(A, p.sid), { wallPostId: '20000000-0000-4000-8000-0000000000a1' });
   assert.equal(r.wall_post_id, '20000000-0000-4000-8000-0000000000a1');
   r = await applyEdits(jdb, row(A, p.sid), { wallPostId: null }); // un-shared
@@ -705,9 +724,9 @@ test('erase removes everything saved to the account: rows, markers, notes, photo
   assert.deepEqual(out.prefs, { backup: 'no', places: false, placesSet: true, epoch: new Date(NOW).toISOString() });
   // someone else's journal is untouched
   assert.equal([...rows.values()].filter((r) => r.user_id === B).length, 1);
-  // the score falls back to what is left of the carried-over baseline, and never rises again by erasing
-  assert.ok(profiles.get(A)!.points <= 300);
-  assert.equal(profiles.get(A)!.species_count, 0);
+  // the score goes with the journal: nothing is left on the leaderboard, carried-over part included
+  assert.deepEqual(profiles.get(A), { points: 0, species_count: 0 });
+  assert.equal(state(A).carryover_points, 0);
   // nothing more is stored afterwards
   const again = sighting();
   assert.deepEqual((await syncJournal(jdb, A, { items: [{ id: again.sid, receipt: signReceipt(again) }] }, { now: NOW })).rows, {});
@@ -724,4 +743,150 @@ test('a stored photo that could not be removed is tried again; the marker says s
   storage.failing = false;
   await deleteSightings(jdb, A, [shot.sid], NOW + 1000); // the app's retry, or the nightly job
   assert.deepEqual([row(A, shot.sid).has_photo, photos.size], [false, 0]);
+});
+
+// ---------- found by the scoring review ----------
+test('an account that switches after the legacy window keeps its score once: re-checked old sightings come off the carry-over', async () => {
+  const { jdb, profiles, existing, state, row } = fakeDb(NOW - DAY); // the window has closed
+  existing(A, 900, 20000);
+  // the old journal arrives late: thirty sightings of ten species, worth nothing now
+  const species = Array.from({ length: 10 }, (_, i) => `Avis numero${String.fromCharCode(97 + i)}`);
+  const items = Array.from({ length: 30 }, (_, i) => ({ id: `old-${String(i).padStart(4, '0')}`, legacy: claim({ sci: species[i % 10], common: species[i % 10], group: 'bird', points: 30, observedAt: NOW - (40 + i) * DAY, loggedAt: NOW - (40 + i) * DAY }) }));
+  let out = await syncJournal(jdb, A, { items }, { now: NOW });
+  assert.equal(out.totals!.points, 900); // the whole baseline is carried over
+  // the server identifies them itself, one by one (the app sends each photo again)
+  const seen: number[] = [];
+  for (let i = 0; i < 30; i++) {
+    await recordSighting(jdb, sighting({ sid: items[i].id, id: { sci: species[i % 10], common: species[i % 10], group: 'bird', rarity: 0.5 } }));
+    seen.push((await refreshTotals(jdb, A, NOW))!.points);
+  }
+  // the score never drops and never doubles: what the re-checked sightings now earn comes off what was carried over
+  assert.ok(seen.every((p) => p >= 900), `dropped: ${Math.min(...seen)}`);
+  const earned = [...Array(30).keys()].reduce((n, i) => n + row(A, items[i].id).points, 0);
+  assert.ok(earned > 100, String(earned));
+  assert.ok(seen[29] <= Math.max(900, earned + 400), `rose to ${seen[29]} with ${earned} earned`); // (+ quest rewards at most)
+  assert.ok(seen[29] < 900 + earned, `counted twice: ${seen[29]}`);
+  assert.ok(state(A).carryover_points < 900);
+  assert.equal(profiles.get(A)!.points, seen[29]);
+  out = await syncJournal(jdb, A, {}, { now: NOW });
+  assert.equal(out.totals!.points, seen[29]); // stable
+});
+
+test('old sightings the server re-checks are scored in order: the first of a species gets its bonus, not "third of three"', async () => {
+  const { jdb, row } = fakeDb(NOW - DAY); // window closed: the phone-scored rows are worth nothing
+  const ids = ['robin-000001', 'robin-000002', 'robin-000003', 'squirrel-0001'];
+  const names = ['Turdus migratorius', 'Turdus migratorius', 'Turdus migratorius', 'Sciurus carolinensis'];
+  await syncJournal(jdb, A, { items: ids.map((id, i) => ({ id, legacy: claim({ sci: names[i], common: names[i], points: 11 }) })) }, { now: NOW });
+  assert.deepEqual(ids.map((id) => row(A, id).points), [0, 0, 0, 0]);
+  for (const [i, id] of ids.entries()) await recordSighting(jdb, sighting({ sid: id, id: { sci: names[i], common: names[i], rarity: 0.5 } }));
+  assert.deepEqual(ids.map((id) => row(A, id).points), [11, 3, 2, 11]); // as if the server had identified them in the first place
+  assert.deepEqual(ids.map((id) => row(A, id).score!.bonuses.firstOfSpecies), [5, 0, 0, 5]);
+  // a phone-scored sighting that IS worth something still counts as an earlier sighting of its species
+  const second = fakeDb();
+  second.existing(A, 0, 5000);
+  await syncJournal(second.jdb, A, { items: [{ id: 'heron-000001', legacy: claim({ sci: 'Ardea herodias', common: 'Great blue heron', points: 12 }) }] }, { now: NOW });
+  const fresh2 = sighting({ id: { sci: 'Ardea herodias', common: 'Great blue heron', rarity: 0.5 } });
+  await recordSighting(second.jdb, fresh2);
+  assert.equal(second.row(A, fresh2.sid).score!.bonuses.firstOfSpecies, 0);
+  // and a deleted server-identified sighting still does (delete-and-re-add can't bring the bonus back)
+  await deleteSightings(jdb, A, ['squirrel-0001'], NOW);
+  const again = sighting({ id: { sci: 'Sciurus carolinensis', common: 'Eastern gray squirrel', rarity: 0.5 } });
+  await recordSighting(jdb, again);
+  assert.equal(row(A, again.sid).score!.bonuses.firstOfSpecies, 0);
+});
+
+test('a phone-scored sighting can complete "a rare find" with the base points the phone reported, inside the allowance', async () => {
+  const withBase = fakeDb();
+  withBase.existing(A, 0, 5000);
+  const without = fakeDb();
+  without.existing(A, 0, 5000);
+  // the same old journal, once with the phone's score breakdown and once without
+  const week = Array.from({ length: 6 }, (_, i) => ({ observedAt: NOW - (2 + i * 7) * DAY, loggedAt: NOW - (2 + i * 7) * DAY }));
+  const items = (score: boolean) => week.map((w, i) => ({ id: `rare-${String(i).padStart(5, '0')}`, legacy: claim({ ...w, sci: madeUp(i), common: madeUp(i), points: 26, ...(score ? { score: { basePoints: 21, totalPoints: 26 } } : {}) }) }));
+  const a = await syncJournal(withBase.jdb, A, { tz: 'UTC', items: items(true) }, { now: NOW });
+  const b = await syncJournal(without.jdb, A, { tz: 'UTC', items: items(false) }, { now: NOW });
+  assert.ok(a.totals!.points >= b.totals!.points);
+  // (whether a given week had the rare-find quest depends on that week's draw; over six weeks at least one did)
+  assert.ok(a.totals!.points > b.totals!.points, `${a.totals!.points} vs ${b.totals!.points}`);
+  // nothing is ever recomputed into points from it, and it stays inside the allowance
+  assert.ok([...withBase.rows.values()].every((r) => r.points === 26 && r.score === null));
+  const capped = fakeDb();
+  capped.existing(A, 0, 50);
+  const c = await syncJournal(capped.jdb, A, { tz: 'UTC', items: items(true) }, { now: NOW });
+  assert.equal(c.totals!.points, 50);
+});
+
+test('the species count shown at the switch is carried over with the score, until the old journal is accounted for', async () => {
+  const { jdb, states, state, existing } = fakeDb(NOW - DAY); // window closed
+  existing(A, 300, 20000);
+  states.set(A, { ...state(A), baseline_species: 12 });
+  const out = await syncJournal(jdb, A, { items: [{ id: 'old-000001', legacy: claim({ points: 20 }) }] }, { now: NOW });
+  assert.deepEqual(out.totals, { points: 300, speciesCount: 12 }); // not "300 points, 0 species"
+  // a new account has no baseline, and shows what it has
+  const fresh3 = fakeDb();
+  const p = sighting();
+  await recordSighting(fresh3.jdb, p);
+  assert.equal((await syncJournal(fresh3.jdb, A, {}, { now: NOW })).totals!.speciesCount, 1);
+});
+
+test('a phone-scored sighting dated before the app existed counts for quests when it was handed in, not in a week long gone', async () => {
+  const dated = fakeDb();
+  dated.existing(A, 0, 5000);
+  const today = fakeDb();
+  today.existing(A, 0, 5000);
+  const old = Date.UTC(2019, 4, 6, 12);
+  const items = (observedAt: number) => Array.from({ length: 6 }, (_, i) => ({ id: `past-${String(i).padStart(5, '0')}`, legacy: claim({ observedAt: observedAt + i * 3600_000, loggedAt: NOW - DAY, sci: madeUp(i), common: madeUp(i), points: 10 }) }));
+  const a = await syncJournal(dated.jdb, A, { tz: 'UTC', items: items(old) }, { now: NOW });
+  const b = await syncJournal(today.jdb, A, { tz: 'UTC', items: items(NOW - 2 * 3600_000 - 6 * 3600_000) }, { now: NOW });
+  assert.equal(a.totals!.points, b.totals!.points); // six sightings in 2019 earn what six sightings handed in today earn
+  assert.equal(Date.parse(dated.row(A, 'past-00000').observed_at), old); // while the journal keeps the photo's own date
+});
+
+// ---------- the phone shows what the server counts ----------
+test('quest progress on the phone follows the server: the same sightings count, in the same weeks, for the same rewards', async () => {
+  const { jdb, rows, existing } = fakeDb();
+  existing(A, 0, 5000); // room for phone-scored sightings, no old score to carry over
+  const at = (sid: string, recorded: number) => rows.set(`${A}/${sid}`, { ...rows.get(`${A}/${sid}`)!, recorded_at: new Date(recorded).toISOString() });
+  const record = async (over: Parameters<typeof sighting>[0], recorded = NOW - 3600_000) => {
+    const p = sighting(over);
+    await recordSighting(jdb, p);
+    at(p.sid, recorded);
+    return p;
+  };
+  // Taken and handed in this week.
+  const first = await record({ observedAt: NOW - 2 * DAY, id: { sci: 'Turdus migratorius', common: 'American robin', group: 'bird', rarity: 0.3 } });
+  await record({ observedAt: NOW - DAY, id: { sci: 'Vulpes vulpes', common: 'Red fox', group: 'mammal', rarity: 0.6, tags: ['hunting'] } });
+  // The same file again: kept, worth nothing.
+  const again = await record({ sha: first.sha, phash: first.phash, observedAt: NOW - DAY, id: { sci: 'Turdus migratorius', common: 'American robin', group: 'bird', rarity: 0.3 } });
+  assert.equal(rows.get(`${A}/${again.sid}`)!.points, 0);
+  // From the camera roll, taken weeks ago, handed in today: four more species.
+  for (let i = 0; i < 4; i++) await record({ capture: 'library', cameraEvidence: true, observedAt: NOW - (20 + i) * DAY, id: { sci: madeUp(i), common: madeUp(i), group: i % 2 ? 'bird' : 'mammal', rarity: 0.3 } });
+  // Taken six days before it was handed in: still counts in its own week.
+  await record({ observedAt: NOW - 30 * DAY, id: { sci: madeUp(9), common: madeUp(9), group: 'bird', rarity: 0.3 } }, NOW - 24 * DAY);
+  // The old journal, scored on the phone: some from this autumn, some dated before the app existed.
+  await syncJournal(jdb, A, {
+    tz: 'UTC',
+    items: [
+      { id: 'old-00001', legacy: claim({ observedAt: NOW - 40 * DAY, loggedAt: NOW - 40 * DAY, sci: madeUp(11), common: madeUp(11), group: 'bird', points: 9 }) },
+      { id: 'old-00002', legacy: claim({ observedAt: Date.UTC(2019, 4, 6, 12), loggedAt: NOW - 39 * DAY, sci: madeUp(12), common: madeUp(12), group: 'reptile', points: 9 }) },
+      { id: 'old-00003', legacy: claim({ observedAt: Date.UTC(2019, 4, 7, 12), loggedAt: NOW - 39 * DAY, sci: madeUp(13), common: madeUp(13), group: 'amphibian', points: 0 }) },
+    ],
+  }, { now: NOW });
+  const server = (await refreshTotals(jdb, A, NOW))!;
+
+  // A phone that has just pulled this journal:
+  const phone = [...rows.values()].filter((r) => !r.deleted_at).map((r) => fromCloudRow(publicRow(r) as unknown as CloudRow, NOW));
+  const opts = { seed: A, zone: ianaZone('UTC'), now: NOW };
+  const counted = playerTotals(asTheServerCounts(phone), opts);
+  assert.deepEqual({ points: counted.points, speciesCount: counted.speciesCount }, { points: server.points, speciesCount: server.speciesCount });
+  assert.ok(counted.questPoints > 0);
+  // Counting the journal as it stands would say something else, on both counts
+  // (the photo handed in twice and the 0-point import; the weeks of the late ones).
+  const asItStands = playerTotals(phone, opts);
+  assert.notEqual(asItStands.questPoints, counted.questPoints);
+  assert.equal(asTheServerCounts(phone).length, phone.length - 2);
+  // What the journal shows is not touched: the list is for counting only.
+  const late = phone.find((s) => s.species?.scientificName === madeUp(0))!;
+  assert.equal(late.observedAt, NOW - 20 * DAY);
+  assert.equal(asTheServerCounts(phone).find((s) => s.id === late.id)!.observedAt, NOW - 3600_000);
 });

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyCloudRow, applyPushAnswer, applyPushAnswers, belongsInCloud, forgetCloudCopies, fromCloudRow, mergeCloud, mergeRows, needsPush, prefsToSend, pushItem,
+  applyCloudRow, applyPushAnswer, applyPushAnswers, asTheServerCounts, belongsInCloud, forgetCloudCopies, fromCloudRow, mergeCloud, mergeRows, needsPush, prefsToSend, pushItem,
   nextPullCursor, repairSighting, takePrefs, worthReidentifying, type CloudRow, type PullCursor,
 } from '../src/lib/journalMerge';
 import type { Sighting } from '../src/types';
@@ -304,4 +304,51 @@ test('reading the cloud journal page by page misses nothing, even when rows chan
   assert.deepEqual(nextPullCursor({ skip: 0 }, [{ updated_at: stamp(1) }, { updated_at: stamp(2) }, { updated_at: stamp(2) }]), { from: stamp(2), skip: 2 });
   assert.deepEqual(nextPullCursor({ from: stamp(2), skip: 2 }, [{ updated_at: stamp(2) }, { updated_at: stamp(2) }]), { from: stamp(2), skip: 4 });
   assert.deepEqual(nextPullCursor({ from: stamp(2), skip: 2 }, []), { from: stamp(2), skip: 2 });
+});
+
+// ---------- what quests count, once the server keeps the score ----------
+test('for quests, a sighting the server counts for nothing is left out; one it has not got yet counts as scored here', () => {
+  const DAY = 86_400_000;
+  const kept = local('a', { cloudAt: NOW, verified: true, cloudPoints: 11 });
+  const journal = [
+    kept,
+    local('twice', { cloudAt: NOW, verified: true, points: 0, cloudPoints: 0 }), // the player's own photo handed in again
+    local('late', { cloudAt: NOW, verified: false, points: 12, cloudPoints: 0 }), // phone-scored, arrived after the cut-off: the journal still shows 12
+    local('refused', { cloudSkip: true }), // the server won't take it
+    local('recorded-now', { cloudAt: NOW, verified: true, points: 0 }), // recorded when it was identified; not pulled yet
+    local('new', {}), // not sent yet
+    local('queued', { idStatus: 'queued', points: undefined, score: undefined }),
+  ];
+  const counted = asTheServerCounts(journal);
+  assert.deepEqual(counted.map((s) => s.id), ['a', 'new', 'queued']);
+  assert.equal(counted[0], kept); // unchanged sightings are the same objects (nothing is copied needlessly)
+  assert.equal(journal.length, 7); // and the journal itself is left alone
+
+  // Which week: handed in more than a week after it was taken → the week it was handed in.
+  const taken = NOW - 20 * DAY;
+  const upload = local('u', { observedAt: taken, createdAt: NOW - 60_000, cloudAt: NOW, verified: true, cloudPoints: 5, recordedAt: NOW - 30_000 });
+  assert.equal(asTheServerCounts([upload])[0].observedAt, NOW - 30_000);
+  assert.equal(upload.observedAt, taken);
+  // …going by when this phone logged it until the server's own time is known,
+  assert.equal(asTheServerCounts([{ ...upload, recordedAt: undefined }])[0].observedAt, NOW - 60_000);
+  // …also for one still waiting to go up with the server's signed note,
+  assert.equal(asTheServerCounts([local('r', { observedAt: taken, createdAt: NOW - 60_000, receipt: 'signed' })])[0].observedAt, NOW - 60_000);
+  // …and not when it was handed in within the week.
+  const prompt = local('p', { observedAt: NOW - 6 * DAY, createdAt: NOW, cloudAt: NOW, verified: true, cloudPoints: 5, recordedAt: NOW });
+  assert.equal(asTheServerCounts([prompt])[0], prompt);
+  // A phone-scored sighting counts when it was taken, however late it arrived, unless it is dated before the app existed.
+  const old = local('o', { observedAt: taken, createdAt: taken, cloudAt: NOW, verified: false, cloudPoints: 11, recordedAt: NOW });
+  assert.equal(asTheServerCounts([old])[0].observedAt, taken);
+  const ancient = local('x', { observedAt: Date.UTC(2019, 4, 6), createdAt: NOW - DAY, cloudAt: NOW, verified: false, cloudPoints: 11, recordedAt: NOW });
+  assert.equal(asTheServerCounts([ancient])[0].observedAt, NOW);
+});
+
+test('when the server recorded a sighting is kept with it, and forgotten with the cloud copy', () => {
+  const recorded = new Date(NOW - 1000).toISOString();
+  assert.equal(fromCloudRow(cloud('a', { recorded_at: recorded }), NOW).recordedAt, NOW - 1000);
+  assert.equal(fromCloudRow(cloud('a'), NOW).recordedAt, undefined);
+  const updated = applyCloudRow(local('a'), cloud('a', { recorded_at: recorded }), NOW);
+  assert.equal(updated.recordedAt, NOW - 1000);
+  assert.equal(applyCloudRow(updated, cloud('a'), NOW).recordedAt, NOW - 1000); // an answer without it doesn't wipe it
+  assert.equal(forgetCloudCopies([updated])[0].recordedAt, undefined);
 });

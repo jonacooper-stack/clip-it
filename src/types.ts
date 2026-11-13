@@ -68,6 +68,8 @@ export interface Sighting {
   evidence?: PhotoEvidence;
   /** When the server last confirmed it holds this sighting. Unset: not in the cloud yet. */
   cloudAt?: number;
+  /** When the server recorded it. (A sighting handed in more than a week after it was taken counts, for quests, in the week it was handed in.) */
+  recordedAt?: number;
   /** Counts the player's changes to what the cloud keeps (field notes, a suggested species, the wall post). */
   rev?: number;
   /** The `rev` the server has. A higher `rev` means a change still waiting to be sent. */

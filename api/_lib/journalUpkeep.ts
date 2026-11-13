@@ -173,5 +173,10 @@ export async function startLegacyClock(db: SupabaseClient): Promise<boolean> {
 // legacy window is open.
 export async function settleLegacyScores(db: SupabaseClient): Promise<number> {
   const { data, error } = await db.rpc('settle_legacy_scores');
-  return error ? 0 : Number(data ?? 0);
+  if (error) {
+    // (Before migration 0011 the function isn't there: nothing to settle.)
+    if (!/settle_legacy_scores/.test(error.message) || !/find|exist/i.test(error.message)) log('legacy_settle_error', { detail: error.message.slice(0, 200) });
+    return 0;
+  }
+  return Number(data ?? 0);
 }

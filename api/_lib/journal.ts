@@ -13,7 +13,7 @@
 // by the database when the migration ran.
 import { createHash } from 'crypto';
 import { applyFieldNotesBonus, MAX_TOTAL_POINTS, scoreSighting, type ScoreBreakdown } from '../../shared/scoring';
-import { playerTotals, type QuestSighting } from '../../shared/quests';
+import { countsAt, playerTotals, type QuestSighting } from '../../shared/quests';
 import { canonicalTimeZone, ianaZone } from '../../shared/zone';
 import { cleanName, hasBlockedLanguage, tidyName } from '../../shared/moderation';
 import { cleanFieldNotes } from '../../shared/fieldNotes';
@@ -49,8 +49,10 @@ export interface JournalRow {
   caption: string | null;
   dangerous: boolean;
   points: number;
-  /** For a phone-scored sighting: what the phone said it was worth. */
+  /** For a phone-scored sighting: what the phone said it was worth… */
   claimed_points?: number | null;
+  /** …and the base (rarity) points in that, which one quest rule looks at. Never turned into points. */
+  claimed_base?: number | null;
   score: ScoreBreakdown | null;
   verified: boolean;
   capture: 'camera' | 'library' | null;
@@ -68,9 +70,9 @@ export interface JournalRow {
 
 // What the owner's app is sent: the row without the server's own notes
 // (review flags, photo fingerprints, which model answered).
-export type PublicRow = Omit<JournalRow, 'flags' | 'photo_sha' | 'photo_phash' | 'photo_mask' | 'model' | 'claimed_points'>;
+export type PublicRow = Omit<JournalRow, 'flags' | 'photo_sha' | 'photo_phash' | 'photo_mask' | 'model' | 'claimed_points' | 'claimed_base'>;
 export function publicRow(r: JournalRow): PublicRow {
-  const { flags: _f, photo_sha: _s, photo_phash: _p, photo_mask: _k, model: _m, claimed_points: _c, ...rest } = r;
+  const { flags: _f, photo_sha: _s, photo_phash: _p, photo_mask: _k, model: _m, claimed_points: _c, claimed_base: _b, ...rest } = r;
   return rest;
 }
 
@@ -80,6 +82,8 @@ export interface JournalState {
   ready_at: string | null;
   /** What the leaderboard showed for this account when the migration ran (fixed by the database, capped). */
   baseline_points: number;
+  /** The species count it showed then (shown while part of that score is still carried over). */
+  baseline_species?: number;
   /** How much of that baseline the uploaded journal doesn't account for yet. Only ever shrinks. */
   carryover_points: number;
   /** The most that phone-scored sightings may add to this account's score (fixed by the database). */
@@ -127,7 +131,14 @@ export interface JournalDb {
   liveRows(uid: string): Promise<JournalRow[]>;
   /** Every row the account has, deletion markers included. */
   countRows(uid: string): Promise<number>;
-  /** How many sightings of this species the account has ever recorded, deleted ones included, other than `exceptSid`. */
+  /**
+   * How many earlier sightings of this species count for the account, other
+   * than `exceptSid`: every one the server identified (deleted ones included,
+   * so delete-and-re-add can't reset a species), and phone-scored ones that
+   * are worth something. A phone-scored sighting the server counts for
+   * nothing is not an earlier sighting: when the server identifies those
+   * themselves, the first is "first of its species", not the third.
+   */
   speciesCount(uid: string, sci: string, exceptSid: string): Promise<number>;
   /**
    * Stored pictures that are, or look like, this one: sightings the server
@@ -175,8 +186,6 @@ export const MAX_ROWS = 20_000;
 const MAX_NEW_MARKERS = 20;
 // The copy kept with a sighting: the app sends a JPEG of 150–400 KB.
 const MAX_PHOTO_BYTES = 700_000;
-// Sightings scored on a phone can't be older than the app.
-const APP_START = Date.UTC(2026, 5, 1);
 const SID = /^[A-Za-z0-9_-]{6,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
@@ -234,21 +243,24 @@ export interface Totals {
   speciesCount: number;
 }
 
-// A row as the quest rules see it. A sighting counts in the week it was
-// taken, unless it was handed in more than a week after that: then it counts
-// when it was handed in. (Otherwise old dates on photos could be used to
-// complete weekly quests for weeks long gone.)
+// A row as the quest rules see it. Which week it counts in is decided by
+// shared/quests countsAt: the week it was taken, or, for a sighting handed in
+// more than a week late, the week it was handed in. Its own date is kept for
+// the journal. The app applies the same rule to the quest progress it shows:
+// src/lib/journalMerge.ts asTheServerCounts.
 function toQuestSighting(r: JournalRow): QuestSighting {
   const observed = Date.parse(r.observed_at);
   const recorded = r.recorded_at ? Date.parse(r.recorded_at) : observed;
   return {
     idStatus: r.status ?? 'rejected',
     points: r.points,
-    observedAt: r.verified && recorded - observed > 7 * 86_400_000 ? recorded : observed,
+    observedAt: countsAt({ observedAt: observed, handedInAt: recorded, serverScored: r.verified }),
     species: r.scientific_name ? { scientificName: r.scientific_name, commonName: r.common_name ?? r.scientific_name, group: r.taxon_group ?? undefined } : undefined,
     sceneTags: r.scene_tags ?? [],
     science: r.science ?? undefined,
-    score: r.score ? { basePoints: r.score.basePoints } : undefined,
+    // (For a phone-scored sighting there is no breakdown, only the base the
+    // phone reported: enough for the quest that asks for a rare find.)
+    score: r.score ? { basePoints: r.score.basePoints } : typeof r.claimed_base === 'number' ? { basePoints: r.claimed_base } : undefined,
   };
 }
 
@@ -275,10 +287,20 @@ export async function computeTotals(jdb: JournalDb, uid: string, state: JournalS
   const zone = ianaZone(canonicalTimeZone(state?.tz) ?? 'UTC');
   const all = playerTotals(rows.map(toQuestSighting), { seed: uid, zone, now });
   const fromPhone = playerTotals(rows.filter((r) => !r.verified).map(toQuestSighting), { seed: uid, zone, now });
+  // Sightings from the old journal that the server has since identified
+  // itself (the phone's claim stays on the row: see recordSighting). They are
+  // part of what the baseline stood for, so they come off the carry-over too:
+  // otherwise an account that switched after the legacy window would keep its
+  // whole old score and earn every old sighting again on top.
+  const upgraded = playerTotals(rows.filter((r) => r.verified && r.claimed_points != null).map(toQuestSighting), { seed: uid, zone, now });
   const allowance = state?.legacy_allowance ?? 0;
   const overAllowance = Math.max(0, fromPhone.points - allowance);
-  const carryover = state ? Math.min(state.carryover_points, Math.max(0, state.baseline_points - Math.min(fromPhone.points, allowance))) : 0;
-  return { points: Math.max(0, all.points - overAllowance) + carryover, speciesCount: all.speciesCount, carryover };
+  const accounted = Math.min(fromPhone.points, allowance) + upgraded.points;
+  const carryover = state ? Math.min(state.carryover_points, Math.max(0, state.baseline_points - accounted)) : 0;
+  // While part of the old score is still carried over, so is the species
+  // count the leaderboard showed with it.
+  const speciesCount = carryover > 0 ? Math.max(all.speciesCount, state?.baseline_species ?? 0) : all.speciesCount;
+  return { points: Math.max(0, all.points - overAllowance) + carryover, speciesCount, carryover };
 }
 
 // Write the account's score to the leaderboard. Only once the account has
@@ -441,6 +463,8 @@ export interface LegacyClaim {
   caption?: unknown;
   dangerous?: unknown;
   points?: unknown;
+  /** The phone's score breakdown. Only its base points are read, and only for a quest rule. */
+  score?: unknown;
   capture?: unknown;
 }
 
@@ -469,14 +493,16 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
   const open = (until == null || now < until) && (state?.legacy_allowance ?? 0) > 0;
   const claimed = typeof claim.points === 'number' && Number.isFinite(claim.points) ? clamp(Math.round(claim.points), 0, MAX_TOTAL_POINTS) : 0;
 
-  const observedAt = saneTime(claim.observedAt, now, now, APP_START);
+  const base = claim.score && typeof claim.score === 'object' ? (claim.score as { basePoints?: unknown }).basePoints : undefined;
+  // (The photo's own date is kept, however old: see toQuestSighting for when it counts.)
+  const observedAt = saneTime(claim.observedAt, now, now);
   const where = placeToStore(claim.lat, claim.lng, opts.places === true);
   const caption = typeof claim.caption === 'string' ? claim.caption.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
   const row: JournalRow = {
     user_id: uid,
     id: sid,
     observed_at: iso(observedAt),
-    logged_at: iso(saneTime(claim.loggedAt, observedAt, now, APP_START)),
+    logged_at: iso(saneTime(claim.loggedAt, observedAt, now)),
     recorded_at: iso(now),
     deleted_at: null,
     lat: where.lat,
@@ -491,6 +517,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
     dangerous: claim.dangerous === true,
     points: open ? claimed : 0,
     claimed_points: claimed,
+    claimed_base: typeof base === 'number' && Number.isFinite(base) ? clamp(Math.round(base), 0, 30) : null,
     score: null,
     verified: false,
     capture: claim.capture === 'camera' || claim.capture === 'library' ? claim.capture : null,
@@ -541,7 +568,10 @@ export async function applyEdits(jdb: JournalDb, row: JournalRow, edits: Edits):
     }
   }
   if (edits.proposedSpecies !== undefined) {
-    const proposed = cleanName(edits.proposedSpecies, 80);
+    // (Tidied rather than refused: "Coyote?" or "I think it's a coyote" is
+    // still a suggestion. A link or an address is not.)
+    const raw = typeof edits.proposedSpecies === 'string' ? edits.proposedSpecies : '';
+    const proposed = /https?:|www\.|@|\.[a-z]{2,6}(\/|\s|$)/i.test(raw) ? null : cleanName(raw, 80) ?? tidyName(raw, 80);
     if (proposed && proposed !== row.proposed_species) {
       patch.proposed_species = proposed;
       patch.status = 'disputed';
@@ -598,7 +628,7 @@ export async function deleteSightings(jdb: JournalDb, uid: string, sids: string[
     if (!row.deleted_at) {
       await jdb.updateRow(uid, sid, {
         deleted_at: iso(now), observed_at: iso(now), logged_at: iso(now), recorded_at: iso(now),
-        status: null, common_name: null, taxon_group: null, lat: null, lng: null, caption: null, points: 0, claimed_points: null, score: null,
+        status: null, common_name: null, taxon_group: null, lat: null, lng: null, caption: null, points: 0, claimed_points: null, claimed_base: null, score: null,
         science: null, proposed_species: null, wall_post_id: null, flags: null, confidence: null, scene_tags: [], capture: null, model: null,
       });
     }
@@ -624,10 +654,12 @@ function deletionMarker(uid: string, sid: string, now: number): JournalRow {
 // when the player turns the backup off and asks for what was saved to be
 // deleted, and when an account turns out to belong to someone under 13.
 // Afterwards the account's answer stands at "no": nothing more is stored.
+// The score goes with the journal it was worked out from, including any part
+// carried over from before scores moved to the server: the leaderboard shows 0.
 export async function eraseJournal(jdb: JournalDb, uid: string, now = Date.now()): Promise<void> {
   await jdb.purgePhotos(uid);
   await jdb.deleteJournal(uid);
-  await jdb.saveState(uid, { tz: null, backup: 'no', save_places: false, erased_at: iso(now) });
+  await jdb.saveState(uid, { tz: null, backup: 'no', save_places: false, erased_at: iso(now), carryover_points: 0 });
 }
 
 // ---------- the switch to server-kept scores ----------

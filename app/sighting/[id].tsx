@@ -145,7 +145,9 @@ export default function SightingDetail() {
             <Text style={styles.queuedText}>
               {(sighting.retry?.attempts ?? 0) >= MAX_AUTO_RETRIES
                 ? 'We tried several times and couldn’t identify this photo. You can try again, or remove it from your journal.'
-                : 'Your photo is saved. ClipIt will identify it and add your points as soon as it can reach the identifier.'}
+                : sighting.retry?.why === 'limit' && Date.now() < sighting.retry.nextAt
+                  ? 'Today’s limit for scored sightings has been reached. Your photo is saved, and ClipIt will identify it and add your points once the limit resets.'
+                  : 'Your photo is saved. ClipIt will identify it and add your points as soon as it can reach the identifier.'}
             </Text>
             {Platform.OS !== 'web' && (
               <Button label="Try now" icon="refresh" variant="secondary" size="md" loading={retrying} onPress={retryNow} style={styles.retryBtn} />

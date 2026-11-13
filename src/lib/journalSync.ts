@@ -40,6 +40,7 @@ import { resizedBase64 } from './prepareImage';
 import { downloadPhoto, resolvePhoto } from './photoStore';
 import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
 import { accountCreatedHere, applyPlacesDefault, askAboutBackup, chooseBackup } from './backupChoice';
+import { msToDailyReset } from './retry';
 import { ageIsSettled } from '../../shared/age';
 import { approxPlace } from '../../shared/place';
 
@@ -355,6 +356,22 @@ async function pull(uid: string): Promise<void> {
   }
   if (newest && newest !== since) {
     patchCloud({ pulledAt: newest });
+    // Something changed that this device may not have caused (a sighting
+    // logged on another device): the score has probably changed with it.
+    await readTotals(uid);
+  }
+}
+
+// The score as the server last worked it out is also on the player's own
+// leaderboard row (the server writes both together). Reading it there keeps
+// Profile in step with the board without another request to the server.
+async function readTotals(uid: string): Promise<void> {
+  if (!supabase || cloudState()?.ready !== true) return; // until the server keeps the score, that row is the app's own number
+  const { data, error } = await supabase.from('profiles').select('points, species_count').eq('id', uid).maybeSingle();
+  const row = data as { points?: unknown; species_count?: unknown } | null;
+  if (error || !row || !stillFor(uid) || cloudState()?.ready !== true) return;
+  if (typeof row.points === 'number' && typeof row.species_count === 'number') {
+    patchCloud({ totals: { points: row.points, speciesCount: row.species_count } });
   }
 }
 
@@ -441,8 +458,10 @@ export async function purgeCloudPhotos(): Promise<void> {
 // and from then on it is a sighting the server scored itself. A few per sync;
 // each one is a normal identification and counts toward the daily limits.
 const reidentified = new Set<string>();
+let reidentifyNotBefore = 0;
 async function reidentify(uid: string): Promise<void> {
   if (Platform.OS === 'web') return; // a browser tab's photos don't outlive the page
+  if (Date.now() < reidentifyNotBefore) return; // today's allowance is used up
   const todo = useJournalStore
     .getState()
     .sightings.filter((s) => worthReidentifying(s) && s.photoUri && !isCloudRef(s.photoUri) && !reidentified.has(s.id))
@@ -463,6 +482,15 @@ async function reidentify(uid: string): Promise<void> {
     }
     if (!stillFor(uid)) throw new SyncStop(0);
     if (outcome.source !== 'ai') continue; // a stand-in result (development builds): not the server's word
+    if (outcome.limited) {
+      // Today's allowance for sightings that score is used up. That says
+      // nothing about this sighting: leave it as it is and come back after
+      // the allowance resets.
+      reidentified.delete(s.id);
+      reidentifyNotBefore = Date.now() + msToDailyReset();
+      return;
+    }
+    if (outcome.totals) patchCloud({ totals: outcome.totals });
     const row = outcome.recorded ? outcome.journal : undefined;
     useJournalStore.getState().applySync((st) => ({
       sightings: st.sightings.map((x) => {
@@ -478,6 +506,7 @@ async function reidentify(uid: string): Promise<void> {
             verified: row.verified,
             cloudPoints: row.points,
             cloudPhoto: row.has_photo,
+            recordedAt: row.recorded_at ? Date.parse(row.recorded_at) || x.recordedAt : x.recordedAt,
           };
         }
         // The server looked and says it can't score (not a wild animal, or not the player's own photo).

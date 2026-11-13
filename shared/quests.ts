@@ -44,6 +44,22 @@ export function distinctSpecies<S extends QuestSighting>(sightings: S[]): S[] {
   return [...byName.values()];
 }
 
+// ---------- when a sighting counts ----------
+// A sighting counts in the week it was taken, unless it was handed in more
+// than a week after that: then it counts when it was handed in. (Otherwise
+// old dates on photos could be used to complete weekly quests for weeks long
+// gone.) One that was scored on a phone, before scores moved to the server,
+// counts when it was taken, unless it is dated before the app existed.
+// The server works out the score with this rule (api/_lib/journal.ts), and
+// the app shows quest progress with it (src/lib/journalMerge.ts).
+export const APP_START = Date.UTC(2026, 5, 1);
+const HANDED_IN_LATE_MS = 7 * 86_400_000;
+
+export function countsAt(s: { observedAt: number; handedInAt: number; serverScored: boolean }): number {
+  const late = s.serverScored ? s.handedInAt - s.observedAt > HANDED_IN_LATE_MS : s.observedAt < APP_START;
+  return late ? s.handedInAt : s.observedAt;
+}
+
 // ---------- the big quests ----------
 export interface Quest {
   id: string;

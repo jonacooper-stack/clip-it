@@ -280,8 +280,13 @@ select t.is('window closed: a post without a journal sighting carries no points'
 select t.is('window closed: a post that shares a real sighting still gets its points', t.then_(:'B', format($q$insert into public.feed_posts (id, user_id, common_name, points, sighting_id) values ('20000000-0000-4000-8000-0000000000b9', %L, 'x', 1, 'sight-b-1')$q$, :'B'), $r$select points::text from public.feed_posts where id = '20000000-0000-4000-8000-0000000000b9'$r$), 'ok:1/30');
 -- 17b. when the window ends, an account that never switched goes back to what it had at the migration
 select t.is('a player cannot run the settlement', t.try(:'D', 'select public.settle_legacy_scores()'), 'error:42501');
-select t.is('unswitched accounts are settled…', (select public.settle_legacy_scores()::text), '2');
+-- (B also reported a species count during the window; the made-up row from before the limits is still there.)
+update public.profiles set species_count = 40 where id = :'B';
+select t.is('unswitched accounts are settled, one by one…', (select public.settle_legacy_scores()::text), '2');
 select t.is('…back to what they had at the migration (D: 9999 reported, 12 then; B: 55 reported, 0 then)', (select points::text from public.profiles where id = :'B') || '/' || (select points::text from public.profiles where id = :'D'), '0/12');
+select t.is('…species count included', (select species_count::text from public.profiles where id = :'B'), '0');
+select t.is('a row that still breaks an old limit is left as it is and does not stop the others', (select points || '/' || species_count from public.profiles where id = '00000000-0000-4000-8000-0000000000a9'), '99999/300000');
+select t.is('the species count shown at the migration is kept as a baseline (capped)', (select baseline_species::text from public.journal_state where user_id = '00000000-0000-4000-8000-0000000000a9') || '/' || (select baseline_species::text from public.journal_state where user_id = :'E'), '5000/9');
 select t.is('a switched account keeps the score the server gave it', (select points::text from public.profiles where id = :'A'), '10');
 select t.is('settling twice changes nothing more', (select public.settle_legacy_scores()::text), '0');
 select t.is('a deleted account is noted for photo clean-up, however it was deleted', (select count(*)::text from public.journal_photo_cleanup where user_id = :'E') || '/' || t.try(:'A', 'select * from public.journal_photo_cleanup'), '1/ok:0');

@@ -59,7 +59,12 @@ export default function Profile() {
   const pendingDeletes = useJournalStore((s) => s.pendingDeletes);
   const localPoints = useMemo(() => playerPoints(sightings), [sightings]);
   const points = cloud?.ready && cloud.totals ? cloud.totals.points : localPoints;
-  const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  const localSpecies = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  const speciesCount = cloud?.ready && cloud.totals ? cloud.totals.speciesCount : localSpecies;
+  // The account's answer is known and the journal isn't being saved: the
+  // numbers above are this phone's own, or the score as it stood when the
+  // backup was turned off. Say so, where the numbers are.
+  const backupOffNote = isSupabaseConfigured && Boolean(session) && cloud?.saved !== undefined && cloud.backup !== true;
   const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
   const syncState = useSyncStatus((s) => s.state);
   const saveFailed = useJournalSave((s) => s.failed);
@@ -197,6 +202,11 @@ export default function Profile() {
           <Stat value={sightingCount} label="sightings" />
           <Stat value={streak} label="day streak" />
         </View>
+        {backupOffNote && (
+          <Text style={styles.backupNote}>
+            Journal backup is off. Turn it on in Settings below to keep your score on the leaderboard.
+          </Text>
+        )}
 
         <Card style={styles.ethos}>
           <View style={styles.ethosHead}>
@@ -389,6 +399,8 @@ const styles = StyleSheet.create({
   email: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   bracket: { fontSize: font.small, color: colors.faint, marginTop: 2 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  // Sits with the numbers it is about (closer to them than to the card below).
+  backupNote: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 18, marginTop: -spacing.sm, marginBottom: spacing.lg },
   statCard: { width: '47.5%', alignItems: 'center', paddingVertical: spacing.md, flexGrow: 1 },
   statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
   statLabel: { fontSize: font.tiny, color: colors.muted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },

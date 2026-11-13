@@ -118,6 +118,12 @@ export interface IdentifyOutcome {
   recorded?: boolean;
   /** The server says this account's journal isn't being saved (the choice changed on another device). */
   journalOff?: boolean;
+  /**
+   * Nothing is wrong with the photo: it can't score only because today's
+   * allowance is used up (it resets at midnight UTC). Comes as "not eligible"
+   * with the server's words in `ineligibleReason`.
+   */
+  limited?: boolean;
   journal?: CloudRow;
   /** The server's signed note for a result it couldn't record right now. */
   receipt?: string;
@@ -246,6 +252,7 @@ async function identifyViaEndpoint(input: IdentifyInput): Promise<IdentifyOutcom
     source: 'ai',
     recorded: data.recorded === true,
     journalOff: data.journalOff === true,
+    limited: data.authenticity?.reason === 'limit',
     journal: data.journal && typeof data.journal === 'object' ? (data.journal as CloudRow) : undefined,
     receipt: typeof data.receipt === 'string' ? data.receipt : undefined,
     totals: data.totals && typeof data.totals.points === 'number' ? data.totals : undefined,

@@ -16,7 +16,7 @@ import { useJournalStore, patchCloud } from '@/state/useJournalStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from './supabase';
 import { cloudFieldsFor, scheduleJournalSync } from './journalSync';
-import { dueForRetry, nextRetry, retryWaitMs } from './retry';
+import { dueForRetry, holdUntilReset, msToDailyReset, nextRetry, retryWaitMs } from './retry';
 
 export { MAX_AUTO_RETRIES } from './retry';
 
@@ -121,7 +121,14 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
     source: outcome.source,
     note: outcome.note,
     ...(row
-      ? { cloudAt: Date.now(), verified: row.verified, cloudPhoto: row.has_photo, receipt: undefined }
+      ? {
+          cloudAt: Date.now(),
+          recordedAt: row.recorded_at ? Date.parse(row.recorded_at) || undefined : undefined,
+          verified: row.verified,
+          cloudPhoto: row.has_photo,
+          cloudPoints: row.points,
+          receipt: undefined,
+        }
       : { receipt: outcome.receipt }),
   });
   if (outcome.totals) patchCloud({ totals: outcome.totals });
@@ -172,6 +179,19 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
       try {
         const outcome = await identifySighting(input);
         if (!mine()) break;
+        if (outcome.limited) {
+          // Nothing is wrong with the photo: today's allowance for sightings
+          // that score is used up. (A capture the player is watching shows
+          // the server's message; these were taken without waiting for an
+          // answer.) This one and the rest of the queue wait for the reset,
+          // instead of being turned down for good. The wait is kept with
+          // each capture, so that restarting the app doesn't send them all
+          // again to hear the same answer.
+          pausedUntil = Date.now() + msToDailyReset();
+          const { sightings, updateSighting } = useJournalStore.getState();
+          for (const q of sightings) if (q.idStatus === 'queued') updateSighting(q.id, { retry: holdUntilReset(q.retry) });
+          break;
+        }
         applyIdentifyOutcome(s.id, outcome, hashPhotoBase64(base64));
       } catch (err) {
         const status = err instanceof OfflineError ? err.status : undefined;

@@ -128,7 +128,11 @@ What stops a photo scoring, in the order it is checked:
    photos the same, and still recognises every copy that has enough detail
    to compare.
 4. **Daily brakes:** at most 100 scored sightings a day; after 10 photos
-   turned down in a day, scoring pauses until tomorrow.
+   turned down in a day, scoring pauses until the next day (the days are
+   counted in UTC). A photo taken while a brake is on is still identified
+   and the player is told why it didn't score. Photos waiting in the
+   background (taken offline, or in rapid fire) are not lost: they stay
+   queued and are scored after the reset.
 5. **Reports:** players can report a post as "Not their own photo".
 
 What gets through, honestly:
@@ -142,6 +146,15 @@ What gets through, honestly:
   in an empty sky): those can only be matched when the file is identical.
 - Anything a modified app claims about how a photo was taken: those claims
   are hints, which is why the limits in point 4 don't depend on them.
+- **A script that talks to the server directly, instead of the app.** It can
+  hand in downloaded pictures and say they came from the ClipIt camera, which
+  skips check 2. Only the picture check (1), the copy check (3) and the daily
+  brakes (4) stand in its way, so a patient cheat with unused stock photos
+  can score up to the daily cap. Closing this needs proof that a request
+  comes from the real app on a real phone (Apple's App Attest and Google's
+  Play Integrity), which can only ship with a store build; until then the
+  practical defence is looking at the top of the leaderboard now and then
+  (decision 5).
 
 ### 5. If cheating shows up anyway
 - **A review queue for refused or doubtful photos** (recommended next).
