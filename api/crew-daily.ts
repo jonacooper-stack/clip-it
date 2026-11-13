@@ -7,7 +7,9 @@ import { prewarmStories } from './_lib/stories';
 import { dailyPick } from './_lib/library';
 import { weekOf } from '../shared/crew';
 import { cleanName } from '../shared/moderation';
-import { clearDeletedAccounts, expireRefusalNotes, printWallPhotos, retryDeletedPhotos, settleLegacyScores, startLegacyClock, sweepOrphanPhotos } from './_lib/journalUpkeep';
+import {
+  clearDeletedAccounts, expireRefusalNotes, printScoutPhotos, printWallPhotos, retryDeletedPhotos, retryErasedPhotos, settleLegacyScores, startLegacyClock, sweepOrphanPhotos,
+} from './_lib/journalUpkeep';
 
 // Daily Scout job (Vercel Cron, see vercel.json). Also runnable by hand:
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://clipitwildlife.app/api/crew-daily?dry=1"
@@ -39,16 +41,18 @@ export async function runCrewDaily(db: SupabaseClient, opts: { dry?: boolean } =
 
   // The cloud journal's housekeeping. Deletions come first: a player who
   // deleted their account was told their photos go within a day.
-  const journal = { clockStarted: false, deletedAccounts: 0, deletedPhotos: 0, orphanFolders: 0, wallPrints: 0, settled: 0 };
+  const journal = { clockStarted: false, deletedAccounts: 0, deletedPhotos: 0, erasedPhotos: 0, orphanFolders: 0, wallPrints: 0, scoutPrints: 0, settled: 0 };
   if (!dry) {
     try {
       journal.clockStarted = await startLegacyClock(db);
       journal.deletedAccounts = await clearDeletedAccounts(db, { deadline: Date.now() + 6000 });
       journal.deletedPhotos = await retryDeletedPhotos(db, { deadline: Date.now() + 3000 });
-      journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: Date.now() + 5000 });
+      journal.erasedPhotos = await retryErasedPhotos(db, { deadline: Date.now() + 2000 });
+      journal.orphanFolders = await sweepOrphanPhotos(db, { deadline: Date.now() + 4000 });
       await expireRefusalNotes(db);
       journal.settled = await settleLegacyScores(db);
       journal.wallPrints = await printWallPhotos(db, { deadline: Date.now() + 8000 });
+      journal.scoutPrints = await printScoutPhotos(db, { deadline: Date.now() + 4000 });
     } catch (err: any) {
       log('crew_daily_journal_error', { detail: String(err?.message ?? err).slice(0, 200) });
     }

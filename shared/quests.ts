@@ -7,6 +7,7 @@
 //
 // Keep this file free of React Native and Node-only imports.
 import { localZone, type Zone } from './zone';
+import { speciesKey } from './species';
 
 // The parts of a sighting that quests and totals look at. The app's Sighting
 // and the server's journal rows both fit.
@@ -34,12 +35,14 @@ export function totalPoints(sightings: QuestSighting[]): number {
   return sightings.filter(COUNTED).reduce((sum, s) => sum + (s.points ?? 0), 0);
 }
 
-// One sighting per species, the first of each in the order given.
+// One sighting per species, the first of each in the order given. (Names
+// written differently for the same species count once: see shared/species.)
 export function distinctSpecies<S extends QuestSighting>(sightings: S[]): S[] {
   const byName = new Map<string, S>();
   for (const s of sightings) {
     if (!s.species || UNCOUNTED.has(s.idStatus)) continue;
-    if (!byName.has(s.species.scientificName)) byName.set(s.species.scientificName, s);
+    const key = speciesKey(s.species.scientificName) || s.species.scientificName;
+    if (!byName.has(key)) byName.set(key, s);
   }
   return [...byName.values()];
 }
@@ -146,7 +149,7 @@ export interface ChallengeDef {
   progress: (c: ChallengeContext) => number;
 }
 
-const speciesOf = (s: QuestSighting) => s.species?.scientificName || s.species?.commonName || '';
+const speciesOf = (s: QuestSighting) => speciesKey(s.species?.scientificName) || s.species?.commonName || '';
 const distinct = (xs: QuestSighting[], f: (s: QuestSighting) => boolean = () => true) =>
   new Set(xs.filter(f).map(speciesOf).filter(Boolean)).size;
 

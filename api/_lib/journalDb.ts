@@ -58,6 +58,24 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       return count ?? 0;
     },
 
+    async scoredSince(uid, since, exceptSid) {
+      const { data, error } = await db
+        .from(SIGHTINGS)
+        .select('scientific_name, score')
+        .eq('user_id', uid)
+        .neq('id', exceptSid)
+        .eq('verified', true)
+        .gt('points', 0)
+        .is('deleted_at', null)
+        .gte('recorded_at', since)
+        .limit(2000);
+      check(error, 'read today');
+      return ((data ?? []) as { scientific_name: string | null; score: { repeatMultiplier?: number } | null }[]).map((r) => ({
+        scientific_name: r.scientific_name,
+        repeat: typeof r.score?.repeatMultiplier === 'number' && r.score.repeatMultiplier < 1,
+      }));
+    },
+
     async countRows(uid) {
       const { count, error } = await db.from(SIGHTINGS).select('id', { count: 'exact', head: true }).eq('user_id', uid);
       check(error, 'count journal');
@@ -72,7 +90,18 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
         p_user: uid, p_sha: print.sha ?? null, p_phash: print.phash ?? null, p_mask: print.mask ?? null, p_mirror: flipped?.phash ?? null, p_mirror_mask: flipped?.mask ?? null,
       });
       check(error, 'compare photos');
-      return ((data ?? []) as any[]).map((m): Match => ({ source: m.source === 'wall' ? 'wall' : 'journal', user_id: m.user_id, ref: String(m.ref), exact: m.exact === true }));
+      const ms = (v: unknown) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+      return ((data ?? []) as any[]).map(
+        (m): Match => ({
+          source: m.source === 'wall' ? 'wall' : m.source === 'scout' ? 'scout' : 'journal',
+          user_id: m.user_id ?? null,
+          ref: String(m.ref),
+          exact: m.exact === true,
+          at: ms(m.made_at),
+          species: typeof m.species === 'string' ? m.species : null,
+          takenAt: ms(m.taken_at),
+        }),
+      );
     },
 
     async insertRow(row) {
@@ -145,13 +174,26 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       }
     },
 
+    // True only when a listing of the folder comes back empty: an error, or
+    // files still there, is "not yet".
     async purgePhotos(uid) {
-      for (let round = 0; round < 50; round++) {
-        const { data, error } = await db.storage.from(BUCKET).list(uid, { limit: 1000 });
-        if (error || !data?.length) return;
-        const { error: removeError } = await db.storage.from(BUCKET).remove(data.map((f) => `${uid}/${f.name}`));
-        if (removeError) return;
+      try {
+        for (let round = 0; round < 50; round++) {
+          const { data, error } = await db.storage.from(BUCKET).list(uid, { limit: 1000 });
+          if (error || !data) return false;
+          if (!data.length) return true;
+          const { error: removeError } = await db.storage.from(BUCKET).remove(data.map((f) => `${uid}/${f.name}`));
+          if (removeError) return false;
+        }
+      } catch {
+        // storage unreachable: not confirmed
       }
+      return false;
+    },
+
+    async forgetPhotos(uid) {
+      const { error } = await db.from(SIGHTINGS).update({ has_photo: false, updated_at: stamp() }).eq('user_id', uid).eq('has_photo', true);
+      check(error, 'update sightings');
     },
 
     async clearPlaces(uid) {
@@ -164,6 +206,9 @@ export function supabaseJournalDb(db: SupabaseClient): JournalDb {
       check(error, 'erase journal');
       const { error: notesError } = await db.from('journal_refusals').delete().eq('user_id', uid);
       check(notesError, 'erase notes');
+      // Notes about other players' photos that matched one of this account's: they no longer name it.
+      const { error: matchError } = await db.from('journal_refusals').update({ matched_user: null, matched_ref: null }).eq('matched_user', uid);
+      check(matchError, 'erase notes');
     },
 
     async logRefusal(entry) {

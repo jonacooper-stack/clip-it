@@ -82,7 +82,7 @@ select t.is('reserved name containing "ClipIt" refused', t.try(:'A', format('upd
 select t.is('ordinary rename allowed', t.try(:'A', format('update public.profiles set display_name = ''Alexandra'' where id = %L', :'A')), 'ok:1');
 select t.is('61-character name refused', t.try(:'A', format('update public.profiles set display_name = repeat(''a'', 61) where id = %L', :'A')), 'error:23514');
 select t.is('negative points refused', t.try(:'A', format('update public.profiles set points = -5 where id = %L', :'A')), 'error:23514');
-select t.is('absurd points refused', t.try(:'A', format('update public.profiles set points = 2000000000 where id = %L', :'A')), 'error:23514');
+select t.is('absurd points from an app that has not switched are cut to the account''s ceiling (a day-old account: 500)', t.then_(:'A', format('update public.profiles set points = 2000000000, species_count = 90000 where id = %L', :'A'), format($r$select points || '/' || species_count from public.profiles where id = %L$r$, :'A')), 'ok:1/500/25');
 select t.is('points update within range allowed', t.try(:'A', format('update public.profiles set points = 250, species_count = 12 where id = %L', :'A')), 'ok:1');
 select t.is('avatar on another server refused', t.try(:'A', format('update public.profiles set avatar_url = ''https://evil.example/x.png'' where id = %L', :'A')), 'error:23514');
 select t.is('avatar in someone else''s folder refused', t.try(:'A', format('update public.profiles set avatar_url = ''https://p.supabase.co/storage/v1/object/public/avatars/%s/a.jpg'' where id = %L', :'B', :'A')), 'error:23514');
@@ -139,6 +139,7 @@ select t.is('buckets limited to images of a sensible size', (select string_agg(i
 insert into auth.users (id) values (:'F');
 
 -- 10. rows from before the migration are untouched
+select t.is('a leaderboard row from before the limits was brought inside them: name cut to 60, picture on another server dropped', (select char_length(display_name) || '/' || coalesce(avatar_url, 'none') from public.profiles where id = '00000000-0000-4000-8000-0000000000a9'), '60/none');
 select t.is('legacy profile kept its name and score', (select display_name || '/' || points || '/' || species_count from public.profiles where id = :'E'), 'Old shit name/420/9');
 select t.is('legacy post and comment kept', (select caption from public.feed_posts where id = '10000000-0000-4000-8000-0000000000e0') || '|' || (select body from public.post_comments where id = '30000000-0000-4000-8000-0000000000e0'), 'holy shit a fox|what the fuck');
 select t.is('the migration does not start the clock: the window is open and has no end date yet', (select private.legacy_open()::text) || '/' || (select count(*)::text from public.app_settings where key = 'legacy_import_until'), 'true/0');
@@ -188,7 +189,25 @@ select t.is('the snapshot was taken once: an existing account''s baseline is its
 select t.is('…and running the migration again did not take a new one', (select count(*)::text from public.app_settings where key = 'cloud_journal_started'), '1');
 select t.is('an account with no leaderboard row yet has no baseline, but an allowance for its phone-scored sightings', (select baseline_points || '/' || legacy_allowance from public.journal_state where user_id = :'A'), '0/500');
 select t.is('an account created after the migration brings nothing', (select baseline_points || '/' || legacy_allowance from public.journal_state where user_id = :'F'), '0/0');
-select t.is('raising the leaderboard number during the window does not raise the baseline', t.then_(:'D', format('update public.profiles set points = 9999 where id = %L', :'D'), format($r$select p.points || '/' || s.baseline_points from public.profiles p join public.journal_state s on s.user_id = p.id where p.id = %L$r$, :'D')), 'ok:1/9999/12');
+select t.is('raising the leaderboard number during the window is cut to the ceiling (12 then, plus 500 for a day-old account) and does not raise the baseline', t.then_(:'D', format('update public.profiles set points = 9999 where id = %L', :'D'), format($r$select p.points || '/' || s.baseline_points from public.profiles p join public.journal_state s on s.user_id = p.id where p.id = %L$r$, :'D')), 'ok:1/512/12');
+-- what each account may bring from before the switch
+\set IDLE '00000000-0000-4000-8000-0000000000b1'
+\set REGULAR '00000000-0000-4000-8000-0000000000b2'
+\set NOBOARD '00000000-0000-4000-8000-0000000000b3'
+\set WHALE '00000000-0000-4000-8000-0000000000b4'
+select t.is('allowance: an idle account with 38 points may bring 1,538 phone-scored points, not 20,000', (select baseline_points || '/' || legacy_allowance from public.journal_state where user_id = :'IDLE'), '38/1538');
+select t.is('allowance: a regular with 1,400 may bring 2,900', (select baseline_points || '/' || legacy_allowance from public.journal_state where user_id = :'REGULAR'), '1400/2900');
+select t.is('allowance: an old account that never had a leaderboard row may bring 1,500', (select baseline_points || '/' || legacy_allowance from public.journal_state where user_id = :'NOBOARD'), '0/1500');
+select t.is('allowance: capped at 20,000 whatever the leaderboard said (baseline capped at 10,000)', (select baseline_points || '/' || baseline_species || '/' || legacy_allowance from public.journal_state where user_id = :'WHALE'), '10000/900/20000');
+select t.is('ceiling: the idle account cannot write itself to the top during the window (38 + 1,538; 3 species + 76)', t.then_(:'IDLE', format('update public.profiles set points = 5000000, species_count = 100000 where id = %L', :'IDLE'), format($r$select points || '/' || species_count from public.profiles where id = %L$r$, :'IDLE')), 'ok:1/1576/79');
+select t.is('ceiling: an honest update below it goes through unchanged', t.then_(:'REGULAR', format('update public.profiles set points = 1460, species_count = 43 where id = %L', :'REGULAR'), format($r$select points || '/' || species_count from public.profiles where id = %L$r$, :'REGULAR')), 'ok:1/1460/43');
+\set G '00000000-0000-4000-8000-0000000000f1'
+\set H '00000000-0000-4000-8000-0000000000f2'
+insert into auth.users (id) values (:'G'), (:'H');
+select t.is('ceiling: an account created after the snapshot, with no journal row at all, gets 500 a day', t.then_(:'G', format('insert into public.profiles (id, display_name, points, species_count) values (%L, ''Gus'', 5000000, 100000)', :'G'), format($r$select points || '/' || species_count from public.profiles where id = %L$r$, :'G')), 'ok:1/500/25');
+select t.try('service', format('insert into public.journal_state (user_id) values (%L)', :'H'));
+select t.is('ceiling: one that answered "not now" (an empty journal row) keeps reporting its own honest number', t.then_(:'H', format('insert into public.profiles (id, display_name, points, species_count) values (%L, ''Hal'', 91, 7)', :'H'), format($r$select points || '/' || species_count from public.profiles where id = %L$r$, :'H')), 'ok:1/91/7');
+select t.is('ceiling: a missing number is still refused, not replaced', t.try(:'H', format('update public.profiles set points = null where id = %L', :'H')), 'error:23502');
 select t.try(:'B', format('update public.profiles set points = 55 where id = %L', :'B'));
 
 -- 13c. one journal request at a time per account
@@ -228,6 +247,25 @@ select t.is('a photo on the wall is found', (select string_agg(source || ':' || 
 select t.is('a sighting only someone''s phone vouches for is never used against another player', (select count(*)::text from public.journal_look_alikes(:'A', 'sha-b-legacy', :'HFAR', :'MALL', null, null)), '0');
 select t.is('…but is found for its own account (their own photo again)', (select string_agg(ref, ',') from public.journal_look_alikes(:'B', 'sha-b-legacy', null, null, null, null)), 'sight-b-legacy');
 select t.is('malformed fingerprints are ignored, not an error', (select count(*)::text from public.journal_look_alikes(:'A', null, 'not-a-hash', 'zz', 'x', null)), '0');
+-- each match says when the stored picture was handed in, and for a sighting its species and when the photo was taken
+select t.is('a sighting match carries its species and both times', (select (made_at is not null)::text || '/' || species || '/' || (taken_at is not null)::text from public.journal_look_alikes(:'A', 'sha-b-1', null, null, null, null)), 'true/' || (select scientific_name from public.journal_sightings where user_id = :'B' and id = 'sight-b-1') || '/true');
+select t.is('a wall match carries the time of its post', (select (made_at = (select created_at from public.feed_posts where id = '20000000-0000-4000-8000-00000000000b'))::text from public.journal_look_alikes(:'A', null, :'HWALL', :'MALL', null, null)), 'true');
+-- one of the Commons photos Scout shows
+\set HSCOUT '3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c'
+insert into public.scout_prints (url, photo_phash, photo_mask) values ('https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Fox.jpg/1280px-Fox.jpg', :'HSCOUT', :'MALL');
+insert into public.scout_prints (url) values ('https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Unreadable.jpg/1280px-Unreadable.jpg');
+select t.is('a photo Scout shows is found, as nobody''s', (select string_agg(source || ':' || coalesce(user_id::text, 'nobody') || ':' || right(ref, 15), ',') from public.journal_look_alikes(:'A', null, :'HSCOUT', :'MALL', null, null)), 'scout:nobody:/1280px-Fox.jpg');
+-- a player's own copies, however many, never crowd out somebody else's match
+insert into public.feed_posts (id, user_id, common_name) select ('21000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, :'A', 'copy' from generate_series(1, 60) n;
+insert into public.wall_prints (post_id, user_id, photo_sha) select ('21000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, :'A', 'sha-b-1' from generate_series(1, 60) n;
+select t.is('sixty wall posts of the same file by the asker do not hide the owner''s match (others come first)', (select (array_agg(user_id))[1]::text || '/' || count(*) from public.journal_look_alikes(:'A', 'sha-b-1', null, null, null, null)), :'B' || '/51');
+delete from public.feed_posts where common_name = 'copy' and user_id = :'A';
+select t.is('…and the prints go with the posts', (select count(*)::text from public.wall_prints where user_id = :'A'), '0');
+select t.is('players cannot read Scout''s fingerprints or list the photos still to do', t.try(:'A', 'select * from public.scout_prints') || '/' || t.try(:'A', 'select * from public.scout_photos_without_prints(10)'), 'ok:0/error:42501');
+-- which of Scout's photos still need a fingerprint: read out of wherever Scout keeps a photo
+insert into public.crew_facts (species_key, common_name, facts) values ('vulpes vulpes', 'Red fox', '{"facts": ["🦊 Foxes pounce."], "tip": "", "photos": [{"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Fox.jpg/1280px-Fox.jpg", "credit": "A"}, {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ef/Kit_%22fox%22.jpg/1280px-Kit.jpg", "credit": "B"}, {"url": "https://clipit.example/img/library/red-fox.jpg", "credit": "C"}]}');
+insert into public.crew_stories (key, payload) values ('story:test', '{"pages": [{"photo": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Heron.jpg/1280px-Heron.jpg"}}]}');
+select t.is('Scout''s photos without a fingerprint: the two Commons ones not done yet, not the library photo', (select string_agg(right(url, 16), ',' order by url) from public.scout_photos_without_prints(10)), '1280px-Heron.jpg,g/1280px-Kit.jpg');
 -- the rule itself: only bits that are clear-cut in both count; enough of them must be shared; few may disagree
 select t.is('same picture: 256 shared, 2 differ', private.same_picture(:'H1', :'MALL', :'H1NEAR', :'MALL')::text, 'true');
 select t.is('different picture: 256 shared, 64 differ', private.same_picture(:'H1', :'MALL', :'HFAR', :'MALL')::text, 'false');
@@ -247,6 +285,7 @@ select t.is('someone else''s sighting id earns nothing extra: the app''s (bounde
 select t.is('a sighting id must be a plain token', t.try(:'A', format($q$insert into public.feed_posts (user_id, common_name, sighting_id) values (%L, 'Fox', 'x y')$q$, :'A')), 'error:23514');
 select t.try('service', format($q$update public.journal_sightings set deleted_at = now(), common_name = null, scientific_name = null, points = 0 where user_id = %L and id = 'sight-a-2'$q$, :'A'));
 select t.is('a deleted sighting is not a source of points', t.then_(:'A', format($q$insert into public.feed_posts (id, user_id, common_name, points, sighting_id) values ('20000000-0000-4000-8000-0000000000a3', %L, 'Red fox', 3, 'sight-a-2')$q$, :'A'), $r$select points || '/' || common_name from public.feed_posts where id = '20000000-0000-4000-8000-0000000000a3'$r$), 'ok:1/3/Red fox');
+select t.is('a wall post is dated by the server, whatever the app sends', t.then_(:'D', format($q$insert into public.feed_posts (id, user_id, common_name, created_at) values ('20000000-0000-4000-8000-0000000000d7', %L, 'Robin', '2099-01-01')$q$, :'D'), $r$select (created_at < now() + interval '1 minute')::text from public.feed_posts where id = '20000000-0000-4000-8000-0000000000d7'$r$), 'ok:1/true');
 select t.is('old app (no sighting id), window open: post accepted as before', t.then_(:'D', format($q$insert into public.feed_posts (id, user_id, common_name, points) values ('20000000-0000-4000-8000-0000000000d1', %L, 'Robin', 5)$q$, :'D'), $r$select points::text from public.feed_posts where id = '20000000-0000-4000-8000-0000000000d1'$r$), 'ok:1/5');
 
 -- 15. blocked language is refused by the database too
@@ -282,10 +321,12 @@ select t.is('window closed: a post that shares a real sighting still gets its po
 select t.is('a player cannot run the settlement', t.try(:'D', 'select public.settle_legacy_scores()'), 'error:42501');
 -- (B also reported a species count during the window; the made-up row from before the limits is still there.)
 update public.profiles set species_count = 40 where id = :'B';
-select t.is('unswitched accounts are settled, one by one…', (select public.settle_legacy_scores()::text), '2');
-select t.is('…back to what they had at the migration (D: 9999 reported, 12 then; B: 55 reported, 0 then)', (select points::text from public.profiles where id = :'B') || '/' || (select points::text from public.profiles where id = :'D'), '0/12');
+-- (B, D, the made-up row, the idle account, the regular, the two made after the snapshot, and the absurd score.)
+select t.is('unswitched accounts are settled, one by one…', (select public.settle_legacy_scores()::text), '8');
+select t.is('…back to what they had at the migration (D: 512 shown, 12 then; B: 55 shown, 0 then)', (select points::text from public.profiles where id = :'B') || '/' || (select points::text from public.profiles where id = :'D'), '0/12');
+select t.is('…the idle account that wrote itself up, and the accounts made after the snapshot, included', (select points::text from public.profiles where id = :'IDLE') || '/' || (select points::text from public.profiles where id = :'G') || '/' || (select points::text from public.profiles where id = :'H') || '/' || (select points::text from public.profiles where id = :'REGULAR'), '38/0/0/1400');
 select t.is('…species count included', (select species_count::text from public.profiles where id = :'B'), '0');
-select t.is('a row that still breaks an old limit is left as it is and does not stop the others', (select points || '/' || species_count from public.profiles where id = '00000000-0000-4000-8000-0000000000a9'), '99999/300000');
+select t.is('a made-up score from before the limits was brought inside them by the migration, and is settled like any other (capped baseline)', (select points || '/' || species_count || '/' || char_length(display_name) from public.profiles where id = '00000000-0000-4000-8000-0000000000a9'), '10000/5000/60');
 select t.is('the species count shown at the migration is kept as a baseline (capped)', (select baseline_species::text from public.journal_state where user_id = '00000000-0000-4000-8000-0000000000a9') || '/' || (select baseline_species::text from public.journal_state where user_id = :'E'), '5000/9');
 select t.is('a switched account keeps the score the server gave it', (select points::text from public.profiles where id = :'A'), '10');
 select t.is('settling twice changes nothing more', (select public.settle_legacy_scores()::text), '0');

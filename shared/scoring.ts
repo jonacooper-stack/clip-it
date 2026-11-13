@@ -19,6 +19,13 @@ export interface ScoreBreakdown {
   };
   totalPoints: number;
   ruleVersion: string;
+  /**
+   * Set by the server when the sighting is worth nothing because of a daily
+   * limit on repeats, not because the photo was handed in before: 'species'
+   * (enough sightings of this species have scored today) or 'repeats'
+   * (enough repeat sightings have).
+   */
+  dailyCap?: 'species' | 'repeats';
 }
 
 // What each behaviour the identifier can report multiplies a sighting by.

@@ -109,6 +109,13 @@ function readMeta(b: Record<string, unknown>, now: number): CaptureMeta {
 
 const journalOn = () => process.env.JOURNAL_SYNC !== 'off';
 
+// The refusals that count toward the day's pause: a wild animal turned down
+// by the picture check or by the copy check. Not a pet or a person (they
+// could never have scored, on a screen or not), not an upload without camera
+// details (a fixed rule with nothing to try out), and not "couldn't compare"
+// (which says nothing against the player).
+const COUNTED_REFUSALS: ReadonlySet<string> = new Set(['screen', 'print', 'screenshot', 'artwork', 'watermark', 'synthetic', 'copied', 'library']);
+
 // What the app is told about how the picture was judged: whether it can
 // score and why not. (The server's own doubts stay on the server.)
 const shown = (id: Identification) => ({ ...id, authenticity: { ok: id.authenticity.ok, reason: id.authenticity.reason } });
@@ -144,7 +151,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const started = Date.now();
   const timeLeft = () => ANSWER_BY_MS - (Date.now() - started);
 
-  const player = await verifyPlayer(req.headers.authorization, logFailure);
+  // (freshAge: an account that has just answered the age question is let in
+  // at once, not after the server's minute-long memory of "not answered".)
+  const player = await verifyPlayer(req.headers.authorization, logFailure, { freshAge: true });
   if (!player) return res.status(401).json({ error: 'sign in required', detail: 'Please sign in to identify sightings.' });
   const userId = player.userId;
   if (rateLimited(`identify:${userId}`, RATE_MAX)) {
@@ -248,13 +257,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Record it in the player's journal and score it.
     let journal: { receipt?: string; recorded: boolean; journal?: PublicRow; totals?: Totals | null; journalOff?: boolean } | undefined;
-    const db = meta.sid && journalOn() ? adminClient() : null;
+    // The daily counts are kept whatever JOURNAL_SYNC says: receipts are
+    // handed out while it is off, and are recorded when it is back on.
+    const counters = adminClient();
+    const db = meta.sid && journalOn() ? counters : null;
     // Two daily brakes that don't rest on anything the app says: a cap on
     // sightings that may score, and a pause once several photos in one day
     // have been turned down as not the player's own.
-    if (id.eligible && db) {
-      if ((await usedToday(db, userId, 'refused')) >= DAILY_LIMITS.refused) id = refuse(id, 'limit', LIMIT_MESSAGES.refused);
-      else if (await dailyLimitReached(db, userId, 'score')) id = refuse(id, 'limit', LIMIT_MESSAGES.score);
+    if (id.eligible && meta.sid && counters) {
+      if ((await usedToday(counters, userId, 'refused')) >= DAILY_LIMITS.refused) id = refuse(id, 'limit', LIMIT_MESSAGES.refused);
+      else if (await dailyLimitReached(counters, userId, 'score')) id = refuse(id, 'limit', LIMIT_MESSAGES.score);
     }
     if (id.eligible && meta.sid && id.idStatus !== 'rejected' && id.idStatus !== 'ineligible') {
       const payload: ReceiptPayload = {
@@ -288,9 +300,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             budget,
           );
           if (done === null) {
-            journal = { ...journal, journalOff: true }; // the app's idea of the choice is out of date: it asks again
+            // The account isn't saving its journal: nothing is recorded, and
+            // no receipt is handed out either (one kept back could be the
+            // best of several tries at the same photo). The app's idea of the
+            // choice is out of date: it asks again. If the backup is turned
+            // on later, the sighting goes up the usual way for one the server
+            // hasn't recorded, and is identified again while its photo is on
+            // the phone.
+            journal = { recorded: false, journalOff: true };
           } else if (done?.out.kind === 'refused') {
             id = refuse(id, done.out.reason, done.out.message);
+            journal = undefined;
+          } else if (done?.out.kind === 'later') {
+            // An old sighting being checked again on a day when its species
+            // (or repeats in general) have scored enough: left as it is, to
+            // be sent again tomorrow (the app treats this like today's limit).
+            id = refuse(id, 'limit', done.out.message);
             journal = undefined;
           } else if (done?.out.kind === 'recorded') {
             journal = { recorded: true, journal: publicRow(done.out.row), totals: done.totals };
@@ -305,8 +330,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (!id.authenticity.ok) {
       logFailure('not_own_photo', { userId, why: id.authenticity.reason });
-      // Counted per day: after several, scoring pauses until tomorrow (see above).
-      if (id.authenticity.reason !== 'limit' && db) await dailyLimitReached(db, userId, 'refused');
+      // Counted per day: after several, scoring pauses until tomorrow (see
+      // above). Only the refusals in COUNTED_REFUSALS, and whether or not the
+      // photo was to be recorded: trying pictures out without a sighting id
+      // must not get around the pause.
+      const wild = id.present && id.category === 'wild_animal' && Boolean(id.species.scientificName);
+      if (wild && COUNTED_REFUSALS.has(String(id.authenticity.reason)) && counters) await dailyLimitReached(counters, userId, 'refused');
     } else if (id.authenticity.review) {
       logFailure('picture_doubt', { userId, sighting: meta.sid });
     }

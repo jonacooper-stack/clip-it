@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminClient, dailyLimitReached, log, rateLimited, secondsToUtcMidnight, verifyPlayer } from '../_lib/server';
+import { adminClient, DAILY_LIMITS, dailyLimitReached, log, rateLimited, secondsToUtcMidnight, usedToday, verifyPlayer } from '../_lib/server';
 import { JournalBusy, JournalUnavailable, syncJournal, withJournalLock, type SyncBody } from '../_lib/journal';
 import { photoFingerprint } from '../_lib/phash';
 import { supabaseJournalDb } from '../_lib/journalDb';
@@ -63,6 +63,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const jdb = supabaseJournalDb(db);
+    // The pause after too many photos that weren't the player's own applies
+    // here too: receipts wait while it is on, and a copy refused here counts
+    // toward it (see the identify endpoint).
+    const refusalsLeft = Array.isArray(body.items) && body.items.length ? DAILY_LIMITS.refused - (await usedToday(db, userId, 'refused')) : DAILY_LIMITS.refused;
     // One request at a time per account: everything here reads the journal
     // and then writes to it.
     const out = await withJournalLock(jdb, userId, 8000, () =>
@@ -70,12 +74,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fingerprint: photoFingerprint,
         // Worth knowing about: a receipt stops verifying when the signing key is changed.
         onBadReceipt: (sid) => fail('receipt_not_accepted', { userId, sighting: sid }),
+        refusalsLeft,
+        onCopyRefused: async () => {
+          await dailyLimitReached(db, userId, 'refused');
+        },
       }),
     );
     // Worth a line in the log: for an under-13 answer the account itself is still there to deal with.
     if (body.erase === true) log('journal_erased', { userId, why: body.why === 'under13' ? 'under13' : 'asked' });
     return res.status(200).json(out);
   } catch (err: any) {
+    // The erase went through but storage didn't confirm the photo copies are
+    // gone: logged now (the operator needs to know about an under-13 account
+    // either way), and the app asks again.
+    if (body.erase === true && err instanceof JournalUnavailable && /stored photos/.test(String(err.message))) {
+      log('journal_erased', { userId, why: body.why === 'under13' ? 'under13' : 'asked', photos: 'pending' });
+    }
     if (err instanceof JournalBusy) {
       res.setHeader('Retry-After', '5');
       return res.status(503).json({ error: 'journal busy' });

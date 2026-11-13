@@ -14,6 +14,7 @@
 import { createHash } from 'crypto';
 import { applyFieldNotesBonus, MAX_TOTAL_POINTS, scoreSighting, type ScoreBreakdown } from '../../shared/scoring';
 import { countsAt, playerTotals, type QuestSighting } from '../../shared/quests';
+import { canonicalSpecies, sameSpecies, speciesKey } from '../../shared/species';
 import { canonicalTimeZone, ianaZone } from '../../shared/zone';
 import { cleanName, hasBlockedLanguage, tidyName } from '../../shared/moderation';
 import { cleanFieldNotes } from '../../shared/fieldNotes';
@@ -109,10 +110,17 @@ export interface Prefs {
 
 // A stored picture that is, or looks like, the one being recorded.
 export interface Match {
-  source: 'journal' | 'wall';
-  user_id: string;
-  ref: string; // the sighting id, or the wall post id
+  /** A sighting, a wall post, or one of the Wikimedia Commons photos Scout shows. */
+  source: 'journal' | 'wall' | 'scout';
+  /** Whose it is (nobody's, for one of Scout's photos). */
+  user_id: string | null;
+  ref: string; // the sighting id, the wall post id, or the photo's address
   exact: boolean; // the very same bytes (otherwise: the look-alike fingerprints say it is the same picture)
+  /** When the stored picture was handed in or posted (ms). Unknown for a deleted sighting and for Scout's photos. */
+  at?: number | null;
+  /** For a sighting: its species, and when its photo was taken (ms; unknown once deleted). */
+  species?: string | null;
+  takenAt?: number | null;
 }
 
 export interface Refusal {
@@ -141,10 +149,18 @@ export interface JournalDb {
    */
   speciesCount(uid: string, sci: string, exceptSid: string): Promise<number>;
   /**
+   * The account's sightings that the server identified and that scored, since
+   * `since` by the server's own clock (when it recorded them), other than
+   * `exceptSid`: each one's species, and whether it scored as a repeat of a
+   * species the account already had.
+   */
+  scoredSince(uid: string, since: string, exceptSid: string): Promise<{ scientific_name: string | null; repeat: boolean }[]>;
+  /**
    * Stored pictures that are, or look like, this one: sightings the server
-   * identified (any account), wall photos (any account), and this account's
-   * own sightings of any kind. Compared in the database, over everything,
-   * flipped left to right as well as not.
+   * identified (any account), wall photos (any account), the Commons photos
+   * Scout shows, and this account's own sightings of any kind. Compared in
+   * the database, over everything, flipped left to right as well as not.
+   * Other accounts' (and Scout's) come first, oldest first.
    */
   lookAlikes(uid: string, print: Print): Promise<Match[]>;
   /** False when a row with this account and id already exists. */
@@ -162,11 +178,20 @@ export interface JournalDb {
   removePhotos(uid: string, sids: string[]): Promise<boolean>;
   /** Note on these rows that their stored photo is gone. */
   clearPhotoFlags(uid: string, sids: string[]): Promise<void>;
-  /** Remove every stored photo of the account (account deletion, erasing the journal). */
-  purgePhotos(uid: string): Promise<void>;
+  /**
+   * Remove every stored photo of the account (account deletion, erasing the
+   * journal). True only when storage confirms that none is left.
+   */
+  purgePhotos(uid: string): Promise<boolean>;
+  /** Note on every row of the account that its stored photo is gone. */
+  forgetPhotos(uid: string): Promise<void>;
   /** Forget where the account's sightings were taken (the player stopped saving places). */
   clearPlaces(uid: string): Promise<void>;
-  /** Remove every journal row and refusal note of the account (not its state). */
+  /**
+   * Remove every journal row and refusal note of the account (not its
+   * state), and take the account out of notes about other players' photos
+   * that matched one of its own.
+   */
   deleteJournal(uid: string): Promise<void>;
   /** Keep a record of a photo that was turned down as a copy, so a wrong call can be put right. */
   logRefusal(entry: Refusal): Promise<void>;
@@ -195,6 +220,29 @@ export const COPY_MESSAGES = {
   library: 'This is one of Scout’s own photos. Only photos you take yourself can score.',
   unchecked: 'We couldn’t check this photo, so it can’t score. Try taking it again with the ClipIt camera.',
 } as const;
+
+// Daily brakes on repeats, by the server's own clock (UTC days). A sighting
+// of a species the account already has is worth a little every time, so
+// without these one photo, saved again and again, would add up; cropping a
+// copy by a few percent is enough to get it past the copy check.
+//   species  how many sightings of one species may score in a day
+//   repeats  how many repeat sightings (of any species) may score in a day
+// A sighting beyond either is recorded and worth nothing. An old sighting the
+// server is asked to re-check is left for another day instead (see
+// recordSighting). Tune with the environment variables.
+const dailyBrake = (name: string, fallback: number) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+export const repeatLimits = () => ({ species: dailyBrake('DAILY_SPECIES_LIMIT', 5), repeats: dailyBrake('DAILY_REPEAT_LIMIT', 20) });
+export const LATER_MESSAGE = 'That’s enough sightings of this kind for today, so this one has to wait. It can score from tomorrow.';
+
+// An upload that looks like one of the player's own earlier photos is that
+// photo again when it shows the same species and was taken within this long
+// of it (the picture was saved a second time: the times match). Anything
+// else that only looks alike is a different photo from the same spot: a
+// trail camera or a feeder camera shows the same background in every shot.
+const SAME_SHOT_MS = 2 * 60_000;
 
 export const IMPORT_MESSAGE =
   'We couldn’t confirm this is a photo you took: it doesn’t carry the details a camera saves (it may be a screenshot or a saved picture). Photos you take with the ClipIt camera are never turned down for this.';
@@ -297,9 +345,17 @@ export async function computeTotals(jdb: JournalDb, uid: string, state: JournalS
   const overAllowance = Math.max(0, fromPhone.points - allowance);
   const accounted = Math.min(fromPhone.points, allowance) + upgraded.points;
   const carryover = state ? Math.min(state.carryover_points, Math.max(0, state.baseline_points - accounted)) : 0;
+  // Species: every one the server identified, plus those only the phone
+  // vouches for, up to a ceiling (what the leaderboard showed at the switch
+  // and one more for every 20 points of allowance). Without the ceiling the
+  // allowance could be spent on hundreds of one-point "species".
+  const keys = (list: JournalRow[]) => new Set(list.map((r) => speciesKey(r.scientific_name)).filter(Boolean));
+  const identified = keys(rows.filter((r) => r.verified));
+  const onPhonesWord = [...keys(rows.filter((r) => !r.verified))].filter((k) => !identified.has(k)).length;
+  const counted = identified.size + Math.min(onPhonesWord, (state?.baseline_species ?? 0) + Math.floor(allowance / 20));
   // While part of the old score is still carried over, so is the species
   // count the leaderboard showed with it.
-  const speciesCount = carryover > 0 ? Math.max(all.speciesCount, state?.baseline_species ?? 0) : all.speciesCount;
+  const speciesCount = carryover > 0 ? Math.max(counted, state?.baseline_species ?? 0) : counted;
   return { points: Math.max(0, all.points - overAllowance) + carryover, speciesCount, carryover };
 }
 
@@ -327,13 +383,19 @@ export async function noteTimeZone(jdb: JournalDb, uid: string, tz: unknown): Pr
 // ---------- recording a sighting the server identified ----------
 export type RecordOutcome =
   | { kind: 'recorded'; row: JournalRow; created: boolean }
-  | { kind: 'refused'; reason: keyof typeof COPY_MESSAGES; message: string };
+  | { kind: 'refused'; reason: keyof typeof COPY_MESSAGES; message: string }
+  // An old sighting sent for re-checking on a day when a daily brake on
+  // repeats is on: nothing was changed, and it can be sent again tomorrow.
+  | { kind: 'later'; message: string };
 
 // `p` is what the identify endpoint saw, either straight from it or from a
 // receipt it signed. Safe to call twice for the same sighting: the second
 // call returns the row the first one wrote. Call it holding the account's
 // lock (withJournalLock).
-export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBase64?: string | null, opts: { places?: boolean } = {}): Promise<RecordOutcome> {
+export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBase64?: string | null, opts: { places?: boolean; now?: number } = {}): Promise<RecordOutcome> {
+  const now = opts.now ?? Date.now();
+  // (One way of writing the species, whatever the identifier wrote: see shared/species.)
+  const sci = canonicalSpecies(p.id.sci);
   // Already recorded (a retry), or already deleted by the player (the photo
   // was still being identified when they cancelled): nothing more to do.
   // A row that so far rests on the phone's word is different: the server has
@@ -349,24 +411,56 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
   // Is this picture already known? Flipped left to right counts as the same.
   const print: Print = { sha: p.sha, phash: p.phash, mask: p.mask };
   if (Object.values(LIBRARY_PRINTS).some((scouts) => samePhoto(print, scouts))) return refused(jdb, p, 'library');
+  const matches = await jdb.lookAlikes(p.uid, print);
+  // The player's own wall post of this picture, if there is one, and when it
+  // was posted: whoever posted a picture on the wall before anyone else
+  // logged it is the one it belongs to.
+  const postedAt = matches.reduce((first, m) => (m.source === 'wall' && m.user_id === p.uid && typeof m.at === 'number' ? Math.min(first, m.at) : first), Infinity);
   let duplicatePhoto = false;
-  for (const m of await jdb.lookAlikes(p.uid, print)) {
-    if (m.user_id !== p.uid) return refused(jdb, p, 'copied', m); // someone else logged (or posted) this picture first
+  for (const m of matches) {
+    if (m.source === 'scout') return refused(jdb, p, 'library', m); // one of the Commons photos Scout shows
+    if (m.user_id !== p.uid) {
+      // Someone else logged (or posted) this picture. First? Then this one
+      // is the copy. But a picture this player had on the wall before the
+      // other account handed it in is theirs: it was taken off the wall
+      // before the nightly job had fingerprinted it. (Noted, so the other
+      // sighting can be looked at.)
+      if (typeof m.at === 'number' && postedAt < m.at) {
+        await jdb.logRefusal({ user_id: p.uid, sighting_id: p.sid, reason: 'had_it_first', matched_user: m.user_id, matched_ref: `${m.source}:${m.ref}` }).catch(() => {});
+        continue;
+      }
+      return refused(jdb, p, 'copied', m);
+    }
     // The sighting itself (recorded before: this is the server identifying a
     // phone-scored one), or the player's own wall post, which is a share of
     // one of their sightings and not a second sighting.
     if (m.ref === p.sid || m.source === 'wall') continue;
     // The player's own photo again: recorded, worth nothing. The very same
-    // file always counts as that. A look-alike does only for an upload: with
-    // the ClipIt camera, the frames of a burst, or a phone left watching one
-    // spot, give pictures that look alike and are different photos; those
-    // keep their normal (reduced) score as repeat sightings.
-    if (m.exact || p.capture !== 'camera') duplicatePhoto = true;
+    // file always counts as that. A look-alike does only for an upload of
+    // the same species taken at the same moment (see SAME_SHOT_MS): the
+    // frames of a burst with the ClipIt camera, or shots from a camera left
+    // watching one spot, look alike and are different photos, and keep
+    // their normal (reduced) score as repeat sightings.
+    if (m.exact) duplicatePhoto = true;
+    else if (p.capture !== 'camera' && sameSpecies(m.species, sci) && typeof m.takenAt === 'number' && Math.abs(m.takenAt - p.observedAt) <= SAME_SHOT_MS) duplicatePhoto = true;
   }
 
   // Earlier sightings of the species, deleted ones included (so deleting and
   // re-adding can't bring back the first-time bonus).
-  const priorSameSpecies = await jdb.speciesCount(p.uid, p.id.sci, p.sid);
+  const priorSameSpecies = await jdb.speciesCount(p.uid, sci, p.sid);
+
+  // The daily brakes on repeats (see repeatLimits).
+  let dailyCap: 'species' | 'repeats' | undefined;
+  if (!duplicatePhoto) {
+    const limits = repeatLimits();
+    const today = await jdb.scoredSince(p.uid, iso(now - (now % 86_400_000)), p.sid);
+    if (today.filter((r) => sameSpecies(r.scientific_name, sci)).length >= limits.species) dailyCap = 'species';
+    else if (priorSameSpecies > 0 && today.filter((r) => r.repeat).length >= limits.repeats) dailyCap = 'repeats';
+    // An old sighting being re-checked is not turned into "worth nothing"
+    // by the day it happens to be sent on: it waits.
+    if (dailyCap && existing) return { kind: 'later', message: LATER_MESSAGE };
+  }
+
   let score = scoreSighting({
     rarityScore: p.id.rarity,
     // No behaviour multipliers for animals that could hurt someone: getting
@@ -374,8 +468,9 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     sceneTags: p.id.dangerous ? [] : p.id.tags,
     firstOfSpecies: priorSameSpecies === 0,
     priorSameSpecies,
-    duplicatePhoto,
+    duplicatePhoto: duplicatePhoto || Boolean(dailyCap),
   });
+  if (dailyCap) score = { ...score, dailyCap };
   // Field notes the player had already added to it keep their bonus.
   if (existing?.science) score = applyFieldNotesBonus(score, Object.keys(existing.science).length).score;
 
@@ -385,13 +480,13 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     id: p.sid,
     observed_at: iso(p.observedAt),
     logged_at: iso(p.loggedAt),
-    recorded_at: iso(Date.now()),
+    recorded_at: iso(now),
     deleted_at: null,
     lat: where.lat,
     lng: where.lng,
     status: existing?.proposed_species ? 'disputed' : p.id.status,
     common_name: p.id.common,
-    scientific_name: p.id.sci,
+    scientific_name: sci,
     taxon_group: p.id.group,
     confidence: p.id.confidence,
     scene_tags: p.id.tags,
@@ -416,8 +511,8 @@ export async function recordSighting(jdb: JournalDb, p: ReceiptPayload, photoBas
     await jdb.updateRow(p.uid, p.sid, { ...fields, claimed_points: existing.claimed_points ?? null });
     if (row.wall_post_id) await jdb.setWallPostFacts(p.uid, row.wall_post_id, { points: row.points, common_name: row.common_name, scientific_name: row.scientific_name });
   } else if (!(await jdb.insertRow(row))) {
-    const now = await jdb.getRow(p.uid, p.sid);
-    if (now) return { kind: 'recorded', row: now, created: false };
+    const written = await jdb.getRow(p.uid, p.sid);
+    if (written) return { kind: 'recorded', row: written, created: false };
     throw new JournalUnavailable('sighting could not be written');
   }
   await storePhoto(jdb, row, photoBase64);
@@ -476,7 +571,14 @@ export type ImportOutcome = { kind: 'recorded'; row: JournalRow; created: boolea
 // window they are kept for the journal's sake but worth nothing; no score
 // breakdown is kept (a breakdown the app supplied must never be recomputed
 // into points); and their photo is never used to turn down someone else's.
-export async function importLegacy(jdb: JournalDb, uid: string, sid: string, claim: LegacyClaim, photoBase64?: string | null, now = Date.now(), opts: { places?: boolean } = {}): Promise<ImportOutcome> {
+//
+// `room`: how much of the account's allowance is still unused. A sighting
+// whose points don't fit is kept at 0, like one that arrives after the
+// window: nothing is lost, because the app then sends its photo through the
+// identifier (see the app's journalSync) and it counts from then on. This is
+// what keeps the allowance a real limit: the points a phone claims are
+// counted against it as they arrive.
+export async function importLegacy(jdb: JournalDb, uid: string, sid: string, claim: LegacyClaim, photoBase64?: string | null, now = Date.now(), opts: { places?: boolean; room?: number } = {}): Promise<ImportOutcome> {
   const existing = await jdb.getRow(uid, sid);
   if (existing) return { kind: 'recorded', row: existing, created: false };
 
@@ -484,7 +586,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
   // away: older app versions stored the identifier's names as they came.
   const tidy = (v: unknown) => cleanName(v, 80) ?? tidyName(v, 80);
   const common = tidy(claim.common) ?? tidy(claim.sci) ?? 'Unidentified animal';
-  const sci = tidy(claim.sci) ?? common;
+  const sci = canonicalSpecies(tidy(claim.sci) ?? common);
   if (typeof claim.status !== 'string' || !STATUSES.includes(claim.status)) return { kind: 'invalid', error: 'not a sighting that counts' };
 
   // (With no end date set yet, the window is open.)
@@ -492,6 +594,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
   const state = await jdb.getState(uid);
   const open = (until == null || now < until) && (state?.legacy_allowance ?? 0) > 0;
   const claimed = typeof claim.points === 'number' && Number.isFinite(claim.points) ? clamp(Math.round(claim.points), 0, MAX_TOTAL_POINTS) : 0;
+  const fits = open && claimed <= (opts.room ?? Infinity);
 
   const base = claim.score && typeof claim.score === 'object' ? (claim.score as { basePoints?: unknown }).basePoints : undefined;
   // (The photo's own date is kept, however old: see toQuestSighting for when it counts.)
@@ -515,7 +618,7 @@ export async function importLegacy(jdb: JournalDb, uid: string, sid: string, cla
     scene_tags: Array.isArray(claim.tags) ? [...new Set(claim.tags.filter((t): t is string => (SCENE_TAG_CODES as readonly unknown[]).includes(t)))] : [],
     caption: caption && !hasBlockedLanguage(caption) ? caption : null,
     dangerous: claim.dangerous === true,
-    points: open ? claimed : 0,
+    points: fits ? claimed : 0,
     claimed_points: claimed,
     claimed_base: typeof base === 'number' && Number.isFinite(base) ? clamp(Math.round(base), 0, 30) : null,
     score: null,
@@ -656,10 +759,23 @@ function deletionMarker(uid: string, sid: string, now: number): JournalRow {
 // Afterwards the account's answer stands at "no": nothing more is stored.
 // The score goes with the journal it was worked out from, including any part
 // carried over from before scores moved to the server: the leaderboard shows 0.
-export async function eraseJournal(jdb: JournalDb, uid: string, now = Date.now()): Promise<void> {
-  await jdb.purgePhotos(uid);
+//
+// An under-13 answer is not the player asking for anything: the account is
+// left as "never answered" (nothing is stored for it either way), so that if
+// the answer was a slip, or the player comes back once they are 13, they are
+// asked like anyone else and find their old score.
+//
+// Returns whether storage confirmed that the photo copies are gone.
+export async function eraseJournal(jdb: JournalDb, uid: string, now = Date.now(), opts: { under13?: boolean } = {}): Promise<boolean> {
+  const photosGone = await jdb.purgePhotos(uid);
   await jdb.deleteJournal(uid);
-  await jdb.saveState(uid, { tz: null, backup: 'no', save_places: false, erased_at: iso(now), carryover_points: 0 });
+  await jdb.saveState(
+    uid,
+    opts.under13
+      ? { tz: null, backup: null, erased_at: iso(now) }
+      : { tz: null, backup: 'no', save_places: false, erased_at: iso(now), carryover_points: 0 },
+  );
+  return photosGone;
 }
 
 // ---------- the switch to server-kept scores ----------
@@ -695,6 +811,8 @@ export interface SyncBody {
   prefs?: unknown;
   /** Remove everything saved to the account's journal (see eraseJournal). */
   erase?: unknown;
+  /** With erase: 'under13' when it follows an under-13 answer to the age question. */
+  why?: unknown;
 }
 export type SyncRow = PublicRow | { error: string } | { refused: string };
 
@@ -734,7 +852,16 @@ export async function syncJournal(
   jdb: JournalDb,
   uid: string,
   body: SyncBody,
-  opts: { now?: number; fingerprint?: (b64: string) => Print; onBadReceipt?: (sid: string) => void; budgetMs?: number } = {},
+  opts: {
+    now?: number;
+    fingerprint?: (b64: string) => Print;
+    onBadReceipt?: (sid: string) => void;
+    budgetMs?: number;
+    /** How many more photos may be turned down as not the player's own today before scoring pauses (see the identify endpoint). */
+    refusalsLeft?: number;
+    /** Called for each receipt turned down as a copy, so it counts toward that pause. */
+    onCopyRefused?: () => void | Promise<void>;
+  } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? Date.now();
   // Stop taking items when time is nearly up (the account's lock frees itself
@@ -745,12 +872,20 @@ export async function syncJournal(
     return until == null || now < until;
   };
   if (body.purge === true) {
+    // (The rows stay until the account itself is deleted; if that fails and
+    // the player keeps the account, they must not go on claiming photos.)
     await jdb.purgePhotos(uid);
+    await jdb.forgetPhotos(uid);
     return { rows: {}, deleted: [], totals: null, ready: false, legacyOpen: false, prefs: prefsOf(null) };
   }
   if (body.erase === true) {
-    await eraseJournal(jdb, uid, now);
+    const photosGone = await eraseJournal(jdb, uid, now, { under13: body.why === 'under13' });
     const totals = await refreshTotals(jdb, uid, now);
+    // The rows are gone and the score is settled, but storage didn't confirm
+    // that the photo copies are. Say so: the app keeps asking until it hears
+    // yes, and the nightly job empties the folder of an account that never
+    // comes back (journalUpkeep retryErasedPhotos).
+    if (!photosGone) throw new JournalUnavailable('erase: stored photos not removed yet');
     return { rows: {}, deleted: [], totals, ready: totals !== null, legacyOpen: await legacyOpen(), prefs: prefsOf(await jdb.getState(uid)) };
   }
 
@@ -788,6 +923,8 @@ export async function syncJournal(
   const items = Array.isArray(body.items) ? (body.items as SyncItem[]).slice(0, MAX_SYNC_ITEMS) : [];
   let total: number | null = null;
   let photos = 0;
+  let room: number | null = null; // what is left of the allowance for phone-scored sightings (worked out when first needed)
+  let refusalsLeft = opts.refusalsLeft ?? Infinity;
   for (const item of items) {
     if (Date.now() > stopAt) break;
     if (!item || !validSightingId(item.id)) continue;
@@ -798,11 +935,20 @@ export async function syncJournal(
       const receipt = verifyReceipt(item.receipt, uid, sid, now);
       if (item.receipt && !receipt) opts.onBadReceipt?.(sid);
       if (receipt) {
-        const out = await recordSighting(jdb, receipt, photo, { places: prefs.places });
+        // Scoring is paused for today (too many photos that weren't the
+        // player's own): a receipt waits like a new photo would. No answer
+        // for it, so the app sends it again another day.
+        if (refusalsLeft <= 0) continue;
+        const out = await recordSighting(jdb, receipt, photo, { places: prefs.places, now });
         if (out.kind === 'refused') {
           rows[sid] = { refused: out.message };
+          if (out.reason !== 'unchecked') {
+            refusalsLeft--;
+            await opts.onCopyRefused?.();
+          }
           continue;
         }
+        if (out.kind === 'later') continue;
         row = out.row;
       } else if (item.legacy && typeof item.legacy === 'object') {
         total ??= await jdb.countRows(uid);
@@ -810,13 +956,20 @@ export async function syncJournal(
           rows[sid] = { error: 'journal is full' };
           continue;
         }
-        const out = await importLegacy(jdb, uid, sid, item.legacy, photo, now, { places: prefs.places });
+        if (room === null) {
+          const used = (await jdb.liveRows(uid)).filter((r) => !r.verified).reduce((n, r) => n + r.points, 0);
+          room = Math.max(0, (state?.legacy_allowance ?? 0) - used);
+        }
+        const out = await importLegacy(jdb, uid, sid, item.legacy, photo, now, { places: prefs.places, room });
         if (out.kind === 'invalid') {
           rows[sid] = { error: out.error };
           continue;
         }
         row = out.row;
-        if (out.created) total++;
+        if (out.created) {
+          total++;
+          room -= row.points;
+        }
       } else {
         rows[sid] = { error: 'nothing to record' };
         continue;

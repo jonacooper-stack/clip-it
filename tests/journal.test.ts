@@ -32,7 +32,8 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
   const states = new Map<string, JournalState>();
   const profiles = new Map<string, { points: number; species_count: number }>();
   const photos = new Map<string, Buffer>();
-  const wall: { post_id: string; user_id: string; photo_sha: string | null; photo_phash: string | null; photo_mask: string | null }[] = [];
+  const wall: { post_id: string; user_id: string; photo_sha: string | null; photo_phash: string | null; photo_mask: string | null; created_at?: number }[] = [];
+  const scout: { url: string; phash: string | null; mask: string | null }[] = []; // the Commons photos Scout shows
   const refusals: Refusal[] = [];
   const wallFacts = new Map<string, { points: number; common_name: string | null; scientific_name: string | null }>();
   const locks = new Set<string>();
@@ -50,17 +51,33 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
     async countRows(uid) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid).length; },
     // (Earlier sightings that count: every one the server identified, deleted or not, and phone-scored ones worth something.)
     async speciesCount(uid, sci, except) { await tick(); return [...rows.values()].filter((r) => r.user_id === uid && r.scientific_name === sci && r.id !== except && (r.verified || r.points > 0)).length; },
+    async scoredSince(uid, since, except) {
+      await tick();
+      return [...rows.values()]
+        .filter((r) => r.user_id === uid && r.id !== except && r.verified && r.points > 0 && !r.deleted_at && (r.recorded_at ?? '') >= since)
+        .map((r) => ({ scientific_name: r.scientific_name, repeat: (r.score?.repeatMultiplier ?? 1) < 1 }));
+    },
     // The same rule as public.journal_look_alikes: sightings the server identified (anyone's), wall photos (anyone's), and the asker's own.
+    // (Others' and Scout's matches first, oldest first; then the asker's own, the same file first.)
     async lookAlikes(uid, print) {
       await tick();
       const prints = [
-        ...[...rows.values()].filter((r) => (r.verified || r.user_id === uid) && (r.photo_sha || r.photo_phash)).map((r) => ({ source: 'journal' as const, user_id: r.user_id, ref: r.id, sha: r.photo_sha, phash: r.photo_phash, mask: r.photo_mask })),
-        ...wall.map((w) => ({ source: 'wall' as const, user_id: w.user_id, ref: w.post_id, sha: w.photo_sha, phash: w.photo_phash, mask: w.photo_mask })),
+        ...[...rows.values()].filter((r) => (r.verified || r.user_id === uid) && (r.photo_sha || r.photo_phash)).map((r) => ({
+          source: 'journal' as const, user_id: r.user_id as string | null, ref: r.id, sha: r.photo_sha, phash: r.photo_phash, mask: r.photo_mask,
+          at: r.deleted_at ? null : Date.parse(r.recorded_at ?? r.observed_at), species: r.scientific_name, takenAt: r.deleted_at ? null : Date.parse(r.observed_at),
+        })),
+        ...wall.map((w) => ({ source: 'wall' as const, user_id: w.user_id as string | null, ref: w.post_id, sha: w.photo_sha, phash: w.photo_phash, mask: w.photo_mask, at: w.created_at ?? null, species: null, takenAt: null })),
+        ...scout.map((s) => ({ source: 'scout' as const, user_id: null, ref: s.url, sha: null, phash: s.phash, mask: s.mask, at: null, species: null, takenAt: null })),
       ];
-      return prints
-        .map((p) => ({ match: { source: p.source, user_id: p.user_id, ref: p.ref, exact: Boolean(print.sha && p.sha === print.sha) } as Match, alike: samePhoto({ phash: print.phash, mask: print.mask }, { phash: p.phash, mask: p.mask }) }))
+      const found = prints
+        .map((p) => ({ match: { source: p.source, user_id: p.user_id, ref: p.ref, exact: Boolean(print.sha && p.sha === print.sha), at: p.at, species: p.species, takenAt: p.takenAt } as Match, alike: samePhoto({ phash: print.phash, mask: print.mask }, { phash: p.phash, mask: p.mask }) }))
         .filter((x) => x.match.exact || x.alike)
         .map((x) => x.match);
+      const rank = (m: Match) => [m.user_id === uid ? 1 : 0, m.user_id === uid && !m.exact ? 1 : 0, m.at ?? -Infinity] as const;
+      return found.sort((a, b) => {
+        const [x, y] = [rank(a), rank(b)];
+        return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+      });
     },
     async insertRow(row) {
       await tick();
@@ -82,15 +99,17 @@ function fakeDb(legacyUntil: number | null = NOW + 30 * DAY, choice: { backup?: 
     async deleteJournal(uid) {
       for (const [k, r] of rows) if (r.user_id === uid) rows.delete(k);
       for (let i = refusals.length - 1; i >= 0; i--) if (refusals[i].user_id === uid) refusals.splice(i, 1);
+      for (const r of refusals) if (r.matched_user === uid) Object.assign(r, { matched_user: null, matched_ref: null });
     },
-    async purgePhotos(uid) { for (const k of [...photos.keys()]) if (k.startsWith(`${uid}/`)) photos.delete(k); },
+    async purgePhotos(uid) { if (storage.failing) return false; for (const k of [...photos.keys()]) if (k.startsWith(`${uid}/`)) photos.delete(k); return true; },
+    async forgetPhotos(uid) { for (const [k, r] of rows) if (r.user_id === uid && r.has_photo) rows.set(k, { ...r, has_photo: false }); },
     async logRefusal(entry) { refusals.push(entry); },
     async tryLock(uid) { await tick(); if (locks.has(uid)) return false; locks.add(uid); return true; },
     async unlock(uid) { locks.delete(uid); },
   };
   // An account that existed when the migration ran: the database gave it a baseline and an allowance.
   const existing = (uid: string, baseline: number, allowance: number) => states.set(uid, { ...state(uid), baseline_points: baseline, carryover_points: baseline, legacy_allowance: allowance });
-  return { jdb, rows, states, profiles, photos, wall, refusals, wallFacts, existing, storage, state, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
+  return { jdb, rows, states, profiles, photos, wall, scout, refusals, wallFacts, existing, storage, state, row: (uid: string, sid: string) => rows.get(key(uid, sid))! };
 }
 
 // Fingerprints with a real pattern, far apart from each other, and copies a few bits away.
@@ -114,6 +133,12 @@ const claim = (over: Record<string, unknown> = {}) => ({
   confidence: 0.9, tags: ['in_flight', 'made_up_tag'], caption: 'A fox at dusk.', points: 12, ...over,
 });
 const madeUp = (i: number) => `Fakeus number${String.fromCharCode(97 + (i % 26))}${i > 25 ? 'b' : ''}`;
+// A different made-up species for every number (letters only: digits are not part of a name).
+const uniqueSpecies = (i: number) => {
+  let word = '';
+  for (let n = i + 26 * 26; n > 0; n = Math.floor(n / 26)) word = String.fromCharCode(97 + (n % 26)) + word;
+  return `Fakeus ${word}`;
+};
 
 // ---------- recording and scoring ----------
 test('a recorded sighting is scored by the server, and recording it twice changes nothing', async () => {
@@ -367,9 +392,10 @@ test('what the phone claims is bounded per sighting, and by what a name may be',
   // (older app versions stored the identifier's names as they came).
   for (const [i, [given, sci, common]] of ([
     [{ sci: 'Buteo jamaicensis?', common: 'Red-tailed hawk' }, 'Buteo jamaicensis', 'Red-tailed hawk'],
-    [{ sci: 'Passer domesticus, female', common: 'House sparrow (female)' }, 'Passer domesticus female', 'House sparrow (female)'],
-    [{ sci: 'Corvus brachyrhynchos/ossifragus', common: 'Crow' }, 'Corvus brachyrhynchos ossifragus', 'Crow'],
-    [{ sci: '<script>alert(1)</script>', common: 'Fuck' }, 'script alert script', 'script alert script'],
+    // (the species is kept as genus and species: see shared/species)
+    [{ sci: 'Passer domesticus, female', common: 'House sparrow (female)' }, 'Passer domesticus', 'House sparrow (female)'],
+    [{ sci: 'Corvus brachyrhynchos/ossifragus', common: 'Crow' }, 'Corvus brachyrhynchos', 'Crow'],
+    [{ sci: '<script>alert(1)</script>', common: 'Fuck' }, 'Script alert', 'script alert script'],
     [{ sci: '12345', common: '!!!' }, 'Unidentified animal', 'Unidentified animal'],
     [{ sci: 'Fuck', common: 'shit' }, 'Unidentified animal', 'Unidentified animal'],
   ] as const).entries()) {
@@ -450,11 +476,38 @@ test('after the legacy window, phone-scored sightings are kept but earn nothing:
 });
 
 test('phone-scored sightings, and the quests they complete, can add no more than the account\'s allowance', async () => {
-  const { jdb, existing } = fakeDb();
+  const { jdb, existing, rows } = fakeDb();
   existing(A, 0, 300);
-  const items = Array.from({ length: 30 }, (_, i) => ({ id: `over-${String(i).padStart(5, '0')}`, legacy: claim({ sci: madeUp(i), group: i % 2 ? 'bird' : 'mammal', points: 400, observedAt: NOW - i * 1.5 * DAY }) }));
+  const items = Array.from({ length: 30 }, (_, i) => ({ id: `over-${String(i).padStart(5, '0')}`, legacy: claim({ sci: madeUp(i), group: i % 2 ? 'bird' : 'mammal', points: 25, observedAt: NOW - i * 1.5 * DAY }) }));
   const out = await syncJournal(jdb, A, { items }, { now: NOW });
   assert.equal(out.totals!.points, 300);
+  // The points are counted against the allowance as they arrive: sightings that don't fit are
+  // kept at 0 (the phone's claim kept with them), so the app has the server identify them.
+  const kept = [...rows.values()];
+  assert.equal(kept.filter((r) => r.points === 25).length, 12);
+  assert.ok(kept.filter((r) => r.points === 0).every((r) => r.claimed_points === 25));
+  // One claim larger than what is left doesn't fit at all.
+  const big = fakeDb();
+  big.existing(A, 0, 300);
+  const out2 = await syncJournal(big.jdb, A, { items: items.slice(0, 3).map((it) => ({ ...it, legacy: { ...it.legacy, points: 400 } })) }, { now: NOW });
+  assert.equal(out2.totals!.points, 0);
+});
+
+test('an idle account cannot turn its allowance into thousands of points of made-up old sightings, nor hundreds of made-up species', async () => {
+  // what the database gives an account that showed 38 points and 3 species at the switch: 38 + 1,500
+  const { jdb, existing, states, state } = fakeDb();
+  existing(A, 38, 1538);
+  states.set(A, { ...state(A), baseline_species: 3 });
+  const made = (n: number, points: number) => Array.from({ length: 40 }, (_, i) => ({ id: `fake-${n}-${String(i).padStart(4, '0')}`, legacy: claim({ sci: uniqueSpecies(i + n * 40), common: uniqueSpecies(i + n * 40), points, observedAt: NOW - DAY }) }));
+  let out = await syncJournal(jdb, A, { items: made(0, 500) }, { now: NOW });
+  out = await syncJournal(jdb, A, { items: made(1, 500) }, { now: NOW });
+  assert.ok(out.totals!.points <= 1538, String(out.totals!.points));
+  // hundreds of one-point "species": the species count stops at what was shown plus one per 20 points of allowance
+  const many = fakeDb();
+  many.existing(A, 0, 1500);
+  many.states.set(A, { ...many.state(A), baseline_species: 3 });
+  for (let n = 0; n < 10; n++) out = await syncJournal(many.jdb, A, { items: made(n, 1) }, { now: NOW });
+  assert.equal(out.totals!.speciesCount, 3 + 75);
 });
 
 test('a field-note answer never re-scores a phone-scored sighting', async () => {
@@ -813,7 +866,7 @@ test('a phone-scored sighting can complete "a rare find" with the base points th
   const capped = fakeDb();
   capped.existing(A, 0, 50);
   const c = await syncJournal(capped.jdb, A, { tz: 'UTC', items: items(true) }, { now: NOW });
-  assert.equal(c.totals!.points, 50);
+  assert.ok(c.totals!.points <= 50, String(c.totals!.points));
 });
 
 test('the species count shown at the switch is carried over with the score, until the old journal is accounted for', async () => {
@@ -889,4 +942,190 @@ test('quest progress on the phone follows the server: the same sightings count, 
   const late = phone.find((s) => s.species?.scientificName === madeUp(0))!;
   assert.equal(late.observedAt, NOW - 20 * DAY);
   assert.equal(asTheServerCounts(phone).find((s) => s.id === late.id)!.observedAt, NOW - 3600_000);
+});
+
+// ---------- the review's anti-cheat findings ----------
+const iso = (ms: number) => new Date(ms).toISOString();
+// A sighting together with a stored-photo JPEG whose bytes are the ones that were identified.
+let jpegN = 0;
+const withPhoto = (over: Parameters<typeof sighting>[0] = {}) => {
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, ++jpegN % 250)]);
+  return { p: sighting({ ...over, sha: createHash('sha256').update(jpg).digest('hex') }), b64: jpg.toString('base64') };
+};
+const withEnv = async (vars: Record<string, string>, fn: () => Promise<void>) => {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try {
+    await fn();
+  } finally {
+    for (const [k, v] of Object.entries(before)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+};
+
+test('one photo handed in again and again (re-saved, claimed as camera shots) stops scoring after a few a day', async () => {
+  const { jdb, row } = fakeDb();
+  const fox = { sci: 'Vulpes vulpes', common: 'Red fox', group: 'mammal', rarity: 0.5 };
+  const first = sighting({ id: fox });
+  await recordSighting(jdb, first);
+  const points: number[] = [row(A, first.sid).points];
+  for (let i = 0; i < 7; i++) {
+    // a re-saved copy: a different file, the same picture
+    const copy = sighting({ id: fox, phash: flip(first.phash!, 2), capture: 'camera' });
+    await recordSighting(jdb, copy);
+    points.push(row(A, copy.sid).points);
+  }
+  // the first five of the day score (the repeats at their reduced value), then nothing
+  assert.ok(points.slice(0, 5).every((p) => p > 0), points.join(','));
+  assert.deepEqual(points.slice(5), [0, 0, 0]);
+});
+
+test('repeats of any species are capped per day too; a first sighting of a new species is never held back', async () => {
+  await withEnv({ DAILY_REPEAT_LIMIT: '3' }, async () => {
+    const { jdb, row } = fakeDb();
+    const of = (sci: string) => sighting({ id: { sci, common: sci, group: 'bird', rarity: 0.3 } });
+    const order = ['Avis prima', 'Avis prima', 'Avis prima', 'Avis secunda', 'Avis secunda', 'Avis tertia', 'Avis tertia', 'Avis quarta'];
+    const got: string[] = [];
+    for (const sci of order) {
+      const p = of(sci);
+      await recordSighting(jdb, p);
+      const r = row(A, p.sid);
+      got.push(r.points > 0 ? 'scored' : `0:${r.score?.dailyCap ?? 'duplicate'}`);
+    }
+    // three repeats score (prima ×2, secunda ×1), the fourth repeat (tertia's second) doesn't, a new species does
+    assert.deepEqual(got, ['scored', 'scored', 'scored', 'scored', 'scored', 'scored', '0:repeats', 'scored']);
+  });
+});
+
+test('an old sighting the server re-checks on a day its species has scored enough is left for another day, untouched', async () => {
+  const { jdb, row, existing } = fakeDb();
+  existing(A, 0, 5000);
+  await syncJournal(jdb, A, { tz: 'UTC', items: [{ id: 'old-fox-0001', legacy: claim({ sci: 'Vulpes vulpes', common: 'Red fox', points: 12 }) }] });
+  const before = row(A, 'old-fox-0001');
+  for (let i = 0; i < 5; i++) await recordSighting(jdb, sighting({ id: { sci: 'Vulpes vulpes', common: 'Red fox', group: 'mammal', rarity: 0.4 } }));
+  const recheck = sighting({ sid: 'old-fox-0001', id: { sci: 'Vulpes vulpes', common: 'Red fox', group: 'mammal', rarity: 0.4 } });
+  const out = await recordSighting(jdb, recheck);
+  assert.equal(out.kind, 'later');
+  assert.deepEqual(row(A, 'old-fox-0001'), before);
+});
+
+test('a trail camera: different animals in front of the same background are different photos; the same shot saved twice is not', async () => {
+  const { jdb, row } = fakeDb();
+  const upload = (over: Parameters<typeof sighting>[0]) => sighting({ capture: 'library', cameraEvidence: true, ...over });
+  const t0 = NOW - 5 * DAY;
+  const deer = upload({ observedAt: t0, id: { sci: 'Odocoileus virginianus', common: 'White-tailed deer', group: 'mammal', rarity: 0.2 } });
+  await recordSighting(jdb, deer);
+  const scene = deer.phash!;
+  // the same view another night, a raccoon this time: a new species, full value
+  const raccoon = upload({ phash: flip(scene, 3), observedAt: t0 + DAY, id: { sci: 'Procyon lotor', common: 'Raccoon', group: 'mammal', rarity: 0.2 } });
+  await recordSighting(jdb, raccoon);
+  assert.equal(row(A, raccoon.sid).score!.bonuses.firstOfSpecies, 5);
+  // a deer again an hour later: a repeat sighting, reduced but not nothing
+  const deer2 = upload({ phash: flip(scene, 2), observedAt: t0 + 3600_000, id: { sci: 'Odocoileus virginianus', common: 'White-tailed deer', group: 'mammal', rarity: 0.2 } });
+  await recordSighting(jdb, deer2);
+  assert.ok(row(A, deer2.sid).points > 0);
+  // the first deer photo saved again (same moment, same species): the same photo, worth nothing
+  const again = upload({ phash: flip(scene, 1), observedAt: t0 + 30_000, id: { sci: 'Odocoileus virginianus', common: 'White-tailed deer', group: 'mammal', rarity: 0.2 } });
+  await recordSighting(jdb, again);
+  assert.equal(row(A, again.sid).points, 0);
+});
+
+test('one of the Commons photos Scout shows is refused like one of its library photos', async () => {
+  const { jdb, scout, refusals } = fakeDb();
+  const p = sighting();
+  scout.push({ url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Fox.jpg/1280px-Fox.jpg', phash: flip(p.phash!, 2), mask: CLEAR });
+  const out = await recordSighting(jdb, p);
+  assert.equal(out.kind === 'refused' && out.reason, 'library');
+  assert.equal(refusals[0].matched_user, null);
+});
+
+test('a picture the player had on the wall before another account handed it in is theirs: they are not the one refused', async () => {
+  const { jdb, rows, wall, refusals } = fakeDb();
+  const picture = sighting({ uid: B });
+  await recordSighting(jdb, picture); // B took it off A's wall before the nightly job fingerprinted the post
+  rows.set(`${B}/${picture.sid}`, { ...rows.get(`${B}/${picture.sid}`)!, recorded_at: iso(NOW - DAY) });
+  wall.push({ post_id: 'post-a-1', user_id: A, photo_sha: null, photo_phash: picture.phash, photo_mask: CLEAR, created_at: NOW - 2 * DAY });
+  const own = sighting({ phash: flip(picture.phash!, 2) });
+  const out = await recordSighting(jdb, own);
+  assert.equal(out.kind, 'recorded');
+  assert.ok(refusals.some((r) => r.user_id === A && r.reason === 'had_it_first' && r.matched_user === B));
+  // and anyone else handing it in after both is refused as before
+  const third = sighting({ uid: '00000000-0000-4000-8000-00000000000c', phash: flip(picture.phash!, 1) });
+  assert.equal((await recordSighting(jdb, third)).kind, 'refused');
+});
+
+test('a name the identifier writes differently is still the same species (one first-time bonus, one species)', async () => {
+  const { jdb, row } = fakeDb();
+  const names = ['Vulpes vulpes', 'Vulpes Vulpes', 'Vulpes vulpes fulva', 'Vulpes vulpes (juvenile)'];
+  const got = [];
+  for (const sci of names) {
+    const p = sighting({ id: { sci, common: 'Red fox', group: 'mammal', rarity: 0.4 } });
+    await recordSighting(jdb, p);
+    got.push([row(A, p.sid).scientific_name, row(A, p.sid).score!.bonuses.firstOfSpecies]);
+  }
+  assert.deepEqual(got, [['Vulpes vulpes', 5], ['Vulpes vulpes', 0], ['Vulpes vulpes', 0], ['Vulpes vulpes', 0]]);
+  await ensureReady(jdb, A, NOW);
+  assert.equal((await refreshTotals(jdb, A, NOW))!.speciesCount, 1);
+});
+
+test('"delete what is saved": when storage doesn\'t confirm the photos are gone the app is told to ask again', async () => {
+  const { jdb, rows, photos, profiles, storage } = fakeDb();
+  const { p, b64 } = withPhoto();
+  await recordSighting(jdb, p, b64);
+  assert.equal(photos.size, 1);
+  await ensureReady(jdb, A, NOW);
+  storage.failing = true;
+  await assert.rejects(() => syncJournal(jdb, A, { erase: true }, { now: NOW }), /stored photos/);
+  // the rows and the score are already gone; only the photo copies wait
+  assert.equal([...rows.values()].filter((r) => r.user_id === A).length, 0);
+  assert.equal(profiles.get(A)?.points ?? 0, 0);
+  storage.failing = false;
+  const out = await syncJournal(jdb, A, { erase: true }, { now: NOW });
+  assert.equal(out.prefs.backup, 'no');
+  assert.equal([...photos.keys()].filter((k) => k.startsWith(`${A}/`)).length, 0);
+});
+
+test('an under-13 erase leaves the account unanswered (asked again if they come back at 13), and its old score is not thrown away', async () => {
+  const { jdb, existing, state } = fakeDb();
+  existing(A, 300, 500);
+  await syncJournal(jdb, A, { tz: 'UTC' }, { now: NOW });
+  await syncJournal(jdb, A, { erase: true, why: 'under13' }, { now: NOW });
+  assert.equal(state(A).backup, null);
+  assert.equal(state(A).carryover_points, 300);
+  assert.ok(state(A).erased_at);
+});
+
+test('while scoring is paused for the day, receipts wait (no answer, so the app sends them again); copies refused at sync count toward the pause', async () => {
+  const { jdb, rows } = fakeDb();
+  const p = sighting();
+  const held = await syncJournal(jdb, A, { items: [{ id: p.sid, receipt: signReceipt(p) }] }, { now: NOW, refusalsLeft: 0 });
+  assert.equal(held.rows[p.sid], undefined);
+  assert.equal(rows.size, 0);
+  // someone else's photo handed in through receipts
+  const theirs = sighting({ uid: B });
+  await recordSighting(jdb, theirs);
+  let counted = 0;
+  const copies = [1, 2, 3].map(() => sighting({ phash: flip(theirs.phash!, 2) }));
+  const out = await syncJournal(jdb, A, { items: copies.map((c) => ({ id: c.sid, receipt: signReceipt(c) })) }, { now: NOW, refusalsLeft: 2, onCopyRefused: () => { counted++; } });
+  // two refusals use up what was left of the day; the third receipt waits
+  assert.equal(counted, 2);
+  assert.deepEqual(copies.map((c) => (out.rows[c.sid] ? 'refused' in out.rows[c.sid]! : 'waits')), [true, true, 'waits']);
+});
+
+test('the account\'s photos removed before it is deleted: its rows no longer claim them', async () => {
+  const { jdb, row } = fakeDb();
+  const { p, b64 } = withPhoto();
+  await recordSighting(jdb, p, b64);
+  assert.equal(row(A, p.sid).has_photo, true);
+  await syncJournal(jdb, A, { purge: true }, { now: NOW });
+  assert.equal(row(A, p.sid).has_photo, false);
+});
+
+test('erasing the journal also takes the account out of notes about other players\' refused photos', async () => {
+  const { jdb, refusals } = fakeDb();
+  const mine = sighting();
+  await recordSighting(jdb, mine);
+  await recordSighting(jdb, sighting({ uid: B, phash: flip(mine.phash!, 2) })); // B's copy is refused, noting A
+  assert.ok(refusals.some((r) => r.user_id === B && r.matched_user === A));
+  await syncJournal(jdb, A, { erase: true }, { now: NOW });
+  assert.ok(refusals.every((r) => r.matched_user !== A && !String(r.matched_ref ?? '').includes(mine.sid)));
 });

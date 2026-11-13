@@ -134,12 +134,27 @@ export const AUTHENTICITY_MESSAGES: Record<PictureReason, string> = {
 
 // Read the model's three answers about how the picture was made. Anything
 // missing or unexpected counts as an ordinary photo: only a clear answer
-// refuses a picture.
+// refuses a picture. A clear answer is read however it is written: "Screen",
+// "a screen", "screen " and "screen" are the same answer; true, "true" and
+// "yes" are the same yes.
+const said = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : v);
+const yes = (v: unknown) => v === true || said(v) === 'yes' || said(v) === 'true';
+function photoOfAnswer(v: unknown): (typeof PHOTO_OF)[number] {
+  const text = said(v);
+  if (typeof text !== 'string') return 'scene';
+  if ((PHOTO_OF as readonly string[]).includes(text)) return text as (typeof PHOTO_OF)[number];
+  // One of the listed words in a longer answer ("a screen", "printed photo").
+  // ("screenshot" is checked before "screen", which it contains.)
+  for (const word of ['screenshot', 'screen', 'print', 'artwork'] as const) {
+    if (new RegExp(`\\b${word}(s|ed)?\\b`).test(text)) return word;
+  }
+  return 'scene';
+}
+
 export function readAuthenticity(p: any): Authenticity {
-  const photoOf = (PHOTO_OF as readonly unknown[]).includes(p?.photoOf) ? (p.photoOf as (typeof PHOTO_OF)[number]) : 'scene';
-  const reason: PictureReason | null =
-    photoOf !== 'scene' ? photoOf : p?.watermark === true ? 'watermark' : p?.aiMade === 'yes' ? 'synthetic' : null;
-  return { ok: reason === null, reason, review: reason === null && p?.aiMade === 'maybe' };
+  const photoOf = photoOfAnswer(p?.photoOf);
+  const reason: PictureReason | null = photoOf !== 'scene' ? photoOf : yes(p?.watermark) ? 'watermark' : yes(p?.aiMade) ? 'synthetic' : null;
+  return { ok: reason === null, reason, review: reason === null && said(p?.aiMade) === 'maybe' };
 }
 
 // Turn the model's raw answer into the response the app scores. Everything is

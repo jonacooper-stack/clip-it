@@ -13,6 +13,7 @@ import { toRef, type PhotoRef } from './library';
 import { askJSON } from './claude';
 import { blockedKeys, photoKey } from './photoFlags';
 import { adminClient, log } from './server';
+import { photoFingerprint } from './phash';
 
 const UA = 'ClipItWildlife/1.0 (+https://clipitwildlife.app/support)';
 const API = 'https://commons.wikimedia.org/w/api.php';
@@ -125,15 +126,55 @@ async function fetchForCheck(url: string): Promise<string | null> {
   }
 }
 
+// A photo Scout shows, and its look-alike fingerprint (see public.scout_prints).
+export interface ScoutPrint {
+  url: string;
+  phash: string | null;
+  mask: string | null;
+}
+
+// Keep the fingerprints of photos Scout is about to show, so that a player
+// who saves one from Commons (the credit under it links there) can't hand it
+// in as their own sighting. Best effort: the nightly job fingerprints any
+// photo that was missed (journalUpkeep printScoutPhotos).
+export async function rememberScoutPrints(prints: ScoutPrint[]): Promise<void> {
+  const db = adminClient();
+  if (!db || !prints.length) return;
+  const { error } = await db.from('scout_prints').upsert(
+    prints.map((p) => ({ url: p.url, photo_phash: p.phash, photo_mask: p.mask })),
+    { onConflict: 'url' },
+  );
+  if (error) log('scout_prints_error', { detail: error.message.slice(0, 160) });
+}
+
+// The fingerprint of a Commons photo Scout shows, from the copy the check
+// downloads. 'gone' when Commons says the file no longer exists; null when it
+// couldn't be fetched right now.
+export async function fingerprintCommonsPhoto(url: string): Promise<{ phash: string | null; mask: string | null } | 'gone' | null> {
+  if (!COMMONS_HOST.test(url)) return 'gone';
+  try {
+    const res = await timedFetch(url.replace(/\/1280px-/, '/960px-'), 8000);
+    if (res.status === 404 || res.status === 410) return 'gone';
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > 6_000_000) return { phash: null, mask: null };
+    const { phash, mask } = photoFingerprint(buf.toString('base64'));
+    return { phash, mask };
+  } catch {
+    return null;
+  }
+}
+
 // Ask Claude which candidates really show the animal. Throws if the check
 // itself can't run (then nothing unchecked is used). `judged` lists every
 // candidate the model actually looked at, kept or not (one that couldn't be
-// downloaded isn't in it, and gets another chance later).
+// downloaded isn't in it, and gets another chance later). `prints`: the
+// fingerprints of the photos kept, taken from the copies already downloaded.
 export async function verifyPhotos(
   species: string,
   sci: string | null | undefined,
   candidates: PhotoRef[],
-): Promise<{ ok: PhotoRef[]; judged: PhotoRef[] }> {
+): Promise<{ ok: PhotoRef[]; judged: PhotoRef[]; prints?: ScoutPrint[] }> {
   const loaded = (await Promise.all(candidates.map(async (c) => ({ c, data: await fetchForCheck(c.url) })))).filter((x) => x.data);
   if (!loaded.length) throw new Error('could not download any candidate photos');
   const content: Anthropic.Beta.BetaContentBlockParam[] = [
@@ -153,7 +194,16 @@ export async function verifyPhotos(
   const okIdx = new Set((out.results ?? []).filter((r) => r.ok).map((r) => r.index));
   const rejected = (out.results ?? []).filter((r) => !r.ok).map((r) => `${loaded[r.index - 1]?.c.species ?? r.index}: ${r.reason}`.slice(0, 140));
   if (rejected.length) log('species_photos_rejected', { species, rejected });
-  return { ok: loaded.filter((_, i) => okIdx.has(i + 1)).map((x) => x.c), judged: loaded.map((x) => x.c) };
+  const kept = loaded.filter((_, i) => okIdx.has(i + 1));
+  const prints = kept.map((x): ScoutPrint => {
+    try {
+      const { phash, mask } = photoFingerprint(x.data!);
+      return { url: x.c.url, phash, mask };
+    } catch {
+      return { url: x.c.url, phash: null, mask: null };
+    }
+  });
+  return { ok: kept.map((x) => x.c), judged: loaded.map((x) => x.c), prints };
 }
 
 // The outside world the lookup talks to (replaced in tests).
@@ -161,6 +211,7 @@ export interface LookupDeps {
   search: typeof commonsSearch;
   verify: typeof verifyPhotos;
   blocked: (refs: PhotoRef[]) => Promise<Set<string>>;
+  remember: typeof rememberScoutPrints;
 }
 
 // What an earlier lookup of the same species already settled.
@@ -187,6 +238,7 @@ export async function speciesPhotoLookup(
   const search = deps.search ?? commonsSearch;
   const verify = deps.verify ?? verifyPhotos;
   const blocked = deps.blocked ?? ((refs: PhotoRef[]) => blockedKeys(adminClient(), refs.map((r) => r.url)));
+  const remember = deps.remember ?? rememberScoutPrints;
   const checked = new Set(prior.checked ?? []);
 
   // Library photos, then Commons photos accepted before (minus anything
@@ -218,9 +270,10 @@ export async function speciesPhotoLookup(
     const flagged = await blocked(candidates);
     const fresh = candidates.filter((c) => !flagged.has(photoKey(c.url)));
     if (fresh.length) {
-      const { ok, judged } = await verify(species, sci, fresh);
+      const { ok, judged, prints } = await verify(species, sci, fresh);
       for (const p of judged) checked.add(photoKey(p.url));
       for (const p of ok) if (out.length < max) out.push(p);
+      if (prints?.length) await remember(prints).catch(() => {});
     }
   } catch (err: any) {
     log('species_photos_error', { species, detail: String(err?.message ?? err).slice(0, 160) });

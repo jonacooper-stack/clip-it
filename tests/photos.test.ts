@@ -24,6 +24,7 @@ function world(found: PhotoRef[], accept: (p: PhotoRef) => boolean = () => true)
       return { ok: candidates.filter(accept), judged: candidates };
     },
     blocked: async () => new Set<string>(),
+    remember: async () => {},
   };
   return { deps, calls };
 }

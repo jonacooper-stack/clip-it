@@ -3,6 +3,8 @@
 //     recognised when someone hands it in as their own sighting;
 //   - remove stored journal photos whose account no longer exists, and
 //     photos of deleted sightings that storage didn't confirm at the time;
+//   - fingerprint the Commons photos Scout shows that have none yet;
+//   - remove photo copies an erase couldn't remove at the time;
 //   - remove notes about refused photos after 90 days;
 //   - once the legacy window has closed, settle the scores of accounts that
 //     never switched to server-kept scores.
@@ -10,6 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { log, ownStorageUrl } from './server';
 import { photoFingerprint } from './phash';
+import { fingerprintCommonsPhoto } from './photos';
 
 const BUCKET = 'journal-photos';
 
@@ -179,4 +182,60 @@ export async function settleLegacyScores(db: SupabaseClient): Promise<number> {
     return 0;
   }
   return Number(data ?? 0);
+}
+
+// The Commons photos Scout shows that have no fingerprint yet (accepted
+// before fingerprints were kept, or missed at the time). A photo Commons no
+// longer has gets an empty fingerprint so it isn't tried again; one that
+// can't be fetched right now is tried again another night.
+export async function printScoutPhotos(db: SupabaseClient, opts: { max?: number; deadline: number }): Promise<number> {
+  const { data, error } = await db.rpc('scout_photos_without_prints', { p_limit: opts.max ?? 60 });
+  if (error) return 0; // migration 0011 not run yet
+  const urls = ((data ?? []) as { url: string }[]).map((r) => r.url);
+  let done = 0;
+  const worker = async () => {
+    for (let url = urls.shift(); url; url = urls.shift()) {
+      if (Date.now() > opts.deadline) return;
+      const print = await fingerprintCommonsPhoto(url);
+      if (print === null) continue;
+      const row = print === 'gone' ? { url, photo_phash: null, photo_mask: null } : { url, photo_phash: print.phash, photo_mask: print.mask };
+      const { error: upsertError } = await db.from('scout_prints').upsert(row, { onConflict: 'url' });
+      if (!upsertError) done++;
+    }
+  };
+  // (Three at a time: Commons asks clients to go easy on it.)
+  await Promise.all([worker(), worker(), worker()]);
+  return done;
+}
+
+// Photo copies that a "delete what is saved" (or an under-13 answer) could
+// not remove at the time, for an account that never came back to ask again:
+// an under-13 answer signs the account out, and a player may delete the app
+// right after. Only accounts erased in the last two weeks whose journal is
+// empty and isn't being saved; the account's lock is held while the folder
+// is emptied, so a sync that starts saving again can't run alongside.
+export async function retryErasedPhotos(db: SupabaseClient, opts: { deadline: number }): Promise<number> {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { data, error } = await db.from('journal_state').select('user_id').gte('erased_at', since).or('backup.is.null,backup.eq.no').limit(100);
+  if (error) return 0;
+  const noRows = async (uid: string) => {
+    const { count, error: countError } = await db.from('journal_sightings').select('id', { count: 'exact', head: true }).eq('user_id', uid);
+    return !countError && count === 0;
+  };
+  let done = 0;
+  for (const { user_id: uid } of (data ?? []) as { user_id: string }[]) {
+    if (Date.now() > opts.deadline) break;
+    if (!(await noRows(uid))) continue;
+    const { data: files, error: listError } = await db.storage.from(BUCKET).list(uid, { limit: 1 });
+    if (listError || !files?.length) continue;
+    const { data: locked } = await db.rpc('journal_try_lock', { p_user: uid, p_seconds: 30 });
+    if (locked !== true) continue;
+    try {
+      const { data: state } = await db.from('journal_state').select('backup').eq('user_id', uid).maybeSingle();
+      if ((state as { backup?: string | null } | null)?.backup !== 'yes' && (await noRows(uid)) && (await emptyFolder(db, uid))) done++;
+    } finally {
+      await db.rpc('journal_unlock', { p_user: uid });
+    }
+  }
+  return done;
 }

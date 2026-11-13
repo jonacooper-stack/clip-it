@@ -109,11 +109,25 @@ test('an ordinary photo scores; doubt alone only marks it for review', () => {
 });
 
 test('missing or odd answers about how the picture was made never refuse a photo', () => {
-  for (const answer of [{}, { photoOf: 'hologram' }, { watermark: 'yes' }, { aiMade: true }, { photoOf: null, watermark: 1, aiMade: 'probably' }]) {
+  for (const answer of [{}, { photoOf: 'hologram' }, { photoOf: 'a natural scene' }, { watermark: 'no' }, { aiMade: 'no' }, { photoOf: null, watermark: 1, aiMade: 'probably' }]) {
     const r = normalizeIdentification({ ...deer, ...answer });
     assert.equal(r.eligible, true, JSON.stringify(answer));
     assert.equal(r.authenticity.ok, true);
   }
+});
+
+test('a clear answer refuses the photo however it is written', () => {
+  const cases: [Record<string, unknown>, string][] = [
+    [{ photoOf: 'Screen' }, 'screen'], [{ photoOf: 'screen ' }, 'screen'], [{ photoOf: 'a screen' }, 'screen'],
+    [{ photoOf: 'screenshot of a phone' }, 'screenshot'], [{ photoOf: 'printed photo' }, 'print'],
+    [{ watermark: 'true' }, 'watermark'], [{ watermark: 'yes' }, 'watermark'], [{ aiMade: 'Yes' }, 'synthetic'], [{ aiMade: true }, 'synthetic'],
+  ];
+  for (const [answer, reason] of cases) {
+    const r = normalizeIdentification({ ...deer, ...answer });
+    assert.equal(r.eligible, false, JSON.stringify(answer));
+    assert.equal(r.authenticity.reason, reason, JSON.stringify(answer));
+  }
+  assert.equal(normalizeIdentification({ ...deer, aiMade: ' Maybe' }).authenticity.review, true);
 });
 
 test('a pet on a screen is still just a pet: the model\'s own reason is kept', () => {

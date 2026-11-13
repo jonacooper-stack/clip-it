@@ -186,18 +186,48 @@ alter table public.journal_state add column if not exists backup text check (bac
 alter table public.journal_state add column if not exists save_places boolean;
 alter table public.journal_state add column if not exists erased_at timestamptz;
 alter table public.journal_state add column if not exists baseline_species integer not null default 0 check (baseline_species between 0 and 5000);
+-- (A database that ran the very first draft of this file has the table without these two.)
+alter table public.journal_state add column if not exists legacy_allowance integer not null default 0 check (legacy_allowance between 0 and 20000);
+alter table public.journal_state add column if not exists busy_until timestamptz;
 alter table public.journal_state enable row level security;
 drop policy if exists journal_state_read_own on public.journal_state;
 create policy journal_state_read_own on public.journal_state
   for select using (user_id = auth.uid());
 revoke insert, update, delete, truncate on public.journal_state from anon, authenticated;
 
+-- Leaderboard rows written before the limits of migration 0010 that still
+-- break one of them (a very long name, a picture on another server, an
+-- absurd score). Those limits are re-checked whenever a row is updated, so
+-- the server could never write such a row's score, and the settlement
+-- further down could never bring it back to its baseline. Bring them inside
+-- the limits. (Every time this file runs: after it, nothing can write such a
+-- row again. Run 0010 before this file.)
+update public.profiles
+   set display_name = nullif(left(display_name, 60), ''),
+       avatar_url = case
+         when coalesce(is_bot, false) or avatar_url like 'https://%/storage/v1/object/public/avatars/' || id::text || '/%' then avatar_url
+       end,
+       points = least(greatest(points, 0), 5000000),
+       species_count = least(greatest(species_count, 0), 100000)
+ where char_length(display_name) not between 1 and 60
+    or points not between 0 and 5000000
+    or species_count not between 0 and 100000
+    or (avatar_url is not null and not coalesce(is_bot, false)
+        and avatar_url not like 'https://%/storage/v1/object/public/avatars/' || id::text || '/%');
+
 -- The one-time snapshot, taken the first time this file runs (running it
 -- again changes nothing). Every account that exists now gets:
 --   a baseline: its current leaderboard score, at most 10,000 (and the
 --   species count shown with it, at most 5,000);
---   an allowance for phone-scored sightings: 500 points for each day the
---   account has existed, at most 20,000.
+--   an allowance for phone-scored sightings, which nobody can check: the
+--   smallest of 500 points for each day the account has existed, 20,000, and
+--   what the leaderboard shows for it now plus 1,500. (The last part is what
+--   keeps a long-idle account from claiming thousands of points for made-up
+--   "old sightings". The 1,500 is room for what a player earned since their
+--   leaderboard row was last written: the old app only wrote it from the
+--   Community tab. Sightings beyond the allowance are not lost: the app sends
+--   their photos through the identifier again and they count from then on.
+--   To choose another number, change it here before this file is first run.)
 do $$
 begin
   if not exists (select 1 from public.app_settings where key = 'cloud_journal_started') then
@@ -206,7 +236,9 @@ begin
            least(greatest(coalesce(p.points, 0), 0), 10000),
            least(greatest(coalesce(p.species_count, 0), 0), 5000),
            least(greatest(coalesce(p.points, 0), 0), 10000),
-           least(20000, 500 * greatest(1, ceil(extract(epoch from (now() - coalesce(u.created_at, now()))) / 86400.0)::integer))
+           least(20000,
+                 500 * greatest(1, ceil(extract(epoch from (now() - coalesce(u.created_at, now()))) / 86400.0)::integer),
+                 least(greatest(coalesce(p.points, 0), 0), 20000) + 1500)
     from auth.users u
     left join public.profiles p on p.id = u.id
     where not coalesce(p.is_bot, false)
@@ -283,6 +315,45 @@ as $$
 $$;
 revoke all on function public.wall_posts_without_prints(integer) from public, anon, authenticated;
 grant execute on function public.wall_posts_without_prints(integer) to service_role;
+
+-- Fingerprints of the Wikimedia Commons photos Scout shows (in posts, stories
+-- and species notes). The credit under each one opens its Commons page, where
+-- the original file can be saved with the photographer's camera details: an
+-- upload of it must be turned down like one of Scout's library photos.
+-- Filled by the server when it checks a photo, and by the nightly job for
+-- photos accepted earlier. RLS on, no policies.
+create table if not exists public.scout_prints (
+  url text primary key check (char_length(url) <= 600),   -- the photo's address, as Scout shows it
+  photo_phash text check (photo_phash ~ '^[0-9a-f]{64}$'),  -- empty when the photo couldn't be fingerprinted
+  photo_mask text check (photo_mask ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz not null default now()
+);
+alter table public.scout_prints enable row level security;
+
+-- Commons photos Scout holds that have no fingerprint yet (for the nightly
+-- job). Wherever Scout keeps a photo it keeps its address, so the addresses
+-- are read straight out of what is stored.
+create or replace function public.scout_photos_without_prints(p_limit integer)
+returns table (url text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select distinct u.url
+  from (
+    select (regexp_matches(f.facts::text, 'https://upload\.wikimedia\.org/[^"\\ ]+', 'g'))[1] as url from public.crew_facts f
+    union all
+    select (regexp_matches(t.payload::text, 'https://upload\.wikimedia\.org/[^"\\ ]+', 'g'))[1] from public.crew_stories t
+    union all
+    select (regexp_matches(c.payload::text, 'https://upload\.wikimedia\.org/[^"\\ ]+', 'g'))[1] from public.crew_forecasts c
+  ) u
+  left join public.scout_prints sp on sp.url = u.url
+  where sp.url is null and char_length(u.url) <= 600
+  limit greatest(1, least(p_limit, 500));
+$$;
+revoke all on function public.scout_photos_without_prints(integer) from public, anon, authenticated;
+grant execute on function public.scout_photos_without_prints(integer) to service_role;
 
 -- Photos that were turned down as copies: who, which sighting, and what they
 -- matched. Kept for 90 days (the nightly job removes older ones) so that a
@@ -364,41 +435,78 @@ $$;
 revoke all on function private.same_picture(text, text, text, text) from public;
 
 -- Stored pictures that are, or look like, the one being recorded: sightings
--- the server identified itself (any account), wall photos (any account), and
--- the asking account's own sightings of any kind. p_phash / p_mask are the
--- picture's look-alike fingerprint and p_mirror / p_mirror_mask that of its
--- mirror image (see api/_lib/phash.ts). Compared here, over every stored
--- fingerprint, so the answer doesn't depend on what the picture was
--- identified as. A sighting only the phone vouches for is never used against
--- another player.
+-- the server identified itself (any account), wall photos (any account),
+-- Scout's Commons photos, and the asking account's own sightings of any kind.
+-- p_phash / p_mask are the picture's look-alike fingerprint and p_mirror /
+-- p_mirror_mask that of its mirror image (see api/_lib/phash.ts). Compared
+-- here, over every stored fingerprint, so the answer doesn't depend on what
+-- the picture was identified as. A sighting only the phone vouches for is
+-- never used against another player.
+--
+-- The rule is private.same_picture's, written out in place: the picture's own
+-- fingerprints are checked and cast once (the "materialized" matters: without
+-- it they are re-checked for every stored row), and each stored row costs a
+-- few bit operations. Measured on 50,000 stored fingerprints: about 0.1 s,
+-- against 3.8 s when the function was called for every row.
+--
+-- Each match says when the stored picture was handed in (made_at; unknown for
+-- a deleted sighting and for Scout's photos) and, for a sighting, its species
+-- and when its photo was taken. Other accounts' matches come first, oldest
+-- first, then the asker's own (the same file first): a player's own matches,
+-- however many, can never crowd out somebody else's.
 drop function if exists public.journal_look_alikes(uuid, text, text, text, integer);
+drop function if exists public.journal_look_alikes(uuid, text, text, text, text, text);
 create or replace function public.journal_look_alikes(p_user uuid, p_sha text, p_phash text, p_mask text, p_mirror text, p_mirror_mask text)
-returns table (source text, user_id uuid, ref text, exact boolean)
+returns table (source text, user_id uuid, ref text, exact boolean, made_at timestamptz, species text, taken_at timestamptz)
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  with prints as (
-    select 'journal'::text as source, s.user_id, s.id as ref, s.photo_sha, s.photo_phash, s.photo_mask
+  with q as materialized (
+    select
+      case when p_phash ~ '^[0-9a-f]{64}$' and p_mask ~ '^[0-9a-f]{64}$' then ('x' || p_phash)::bit(256) end as h,
+      case when p_phash ~ '^[0-9a-f]{64}$' and p_mask ~ '^[0-9a-f]{64}$' then ('x' || p_mask)::bit(256) end as m,
+      case when p_mirror ~ '^[0-9a-f]{64}$' and p_mirror_mask ~ '^[0-9a-f]{64}$' then ('x' || p_mirror)::bit(256) end as fh,
+      case when p_mirror ~ '^[0-9a-f]{64}$' and p_mirror_mask ~ '^[0-9a-f]{64}$' then ('x' || p_mirror_mask)::bit(256) end as fm
+  ), prints as (
+    -- (The columns' own checks guarantee 64 hex characters, or nothing.)
+    select 'journal'::text as source, s.user_id, s.id as ref, s.photo_sha,
+           ('x' || s.photo_phash)::bit(256) as h, ('x' || s.photo_mask)::bit(256) as m,
+           case when s.deleted_at is null then s.recorded_at end as made_at,
+           s.scientific_name as species,
+           case when s.deleted_at is null then s.observed_at end as taken_at
       from public.journal_sightings s
       where (s.verified or s.user_id = p_user)
         and (s.photo_sha is not null or s.photo_phash is not null)
     union all
-    select 'wall', w.user_id, w.post_id::text, w.photo_sha, w.photo_phash, w.photo_mask
+    select 'wall', w.user_id, w.post_id::text, w.photo_sha,
+           ('x' || w.photo_phash)::bit(256), ('x' || w.photo_mask)::bit(256),
+           fp.created_at, null::text, null::timestamptz
       from public.wall_prints w
+      join public.feed_posts fp on fp.id = w.post_id
+    union all
+    select 'scout', null::uuid, sp.url, null::text,
+           ('x' || sp.photo_phash)::bit(256), ('x' || sp.photo_mask)::bit(256),
+           null::timestamptz, null::text, null::timestamptz
+      from public.scout_prints sp
+      where sp.photo_phash is not null
   ), compared as (
-    select p.source, p.user_id, p.ref,
+    select p.source, p.user_id, p.ref, p.made_at, p.species, p.taken_at,
       (p_sha is not null and p.photo_sha = p_sha) as exact,
-      (private.same_picture(p.photo_phash, p.photo_mask, p_phash, p_mask)
-        or private.same_picture(p.photo_phash, p.photo_mask, p_mirror, p_mirror_mask)) as alike
-    from prints p
+      (coalesce(bit_count(p.m & q.m) >= 48 and bit_count((p.h # q.h) & p.m & q.m) <= bit_count(p.m & q.m) / 10 - 3, false)
+        or coalesce(bit_count(p.m & q.fm) >= 48 and bit_count((p.h # q.fh) & p.m & q.fm) <= bit_count(p.m & q.fm) / 10 - 3, false)) as alike,
+      (p.user_id is not distinct from p_user) as own
+    from prints p cross join q
+  ), ranked as (
+    select c.*, row_number() over (partition by c.own order by (c.own and not c.exact), c.made_at nulls first, c.ref) as n
+    from compared c
+    where c.exact or c.alike
   )
-  select c.source, c.user_id, c.ref, c.exact
-  from compared c
-  where c.exact or c.alike
-  order by c.exact desc
-  limit 50;
+  select r.source, r.user_id, r.ref, r.exact, r.made_at, r.species, r.taken_at
+  from ranked r
+  where r.n <= 50
+  order by r.own, r.n;
 $$;
 revoke all on function public.journal_look_alikes(uuid, text, text, text, text, text) from public, anon, authenticated;
 grant execute on function public.journal_look_alikes(uuid, text, text, text, text, text) to service_role;
@@ -411,6 +519,15 @@ grant execute on function public.journal_look_alikes(uuid, text, text, text, tex
 -- it had. (What such an account reports is shown on the board in the
 -- meantime but is never carried into the server-kept score: see the
 -- snapshot above, and settle_legacy_scores below for when the window ends.)
+--
+-- Even then there is a ceiling, because the number is the app's own word:
+-- what the account had at the snapshot plus the same room the snapshot's
+-- allowance gives (the smallest of 500 points per day the account has
+-- existed, 20,000, and its snapshot score plus 1,500), and one more species
+-- for every 20 of those points. An account created after the snapshot has no
+-- snapshot score: 500 points per day of its life, at most 1,500. A number
+-- above the ceiling is cut to it, quietly, so an old app's update of its row
+-- (name and score together) still goes through.
 create or replace function public.protect_score()
 returns trigger
 language plpgsql
@@ -419,13 +536,37 @@ set search_path = public
 as $$
 declare
   claims_role text := coalesce(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role', '');
+  top_points integer;
+  top_species integer;
 begin
   if claims_role not in ('anon', 'authenticated') then
     return new;                                -- the server
   end if;
   if private.legacy_open()
      and not exists (select 1 from public.journal_state s where s.user_id = new.id and s.ready_at is not null) then
-    return new;                                -- an app that hasn't updated yet
+    -- An app that hasn't updated yet: its own numbers, up to the ceiling.
+    -- (One rule for every such account, whether or not it has a journal_state
+    -- row yet: an account created after the snapshot gets a row with nothing
+    -- in it as soon as it answers "not now".)
+    select b.points + r.room, b.species + r.room / 20
+      into top_points, top_species
+      from auth.users u
+      left join public.journal_state s on s.user_id = u.id
+      cross join lateral (select coalesce(s.baseline_points, 0) as points, coalesce(s.baseline_species, 0) as species) b
+      cross join lateral (
+        select least(20000,
+                     500 * greatest(1, ceil(extract(epoch from (now() - coalesce(u.created_at, now()))) / 86400.0)::integer),
+                     b.points + 1500) as room
+      ) r
+      where u.id = new.id;
+    -- (Comparisons, not least(): a missing number stays missing and is refused by the column.)
+    if new.points > coalesce(top_points, 0) then
+      new.points := coalesce(top_points, 0);
+    end if;
+    if new.species_count > coalesce(top_species, 0) then
+      new.species_count := coalesce(top_species, 0);
+    end if;
+    return new;
   end if;
   if tg_op = 'INSERT' then
     new.points := 0;
@@ -530,6 +671,10 @@ begin
   if claims_role not in ('anon', 'authenticated') then
     return new;
   end if;
+  -- A post is dated by the server, whatever the app sends: the wall is
+  -- ordered by this time, and the copy check uses it to tell who had a
+  -- picture first.
+  new.created_at := now();
   if new.sighting_id is not null then
     if new.sighting_id !~ '^[A-Za-z0-9_-]{6,64}$' then
       raise exception 'not a sighting id' using errcode = 'check_violation';
