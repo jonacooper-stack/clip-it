@@ -14,7 +14,11 @@
 //
 // Two pictures are compared only on the bits that are decisive in both.
 // Re-saving, resizing or recompressing a picture leaves those bits as they
-// were; a different picture disagrees on a fifth of them or more.
+// were; a different picture usually disagrees on a fifth of them or more.
+// Not always: two shots from a camera that never moves (a trail camera, a
+// feeder camera) share a background, and a small animal in one of them
+// barely changes the grid, so they can look like one picture. The journal's
+// rules allow for that (api/_lib/journal.ts recordSighting).
 //
 // Measured with this code on Scout's library plus 200 photos of birds in
 // flight and animals in snow (44,551 pairs of different photos, flipped and

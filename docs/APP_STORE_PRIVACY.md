@@ -71,7 +71,7 @@ added, add it here, then check the policy and the label against it.
 | With that photo, only when the journal is being saved: the sighting's id, when it was taken and logged, the time zone, camera or upload, a yes/no on camera details, and the rounded place if places are saved | Our server (none of it goes to the AI provider) | Kept as part of the journal row below | With the row |
 | Journal row: species, times, points, field notes, a suggested species, status, the rounded place (if saved), which wall post shares it | The player and our server | Life of the account, or until the player deletes it or erases the saved journal | Sighting deleted, journal erased, or account deleted |
 | The stored copy of each sighting's photo (camera details stripped) | The player (through a short-lived link) and our server | Same | Same; the nightly clean-up finishes anything a deletion missed |
-| Photo fingerprints (of journal photos and wall photos) | Our server only | Life of the account (kept on the marker of a deleted sighting) | Journal erased or account deleted |
+| Photo fingerprints (of journal photos and wall photos) | Our server only | Life of the account (kept on the marker of a deleted sighting); a wall photo's as long as the post | Journal photos: journal erased or account deleted. Wall photos: post or account deleted |
 | Marker of a deleted sighting: its id, the species, the fingerprints, the time of deletion | The player and our server | Life of the account | Journal erased or account deleted |
 | Note about a photo turned down as a copy: the account, the sighting id, the reason, and which account's photo it matched | Our server only | 90 days | Nightly clean-up; at once when either account is deleted (the matched account's ids are cleared) |
 | Daily counts: identified, scored, turned down, journal saves | Our server only | About a week | Nightly clean-up; account deleted |
@@ -81,9 +81,13 @@ added, add it here, then check the policy and the label against it.
 | Server log lines: an account id, a sighting id and what happened (never photos, names or places) | Whoever can open the Vercel logs | As long as Vercel keeps logs | Not removed with the account |
 | On the phone: one journal per account, with full-size photos, exact places and the server's receipts | The person using the phone | Until the account is deleted from that phone, or the app's data is reset | Account deletion, "reset app data", uninstall |
 
-An under-13 answer at the age question deletes everything in the first ten
-rows for that account and signs it out (the account itself still exists: see
-DECISIONS.md).
+An under-13 answer at the age question deletes, for that account: the
+journal rows and their markers, the stored photo copies, the journal's
+fingerprints, its notes about refused photos (and its name on notes about
+other players' photos), and the time zone; then it signs the account out.
+What stays: the account itself, its leaderboard row and wall posts (with
+their photos' fingerprints), the daily counts until they age out, and the
+journal state's starting baseline and allowance (see DECISIONS.md, item 7).
 
 ## Related answers elsewhere in App Store Connect
 - **Age rating questionnaire:** "Unrestricted Web Access: No"; "User-Generated

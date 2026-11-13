@@ -347,9 +347,16 @@ are done.
    `0011_cloud_journal.sql`.** 0011 creates the journal tables, the private
    photo bucket and the rules, and takes a one-time snapshot: every account
    that exists at that moment gets a *baseline* (its leaderboard score, at
-   most 10,000) and an *allowance* for sightings scored on the phone (500
-   points per day the account has existed, at most 20,000). Safe to run more
-   than once; the snapshot is only taken the first time.
+   most 10,000) and an *allowance* for sightings scored on the phone: the
+   smallest of 500 points per day the account has existed, 20,000, and its
+   leaderboard score plus 1,500. (The 1,500 is room for what players earned
+   since their leaderboard row was last written; the old app only wrote it
+   from the Community tab. To choose another number, change it in the file
+   before running it.) Phone-scored sightings beyond the allowance are kept
+   at 0 points and the updated app has the server identify them, so honest
+   players lose nothing while their photos are on their phone. Safe to run
+   more than once; the snapshot is only taken the first time. Run 0010
+   before 0011: 0011 also brings old leaderboard rows inside 0010's limits.
 2. **Vercel → Settings → Environment Variables: add `RECEIPT_SECRET`** (any
    long random string). Optional but recommended: without it the server signs
    its receipts with a key derived from the Supabase key, and receipts
@@ -372,6 +379,11 @@ are done.
    the result shows `"wallPrints": 0`. Until the wall photos are
    fingerprinted, a photo copied from the wall could be scored by someone
    else.
+
+**Optional settings** (Vercel → Environment Variables, then Redeploy):
+`DAILY_SPECIES_LIMIT` (default 5) and `DAILY_REPEAT_LIMIT` (default 20), the
+daily brakes on repeat sightings described in DECISIONS.md, "The photo
+check".
 
 **What players see.**
 - *The age question, for some.* An account that never answered it (one made
@@ -401,7 +413,11 @@ are done.
 **The 30-day clock.** App versions from before this change score sightings
 on the phone and report their own totals. That stays accepted for 30 days
 from the first nightly run after the deploy, and so does the upload of each
-player's existing journal (up to the allowance from step 1). After that only
+player's existing journal (up to the allowance from step 1). During those
+days an app that hasn't updated may still write its own total to the
+leaderboard, but no higher than the account's baseline plus the same
+allowance (for an account created after the migration: 500 points per day
+of its life, at most 1,500). After that only
 sightings the server identified itself count, and an account that never
 updated goes back to its baseline. A sighting that arrives too late is not
 lost: while its photo is on the phone, the updated app sends it through the
@@ -471,6 +487,14 @@ alter table public.post_comments disable trigger post_comments_language;
   shows it the same way.
 - A player deleted their saved journal: their score on the leaderboard is 0
   from then on (the dialog says so), and `journal_state.erased_at` shows when.
+  If storage didn't confirm at once that the photo copies were gone, the log
+  shows `journal_erased` with `photos: pending`; the app asks again, and the
+  nightly job empties the folder if it never does. An under-13 answer leaves
+  the account as "never answered" (`backup` empty), so a player who comes
+  back at 13 is asked again and keeps their old score.
+- A refusal note with reason `had_it_first` means a player's photo matched
+  another account's sighting, but the player had it on the wall first: the
+  other account's sighting is the one to look at.
 - After the 30 days, the nightly job sets accounts that never switched back
   to their baseline. If that ever fails the log shows `legacy_settle_error`
   with the reason; one account that can't be settled no longer holds up the
