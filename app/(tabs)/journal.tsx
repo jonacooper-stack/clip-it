@@ -14,6 +14,7 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
 import { sceneTagMeta } from '@/lib/sceneTags';
 import type { Sighting } from '@/types';
+import { speciesKey } from '../../shared/species';
 
 const PAD = spacing.md;
 const GAP = 4;
@@ -84,7 +85,7 @@ function buildGroups(items: Sighting[], group: GroupKey): Group[] {
     let key: string;
     let title: string;
     if (group === 'species') {
-      key = s.species?.scientificName ?? 'unidentified';
+      key = speciesKey(s.species?.scientificName) || 'unidentified';
       title = s.species?.commonName ?? 'Identifying…';
     } else if (group === 'date') {
       key = dayKey(s.observedAt);

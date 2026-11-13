@@ -1,6 +1,7 @@
-// Controlled behavior/scene vocabulary — mirrors the `scene_tags` table in
-// supabase/migrations/0001_init.sql. The server is the source of truth for
-// multipliers; this copy drives the mock identifier and the UI labels.
+// The behaviours the identifier can report, with the labels the app shows.
+// What each is worth is decided in shared/scoring.ts (one copy for app and
+// server).
+import { SCENE_TAG_MULTIPLIERS as M } from '../../shared/scoring';
 
 export interface SceneTagMeta {
   code: string;
@@ -11,11 +12,11 @@ export interface SceneTagMeta {
 }
 
 export const SCENE_TAGS: Record<string, SceneTagMeta> = {
-  with_young: { code: 'with_young', label: 'With young', emoji: '🐾', multiplier: 3, requiresReview: false },
-  predation: { code: 'predation', label: 'Predation', emoji: '⚡', multiplier: 3, requiresReview: true },
-  in_flight: { code: 'in_flight', label: 'In flight', emoji: '🪶', multiplier: 1.5, requiresReview: false },
-  courtship: { code: 'courtship', label: 'Courtship', emoji: '💞', multiplier: 2, requiresReview: false },
-  group_herd: { code: 'group_herd', label: 'Group / herd', emoji: '🦌', multiplier: 1.5, requiresReview: false },
+  with_young: { code: 'with_young', label: 'With young', emoji: '🐾', multiplier: M.with_young, requiresReview: false },
+  predation: { code: 'predation', label: 'Predation', emoji: '⚡', multiplier: M.predation, requiresReview: true },
+  in_flight: { code: 'in_flight', label: 'In flight', emoji: '🪶', multiplier: M.in_flight, requiresReview: false },
+  courtship: { code: 'courtship', label: 'Courtship', emoji: '💞', multiplier: M.courtship, requiresReview: false },
+  group_herd: { code: 'group_herd', label: 'Group / herd', emoji: '🦌', multiplier: M.group_herd, requiresReview: false },
 };
 
 export function sceneTagMeta(code: string): SceneTagMeta | undefined {

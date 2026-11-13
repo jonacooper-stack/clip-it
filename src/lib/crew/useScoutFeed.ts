@@ -4,6 +4,7 @@ import { useAppStore } from '@/state/useAppStore';
 import { useCrewStore } from '@/state/useCrewStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { groupOf, questCompletedAt, SEED_QUESTS } from '@/lib/quests';
+import { useQuestSightings } from '@/lib/useQuestSightings';
 import { weekOf } from '../../../shared/crew';
 import { buildMoments } from './moments';
 import { challengeStatus } from './challenges';
@@ -15,6 +16,7 @@ import { discoverableSetting, loadForecast, loadPeople, loadToday, localDate, sa
 // suggestions once each if they aren't cached yet.
 export function useScoutFeed() {
   const sightings = useJournalStore((s) => s.sightings);
+  const counted = useQuestSightings(); // the journal as quests count it
   const region = useAppStore((s) => s.homeRegion);
   const forecastMap = useCrewStore((s) => s.forecasts);
   const todayMap = useCrewStore((s) => s.today);
@@ -49,10 +51,10 @@ export function useScoutFeed() {
   const moments = useMemo(() => {
     const forecasts = Object.values(forecastMap).filter((f) => f.region === region);
     const today = Object.values(todayMap).filter((t) => t.region === region);
-    const bigQuests = SEED_QUESTS.map((q) => ({ id: q.id, title: q.title, reward: q.rewardPoints, doneAt: questCompletedAt(q, sightings) }));
-    return buildMoments({ sightings, region, forecasts, today, people, hidden, seed, groupOf, bigQuests });
-  }, [sightings, region, forecastMap, todayMap, people, hidden, seed]);
+    const bigQuests = SEED_QUESTS.map((q) => ({ id: q.id, title: q.title, reward: q.rewardPoints, doneAt: questCompletedAt(q, counted) }));
+    return buildMoments({ sightings, questSightings: counted, region, forecasts, today, people, hidden, seed, groupOf, bigQuests });
+  }, [sightings, counted, region, forecastMap, todayMap, people, hidden, seed]);
 
-  const quests = useMemo(() => challengeStatus(startOfWeek(Date.now()), sightings, seed, groupOf), [sightings, seed]);
+  const quests = useMemo(() => challengeStatus(startOfWeek(Date.now()), counted, seed, groupOf), [counted, seed]);
   return { moments, quests, region };
 }

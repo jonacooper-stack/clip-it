@@ -11,12 +11,18 @@
 // Options:  --limit 30   use only the first 30 photos
 //           --dir <folder> --labels <file.json>   your own photos instead: a JSON
 //               list of { "file": "IMG_1.jpg", "sci": "Vulpes vulpes" }
+//           --cheats <folder>   also run pictures that must NOT score (photos of
+//               screens, screenshots, watermarked images: see eval/cheat-samples)
+//               and report how many each model refuses
+//
+// It also reports how many of the real photos each model wrongly refused as
+// "not the player's own photo": that number should be zero.
 //
 // Read the result with care: the library photos are sharp, well-framed
 // Wikimedia shots, easier than a phone photo of a distant bird. A model that
 // does badly here will do worse in the field; one that does well here still
 // deserves a second run on real player photos before the switch.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { askText, type Usage } from '../api/_lib/claude';
 import { detectMediaType, IDENTIFY_SYSTEM, IDENTIFY_USER, normalizeIdentification, parseModelJson } from '../api/_lib/identifyCore';
@@ -47,6 +53,8 @@ const labels: Item[] = arg('labels')
   ? JSON.parse(readFileSync(arg('labels')!, 'utf8'))
   : PHOTO_LIBRARY.map((p) => ({ file: `${p.slug}.jpg`, sci: p.sci }));
 const items = labels.slice(0, Number(arg('limit')) || labels.length);
+const cheatDir = arg('cheats');
+const cheats = cheatDir ? readdirSync(cheatDir).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).sort() : [];
 
 // JPEG size from its header, to estimate what each photo costs (one token per 28×28 block).
 function jpegTokens(buf: Buffer): number {
@@ -66,11 +74,14 @@ const genus = (s: string) => s.trim().toLowerCase().split(/\s+/)[0];
 const binomial = (s: string) => s.trim().toLowerCase().split(/\s+/).slice(0, 2).join(' ');
 
 async function main() {
-  const photos = items.map((it) => ({ ...it, data: readFileSync(join(dir, it.file)) }));
-  const inputTokens = photos.reduce((n, p) => n + jpegTokens(p.data) + 520, 0);
+  const photos = [
+    ...items.map((it) => ({ ...it, cheat: false, data: readFileSync(join(dir, it.file)) })),
+    ...cheats.map((file) => ({ file, sci: '', cheat: true, data: readFileSync(join(cheatDir!, file)) })),
+  ];
+  const inputTokens = photos.reduce((n, p) => n + jpegTokens(p.data) + 800, 0);
   const outputTokens = photos.length * 450; // the answer, plus thinking on models that think first
   const usd = (n: number) => (n > 0 && n < 0.01 ? 'under $0.01' : `$${n.toFixed(2)}`);
-  console.log(`${photos.length} photos × ${models.length} model${models.length === 1 ? '' : 's'}. About ${Math.round(inputTokens / 1000)}K input tokens per model.`);
+  console.log(`${items.length} labelled photos${cheats.length ? ` + ${cheats.length} pictures that must not score` : ''} × ${models.length} model${models.length === 1 ? '' : 's'}. About ${Math.round(inputTokens / 1000)}K input tokens per model.`);
   let total = 0;
   for (const m of models) {
     const price = PRICES[m];
@@ -86,7 +97,7 @@ async function main() {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('Set ANTHROPIC_API_KEY first.');
 
   for (const model of models) {
-    const rows: { file: string; want: string; got: string; exact: boolean; sameGenus: boolean; eligible: boolean; usage?: Usage; error?: string }[] = [];
+    const rows: { file: string; want: string; got: string; exact: boolean; sameGenus: boolean; eligible: boolean; cheat: boolean; refused: string | null; doubt: boolean; usage?: Usage; error?: string }[] = [];
     const queue = [...photos];
     const worker = async () => {
       for (let p = queue.shift(); p; p = queue.shift()) {
@@ -106,9 +117,12 @@ async function main() {
           });
           const id = normalizeIdentification(parseModelJson(text));
           const got = id.species.scientificName;
-          rows.push({ file: p.file, want: p.sci, got, exact: binomial(got) === binomial(p.sci), sameGenus: genus(got) === genus(p.sci), eligible: id.eligible, usage });
+          rows.push({
+            file: p.file, want: p.sci, got, exact: binomial(got) === binomial(p.sci), sameGenus: genus(got) === genus(p.sci), eligible: id.eligible,
+            cheat: p.cheat, refused: id.authenticity.reason, doubt: id.authenticity.review, usage,
+          });
         } catch (err: any) {
-          rows.push({ file: p.file, want: p.sci, got: '', exact: false, sameGenus: false, eligible: false, error: String(err?.message ?? err).slice(0, 120) });
+          rows.push({ file: p.file, want: p.sci, got: '', exact: false, sameGenus: false, eligible: false, cheat: p.cheat, refused: null, doubt: false, error: String(err?.message ?? err).slice(0, 120) });
         }
       }
     };
@@ -120,12 +134,24 @@ async function main() {
     const ms = done.map((r) => r.usage!.ms).sort((a, b) => a - b);
     const price = PRICES[model];
     const cost = price ? (inTok * price[0] + outTok * price[1]) / 1e6 : NaN;
-    const pct = (n: number) => `${((100 * n) / rows.length).toFixed(0)}%`;
+    const real = rows.filter((r) => !r.cheat);
+    const fake = rows.filter((r) => r.cheat);
+    const pct = (n: number) => `${((100 * n) / Math.max(real.length, 1)).toFixed(0)}%`;
     console.log(`\n=== ${model} ===`);
-    console.log(`right species: ${rows.filter((r) => r.exact).length}/${rows.length} (${pct(rows.filter((r) => r.exact).length)})   right genus: ${pct(rows.filter((r) => r.sameGenus).length)}   scored as wildlife: ${pct(rows.filter((r) => r.eligible).length)}   errors: ${rows.filter((r) => r.error).length}`);
+    console.log(`right species: ${real.filter((r) => r.exact).length}/${real.length} (${pct(real.filter((r) => r.exact).length)})   right genus: ${pct(real.filter((r) => r.sameGenus).length)}   scored as wildlife: ${pct(real.filter((r) => r.eligible).length)}   errors: ${rows.filter((r) => r.error).length}`);
+    // The photo check: real photos must never be refused; the cheat pictures should be.
+    const wrongly = real.filter((r) => r.refused);
+    console.log(`real photos wrongly refused as not the player's own: ${wrongly.length}/${real.length}${wrongly.length ? ` (${wrongly.map((r) => `${r.file}: ${r.refused}`).join(', ')})` : ''}   marked "not sure": ${real.filter((r) => r.doubt).length}`);
+    if (fake.length) {
+      const kinds = [...new Set(fake.map((r) => r.file.split('-')[0]))];
+      const caught = (rs: typeof fake) => `${rs.filter((r) => r.refused || !r.eligible).length}/${rs.length}`;
+      console.log(`cheat pictures refused: ${caught(fake)}   (${kinds.map((k) => `${k} ${caught(fake.filter((r) => r.file.startsWith(`${k}-`)))}`).join(', ')})`);
+      const through = fake.filter((r) => !r.refused && r.eligible);
+      if (through.length) console.log(`  got through: ${through.map((r) => r.file).join(', ')}`);
+    }
     if (ms.length) console.log(`time per photo: median ${(ms[Math.floor(ms.length / 2)] / 1000).toFixed(1)}s, slowest tenth ${(ms[Math.floor(ms.length * 0.9)] / 1000).toFixed(1)}s`);
     console.log(`tokens: ${inTok} in, ${outTok} out${price ? `   cost: $${cost.toFixed(3)} total, $${((1000 * cost) / Math.max(done.length, 1)).toFixed(2)} per 1,000 photos` : ''}`);
-    const misses = rows.filter((r) => !r.exact);
+    const misses = real.filter((r) => !r.exact);
     if (misses.length) console.log(`missed:\n${misses.map((r) => `  ${r.file}: wanted ${r.want}, got ${r.error ? `ERROR ${r.error}` : r.got || '(nothing)'}`).join('\n')}`);
   }
 }

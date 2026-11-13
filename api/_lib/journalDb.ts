@@ -1,0 +1,228 @@
+// The cloud journal's storage, over Supabase (the tables and the private
+// photo bucket from supabase/migrations/0011_cloud_journal.sql). The rules
+// are in journal.ts; this file only reads and writes.
+//
+// Every method throws JournalUnavailable when the database says no: the
+// callers then leave the sighting on the phone to be recorded later.
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { JournalUnavailable, type JournalDb, type JournalRow, type JournalState, type Match } from './journal';
+import { mirrorPrint } from './phash';
+
+const SIGHTINGS = 'journal_sightings';
+const STATE = 'journal_state';
+const BUCKET = 'journal-photos';
+
+function check(error: { message?: string; code?: string } | null | undefined, what: string): void {
+  if (error) throw new JournalUnavailable(`${what}: ${error.code ?? ''} ${String(error.message ?? '').slice(0, 160)}`);
+}
+
+// When the legacy window closes: read at most once a minute per warm instance.
+let legacyCache: { until: number | null; at: number } | null = null;
+
+export function supabaseJournalDb(db: SupabaseClient): JournalDb {
+  const stamp = () => new Date().toISOString();
+  return {
+    async getRow(uid, sid) {
+      const { data, error } = await db.from(SIGHTINGS).select('*').eq('user_id', uid).eq('id', sid).maybeSingle();
+      check(error, 'read sighting');
+      return (data as JournalRow | null) ?? null;
+    },
+
+    async liveRows(uid) {
+      const out: JournalRow[] = [];
+      for (let from = 0; from < 20_000; from += 1000) {
+        const { data, error } = await db
+          .from(SIGHTINGS)
+          .select('*')
+          .eq('user_id', uid)
+          .is('deleted_at', null)
+          .order('observed_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + 999);
+        check(error, 'read journal');
+        out.push(...((data ?? []) as JournalRow[]));
+        if ((data ?? []).length < 1000) break;
+      }
+      return out;
+    },
+
+    async speciesCount(uid, sci, exceptSid) {
+      const { count, error } = await db
+        .from(SIGHTINGS)
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', uid)
+        .eq('scientific_name', sci)
+        .neq('id', exceptSid)
+        .or('verified.eq.true,points.gt.0'); // see JournalDb.speciesCount
+      check(error, 'count species');
+      return count ?? 0;
+    },
+
+    async scoredSince(uid, since, exceptSid) {
+      const { data, error } = await db
+        .from(SIGHTINGS)
+        .select('scientific_name, score')
+        .eq('user_id', uid)
+        .neq('id', exceptSid)
+        .eq('verified', true)
+        .gt('points', 0)
+        .is('deleted_at', null)
+        .gte('recorded_at', since)
+        .limit(2000);
+      check(error, 'read today');
+      return ((data ?? []) as { scientific_name: string | null; score: { repeatMultiplier?: number } | null }[]).map((r) => ({
+        scientific_name: r.scientific_name,
+        repeat: typeof r.score?.repeatMultiplier === 'number' && r.score.repeatMultiplier < 1,
+      }));
+    },
+
+    async countRows(uid) {
+      const { count, error } = await db.from(SIGHTINGS).select('id', { count: 'exact', head: true }).eq('user_id', uid);
+      check(error, 'count journal');
+      return count ?? 0;
+    },
+
+    // The comparison runs in the database, over every stored fingerprint
+    // (public.journal_look_alikes in migration 0011), not over a page of rows.
+    async lookAlikes(uid, print) {
+      const flipped = mirrorPrint(print);
+      const { data, error } = await db.rpc('journal_look_alikes', {
+        p_user: uid, p_sha: print.sha ?? null, p_phash: print.phash ?? null, p_mask: print.mask ?? null, p_mirror: flipped?.phash ?? null, p_mirror_mask: flipped?.mask ?? null,
+      });
+      check(error, 'compare photos');
+      const ms = (v: unknown) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+      return ((data ?? []) as any[]).map(
+        (m): Match => ({
+          source: m.source === 'wall' ? 'wall' : m.source === 'scout' ? 'scout' : 'journal',
+          user_id: m.user_id ?? null,
+          ref: String(m.ref),
+          exact: m.exact === true,
+          at: ms(m.made_at),
+          species: typeof m.species === 'string' ? m.species : null,
+          takenAt: ms(m.taken_at),
+        }),
+      );
+    },
+
+    async insertRow(row) {
+      const { error } = await db.from(SIGHTINGS).insert(row);
+      if (error?.code === '23505') return false; // already there
+      check(error, 'write sighting');
+      return true;
+    },
+
+    async updateRow(uid, sid, patch) {
+      const { error } = await db.from(SIGHTINGS).update({ ...patch, updated_at: stamp() }).eq('user_id', uid).eq('id', sid);
+      check(error, 'update sighting');
+    },
+
+    async getState(uid) {
+      const { data, error } = await db.from(STATE).select('user_id, tz, ready_at, baseline_points, baseline_species, carryover_points, legacy_allowance, backup, save_places, erased_at').eq('user_id', uid).maybeSingle();
+      check(error, 'read journal state');
+      return (data as JournalState | null) ?? null;
+    },
+
+    async saveState(uid, patch) {
+      const { error } = await db.from(STATE).upsert({ user_id: uid, ...patch, updated_at: stamp() }, { onConflict: 'user_id' });
+      check(error, 'write journal state');
+    },
+
+    async setProfileTotals(uid, points, speciesCount) {
+      const totals = { points, species_count: speciesCount, updated_at: stamp() };
+      const { data, error } = await db.from('profiles').update(totals).eq('id', uid).select('id');
+      check(error, 'write score');
+      if (data?.length) return;
+      // No profile row yet (the app creates it with the player's name). Make
+      // one so the score has somewhere to live; the app fills in the name.
+      const { error: insertError } = await db.from('profiles').upsert({ id: uid, display_name: 'Explorer', ...totals }, { onConflict: 'id', ignoreDuplicates: true });
+      check(insertError, 'create profile');
+    },
+
+    async setWallPostFacts(uid, postId, facts) {
+      // Best effort: the post may have been removed since.
+      await db.from('feed_posts').update(facts).eq('id', postId).eq('user_id', uid);
+    },
+
+    async legacyUntil() {
+      if (legacyCache && Date.now() - legacyCache.at < 60_000) return legacyCache.until;
+      const { data, error } = await db.from('app_settings').select('value').eq('key', 'legacy_import_until').maybeSingle();
+      check(error, 'read settings');
+      const t = typeof (data as any)?.value === 'string' ? Date.parse((data as any).value) : NaN;
+      legacyCache = { until: Number.isFinite(t) ? t : null, at: Date.now() };
+      return legacyCache.until;
+    },
+
+    async putPhoto(uid, sid, bytes) {
+      const { error } = await db.storage.from(BUCKET).upload(`${uid}/${sid}.jpg`, bytes, { contentType: 'image/jpeg', upsert: true });
+      return !error; // a missing photo is not fatal: the app offers it again on a later sync
+    },
+
+    // (The storage client reports a failure in its answer; it doesn't throw.)
+    async removePhotos(uid, sids) {
+      try {
+        const { error } = await db.storage.from(BUCKET).remove(sids.map((sid) => `${uid}/${sid}.jpg`));
+        return !error;
+      } catch {
+        return false;
+      }
+    },
+
+    async clearPhotoFlags(uid, sids) {
+      for (let i = 0; i < sids.length; i += 100) {
+        const { error } = await db.from(SIGHTINGS).update({ has_photo: false }).eq('user_id', uid).in('id', sids.slice(i, i + 100));
+        check(error, 'update sightings');
+      }
+    },
+
+    // True only when a listing of the folder comes back empty: an error, or
+    // files still there, is "not yet".
+    async purgePhotos(uid) {
+      try {
+        for (let round = 0; round < 50; round++) {
+          const { data, error } = await db.storage.from(BUCKET).list(uid, { limit: 1000 });
+          if (error || !data) return false;
+          if (!data.length) return true;
+          const { error: removeError } = await db.storage.from(BUCKET).remove(data.map((f) => `${uid}/${f.name}`));
+          if (removeError) return false;
+        }
+      } catch {
+        // storage unreachable: not confirmed
+      }
+      return false;
+    },
+
+    async forgetPhotos(uid) {
+      const { error } = await db.from(SIGHTINGS).update({ has_photo: false, updated_at: stamp() }).eq('user_id', uid).eq('has_photo', true);
+      check(error, 'update sightings');
+    },
+
+    async clearPlaces(uid) {
+      const { error } = await db.from(SIGHTINGS).update({ lat: null, lng: null, updated_at: stamp() }).eq('user_id', uid).not('lat', 'is', null);
+      check(error, 'forget places');
+    },
+
+    async deleteJournal(uid) {
+      const { error } = await db.from(SIGHTINGS).delete().eq('user_id', uid);
+      check(error, 'erase journal');
+      const { error: notesError } = await db.from('journal_refusals').delete().eq('user_id', uid);
+      check(notesError, 'erase notes');
+      // Notes about other players' photos that matched one of this account's: they no longer name it.
+      const { error: matchError } = await db.from('journal_refusals').update({ matched_user: null, matched_ref: null }).eq('matched_user', uid);
+      check(matchError, 'erase notes');
+    },
+
+    async logRefusal(entry) {
+      await db.from('journal_refusals').insert(entry);
+    },
+
+    async tryLock(uid, seconds) {
+      const { data, error } = await db.rpc('journal_try_lock', { p_user: uid, p_seconds: seconds });
+      check(error, 'lock journal');
+      return data === true;
+    },
+
+    async unlock(uid) {
+      await db.rpc('journal_unlock', { p_user: uid });
+    },
+  };
+}

@@ -18,6 +18,7 @@ import type { StoryRef } from './api';
 import { regionByKey, withArticle, type RegionKey } from '../../../shared/crew';
 import { challengeStatus, SWEEP_BONUS, type ChallengeStatus, type GroupOf } from './challenges';
 import { addDays, addWeeks, DAY_MS, hash, localDateStart, startOfDay, startOfWeek } from './time';
+import { speciesKey } from '../../../shared/species';
 
 export type Tone = 'green' | 'orange' | 'blue' | 'gold' | 'clay';
 
@@ -176,6 +177,8 @@ function animalStory(t: TodayPick, photos: CrewPhoto[]): Slide[] {
 
 export function buildMoments(opts: {
   sightings: Sighting[];
+  /** The journal as quests count it, when that differs (see lib/useQuestSightings). */
+  questSightings?: Sighting[];
   now?: number;
   region: RegionKey | null;
   forecasts: Forecast[]; // cached weekly themes for the player's region
@@ -192,7 +195,8 @@ export function buildMoments(opts: {
   const recent = (t: number) => t <= now && now - t < MOMENT_WINDOW_MS;
   const counted = sightings.filter(COUNTED).sort((a, b) => a.observedAt - b.observedAt);
   const week = startOfWeek(now);
-  const thisWeek = challengeStatus(week, sightings, seed, groupOf);
+  const forQuests = opts.questSightings ?? sightings;
+  const thisWeek = challengeStatus(week, forQuests, seed, groupOf);
   const regionLabel = opts.region ? regionByKey(opts.region)?.label ?? 'your area' : 'your area';
   const hidden = new Set(opts.hidden ?? []);
   const vis = (ps?: (CrewPhoto | null | undefined)[] | null): CrewPhoto[] => (ps ?? []).filter((p): p is CrewPhoto => Boolean(p) && !hidden.has(p!.url));
@@ -316,7 +320,7 @@ export function buildMoments(opts: {
   // ---------- a new species ----------
   const seen = new Set<string>();
   counted.forEach((s) => {
-    const key = s.species?.scientificName || s.species?.commonName;
+    const key = speciesKey(s.species?.scientificName) || s.species?.commonName;
     if (!key || seen.has(key)) return;
     seen.add(key);
     const n = seen.size;
@@ -360,7 +364,7 @@ export function buildMoments(opts: {
 
   // ---------- quests done (this week and last) ----------
   for (const wk of [week, addWeeks(week, -1)]) {
-    const status = wk === week ? thisWeek : challengeStatus(wk, sightings, seed, groupOf);
+    const status = wk === week ? thisWeek : challengeStatus(wk, forQuests, seed, groupOf);
     for (const c of status) {
       if (!c.done || !c.doneAt || !recent(c.doneAt + 1000)) continue;
       out.push({
@@ -400,7 +404,7 @@ export function buildMoments(opts: {
   const sightingMilestones = new Set([10, 25, 50, 100, 250]);
   const seen2 = new Set<string>();
   counted.forEach((s, i) => {
-    const key = s.species?.scientificName || s.species?.commonName;
+    const key = speciesKey(s.species?.scientificName) || s.species?.commonName;
     if (key && !seen2.has(key)) {
       seen2.add(key);
       if (speciesMilestones.has(seen2.size) && recent(s.observedAt + 2000)) {

@@ -19,6 +19,7 @@ import { applyFieldNotesBonus } from '@/lib/scoring';
 import { questionsForSighting, coerceScience, SCIENCE_QUESTIONS } from '@/lib/scienceQuestions';
 import { resolvePhoto } from '@/lib/photoStore';
 import { groupOf } from '@/lib/quests';
+import { useQuestSightings } from '@/lib/useQuestSightings';
 import { challengeStatus } from '@/lib/crew/challenges';
 import { crewSeed } from '@/lib/crew/seed';
 import { startOfWeek } from '@/lib/crew/time';
@@ -29,7 +30,7 @@ export default function Result() {
   const router = useRouter();
   const sighting = useJournalStore((s) => s.sightings.find((x) => x.id === id));
   const removeSighting = useJournalStore((s) => s.removeSighting);
-  const updateSighting = useJournalStore((s) => s.updateSighting);
+  const editSighting = useJournalStore((s) => s.editSighting);
   const [confirming, setConfirming] = useState(false);
 
   const scale = useRef(new Animated.Value(0.7)).current;
@@ -62,19 +63,22 @@ export default function Result() {
   // What this sighting moved forward: this week's quests it counted toward,
   // and the day streak. (The reason to head out again tomorrow.)
   const sightings = useJournalStore((s) => s.sightings);
+  const counted = useQuestSightings(); // the journal as quests count it
   const progress = useMemo(() => {
     if (!sighting || typeof sighting.points !== 'number') return null;
     const week = startOfWeek(Date.now());
     const seed = crewSeed();
+    // (Not in the list: it counts for nothing. Its date there is the week it counts in.)
+    const mine = counted.find((x) => x.id === sighting.id);
     const quests =
-      startOfWeek(sighting.observedAt) === week
+      mine && startOfWeek(mine.observedAt) === week
         ? (() => {
-            const before = challengeStatus(week, sightings.filter((x) => x.id !== sighting.id), seed, groupOf);
-            return challengeStatus(week, sightings, seed, groupOf).filter((c, i) => c.progress > before[i].progress);
+            const before = challengeStatus(week, counted.filter((x) => x.id !== sighting.id), seed, groupOf);
+            return challengeStatus(week, counted, seed, groupOf).filter((c, i) => c.progress > before[i].progress);
           })()
         : [];
     return { quests, streak: currentStreak(sightings) };
-  }, [sighting, sightings]);
+  }, [sighting, sightings, counted]);
 
   const done = () => router.replace('/feed');
   const discard = () => {
@@ -101,11 +105,16 @@ export default function Result() {
     if (updated.length) next[qid] = updated;
     else delete next[qid];
     const answered = Object.keys(next).length;
-    if (sighting.score) {
+    // The bonus point per answer is for sightings the server identified. One
+    // it holds only on this phone's word keeps the points it has.
+    const phoneScoredInCloud = Boolean(sighting.cloudAt) && sighting.verified === false;
+    if (sighting.score && !phoneScoredInCloud) {
+      // Shown at once with the same rule the server uses; the server
+      // confirms the bonus when the answers reach it.
       const { score, points } = applyFieldNotesBonus(sighting.score, answered);
-      updateSighting(sighting.id, { science: next, score, points });
+      editSighting(sighting.id, { science: next, score, points });
     } else {
-      updateSighting(sighting.id, { science: next });
+      editSighting(sighting.id, { science: next });
     }
   };
 
@@ -220,7 +229,8 @@ export default function Result() {
   const confidence = sighting.species?.confidence ?? 0;
   const lowConf = confidence < 0.6;
   const repeatMult = sighting.score?.repeatMultiplier;
-  const duplicate = repeatMult === 0; // exact photo already submitted
+  const capped = sighting.score?.dailyCap; // enough of these for today (a daily limit, not the photo)
+  const duplicate = repeatMult === 0 && !capped; // exact photo already submitted
   const repeated = repeatMult != null && repeatMult > 0 && repeatMult < 1; // same species again
 
   return (
@@ -297,6 +307,19 @@ export default function Result() {
             <Text style={styles.duplicateText}>
               You’ve submitted this exact photo before, so it doesn’t earn points again. Snap a fresh
               shot to score.
+            </Text>
+          </Card>
+        )}
+        {capped && (
+          <Card style={styles.duplicateCard}>
+            <View style={styles.duplicateHead}>
+              <Ionicons name="time-outline" size={18} color={colors.accentInk} />
+              <Text style={styles.duplicateTitle}>Enough for today</Text>
+            </View>
+            <Text style={styles.duplicateText}>
+              {capped === 'species'
+                ? 'You’ve logged plenty of this species today, so this one is in your journal without points. It counts again from tomorrow.'
+                : 'You’ve logged lots of repeat sightings today, so this one is in your journal without points. Repeats count again from tomorrow, and new species always count.'}
             </Text>
           </Card>
         )}

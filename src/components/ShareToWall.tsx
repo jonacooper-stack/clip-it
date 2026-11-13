@@ -18,13 +18,20 @@ import type { Sighting } from '@/types';
 export function ShareToWall({ sighting }: { sighting: Sighting }) {
   const router = useRouter();
   const session = useAuthStore((s) => s.session);
-  const updateSighting = useJournalStore((s) => s.updateSighting);
+  const editSighting = useJournalStore((s) => s.editSighting);
   const [state, setState] = useState<'idle' | 'sharing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Once the server keeps this account's journal, only a sighting it has
+  // recorded can be shared: the post takes its points and species from the
+  // journal, and the photo is one the server has already checked.
+  // (Only while the journal is being saved: with the backup off, sharing
+  // works as it does for an account that never turned it on.)
+  const serverKeepsJournal = useJournalStore((s) => s.cloud?.ready === true && s.cloud?.backup === true);
   const eligible =
     !!sighting.species &&
-    (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed');
+    (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed') &&
+    (!serverKeepsJournal || Boolean(sighting.cloudAt));
   if (!isSupabaseConfigured || !session || !eligible) return null;
 
   // Already on the wall (remembered on the sighting, so it can't be posted
@@ -50,6 +57,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
       points: sighting.points,
       caption: sighting.caption,
       photoUri: sighting.photoUri,
+      sightingId: sighting.id,
     });
     if (res.error) {
       setErrorMsg(friendlyError(res.error, 'Couldn’t share right now. Please try again in a moment.'));
@@ -57,7 +65,7 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
     } else {
       setState('idle');
       if (res.postId) {
-        updateSighting(sighting.id, { wallPostId: res.postId });
+        editSighting(sighting.id, { wallPostId: res.postId });
         // Scout drops a fun fact on the new post (and Scout's notes refresh).
         fetchCrewNotes(sighting.id, { postId: res.postId }).catch(() => {});
       }

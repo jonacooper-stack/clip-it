@@ -56,6 +56,7 @@ The pieces:
 
 Adults, teenagers, and **kids — including under-13, with a parent involved**. Kids play
 under a parent-managed, privacy-protected profile (see [ARCHITECTURE.md](ARCHITECTURE.md#safety-kids--ethics)).
+*(As built in November 2026 the app is 13+ and has no child profile yet.)*
 
 ## Anchoring decisions
 

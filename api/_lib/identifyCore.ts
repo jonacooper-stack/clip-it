@@ -39,7 +39,22 @@ export const IDENTIFY_SYSTEM =
   '  needsReview (boolean): true when confidence is low or it is a hard-to-distinguish look-alike\n' +
   '  ineligibleReason (string): when category is not "wild_animal", a short friendly reason such as ' +
   '"Domestic pets don\'t count — point the camera at a wild animal to score." or "People don\'t ' +
-  'count — go find some wildlife!"; "" for a wild animal';
+  'count — go find some wildlife!"; "" for a wild animal\n' +
+  // How the picture was made. Players must photograph the animal themselves,
+  // so a picture of a picture doesn't score (see `authenticity` below). The
+  // model is told to say so only on clear evidence: an honest photo wrongly
+  // refused costs more than a cheat that slips through to the other checks.
+  '  photoOf (string): how this picture was made, one of "scene" (a real scene photographed directly: ' +
+  'the normal case), "screen" (a photo of a phone, computer or TV screen), "print" (a photo of a printed ' +
+  'picture, book, poster or sign), "screenshot" (a screen capture, with app or browser interface around ' +
+  'the picture), "artwork" (a drawing, painting, cartoon or 3D render). Answer "scene" unless you can ' +
+  'see clear evidence such as screen pixels or moiré, a device frame, glare on glass, page edges or ' +
+  'interface elements. Glass, fences, blur, zoom and odd lighting are normal in real photos\n' +
+  '  watermark (boolean): true only if a stock-photo agency\'s or photographer\'s watermark, logo or ' +
+  'caption is printed across the picture; a date stamp or a trail-camera information strip is not one\n' +
+  '  aiMade (string): "yes" only when the picture is unmistakably AI-generated or computer-made ' +
+  '(impossible anatomy, melted or repeated detail, nonsense lettering); "maybe" if there are real signs ' +
+  'but you are not sure; otherwise "no"';
 
 export const IDENTIFY_USER = 'Identify the animal and scene. Respond with only the JSON object.';
 
@@ -88,6 +103,58 @@ export interface Identification {
   dangerous: boolean;
   idStatus: IdStatus;
   ineligibleReason: string;
+  authenticity: Authenticity;
+}
+
+// Whether the picture is the player's own photograph of a real scene, as far
+// as the picture itself shows. `ok: false` means it can't score. `review`
+// marks a picture the model had doubts about but not enough to refuse.
+type PictureReason = 'screen' | 'print' | 'screenshot' | 'artwork' | 'watermark' | 'synthetic';
+// The rest are not read from the picture: they come from the server's own
+// checks (an upload without camera details, a copy of a photo already
+// logged, a photo that couldn't be compared, too many today).
+export type AuthenticityReason = PictureReason | 'import' | 'copied' | 'library' | 'unchecked' | 'limit';
+export interface Authenticity {
+  ok: boolean;
+  reason: AuthenticityReason | null;
+  review: boolean;
+}
+
+const PHOTO_OF = ['scene', 'screen', 'print', 'screenshot', 'artwork'] as const;
+
+// What the player is told. Plain and not accusing: the check can be wrong.
+export const AUTHENTICITY_MESSAGES: Record<PictureReason, string> = {
+  screen: 'That looks like a photo of a screen. Only wildlife you photograph yourself, out in the world, can score.',
+  print: 'That looks like a photo of a printed picture. Only wildlife you photograph yourself can score.',
+  screenshot: 'That looks like a screenshot. Only photos you take yourself can score.',
+  artwork: 'That looks like a drawing or a computer-made picture, not a photo of a living animal.',
+  watermark: 'That picture carries a watermark, so it looks like someone else’s photo. Only your own photos can score.',
+  synthetic: 'That looks like a computer-made image. Only real photos you take yourself can score.',
+};
+
+// Read the model's three answers about how the picture was made. Anything
+// missing or unexpected counts as an ordinary photo: only a clear answer
+// refuses a picture. A clear answer is read however it is written: "Screen",
+// "a screen", "screen " and "screen" are the same answer; true, "true" and
+// "yes" are the same yes.
+const said = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : v);
+const yes = (v: unknown) => v === true || said(v) === 'yes' || said(v) === 'true';
+function photoOfAnswer(v: unknown): (typeof PHOTO_OF)[number] {
+  const text = said(v);
+  if (typeof text !== 'string') return 'scene';
+  if ((PHOTO_OF as readonly string[]).includes(text)) return text as (typeof PHOTO_OF)[number];
+  // One of the listed words in a longer answer ("a screen", "printed photo").
+  // ("screenshot" is checked before "screen", which it contains.)
+  for (const word of ['screenshot', 'screen', 'print', 'artwork'] as const) {
+    if (new RegExp(`\\b${word}(s|ed)?\\b`).test(text)) return word;
+  }
+  return 'scene';
+}
+
+export function readAuthenticity(p: any): Authenticity {
+  const photoOf = photoOfAnswer(p?.photoOf);
+  const reason: PictureReason | null = photoOf !== 'scene' ? photoOf : yes(p?.watermark) ? 'watermark' : yes(p?.aiMade) ? 'synthetic' : null;
+  return { ok: reason === null, reason, review: reason === null && said(p?.aiMade) === 'maybe' };
 }
 
 // Turn the model's raw answer into the response the app scores. Everything is
@@ -99,7 +166,11 @@ export function normalizeIdentification(parsed: any): Identification {
   const commonName = text(p.commonName, 80);
   const scientificName = text(p.scientificName, 80);
   const present = Boolean(p.present) && Boolean(commonName);
-  const eligible = present && category === 'wild_animal' && Boolean(scientificName);
+  const wild = present && category === 'wild_animal' && Boolean(scientificName);
+  // A wild animal still doesn't score when the picture isn't the player's
+  // own photograph of it (a photo of a screen, a stock image, a drawing…).
+  const authenticity = readAuthenticity(p);
+  const eligible = wild && authenticity.ok;
 
   const sceneTags: string[] = Array.isArray(p.sceneTags)
     ? [...new Set<string>(p.sceneTags.filter((t: unknown) => (SCENE_TAG_CODES as readonly unknown[]).includes(t)))]
@@ -127,6 +198,23 @@ export function normalizeIdentification(parsed: any): Identification {
     caption: text(p.caption, 240),
     dangerous,
     idStatus,
-    ineligibleReason: text(p.ineligibleReason, 200),
+    ineligibleReason: wild && authenticity.reason ? AUTHENTICITY_MESSAGES[authenticity.reason as PictureReason] : text(p.ineligibleReason, 200),
+    authenticity,
+  };
+}
+
+// Turn a result that would have scored into one that doesn't, with the
+// reason the player is shown. Used by the checks that aren't about what the
+// picture shows (an upload without camera details, a copy of someone else's
+// photo).
+export function refuse(id: Identification, reason: AuthenticityReason, message: string): Identification {
+  return {
+    ...id,
+    eligible: false,
+    idStatus: id.present ? 'ineligible' : id.idStatus,
+    rarityScore: 0,
+    sceneTags: [],
+    ineligibleReason: message,
+    authenticity: { ok: false, reason, review: false },
   };
 }

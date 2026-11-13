@@ -65,9 +65,36 @@ export async function deletePhoto(ref?: string | null): Promise<void> {
   }
 }
 
+// Fetch a photo from the cloud journal (through a signed link) into permanent
+// storage, under the sighting's id. Returns its ref, or undefined if it
+// didn't arrive whole. The download goes to a temporary name first and is
+// only moved into place once it is known to be a real picture: a failed
+// request can otherwise leave an error page saved as "the photo".
+export async function downloadPhoto(url: string, sightingId: string): Promise<string | undefined> {
+  if (Platform.OS === 'web' || !DOC) return undefined;
+  const ref = `photos/${sightingId}.jpg`;
+  const tmp = `${DOC}photos/${sightingId}.part`;
+  try {
+    await ensureDir();
+    const res = await FileSystem.downloadAsync(url, tmp);
+    const info = await FileSystem.getInfoAsync(tmp);
+    if (res.status !== 200 || !info.exists || !(info as { size?: number }).size) {
+      await FileSystem.deleteAsync(tmp, { idempotent: true });
+      return undefined;
+    }
+    await FileSystem.deleteAsync(`${DOC}${ref}`, { idempotent: true });
+    await FileSystem.moveAsync({ from: tmp, to: `${DOC}${ref}` });
+    return ref;
+  } catch {
+    return undefined;
+  }
+}
+
 // Turn a stored photo ref into a uri loadable against the CURRENT container.
+// (A photo that is only in the cloud journal, "cloud:<id>", has no address
+// here: screens get one through lib/usePhoto.)
 export function resolvePhoto(ref?: string | null): string | undefined {
-  if (!ref) return undefined;
+  if (!ref || ref.startsWith('cloud:')) return undefined;
   if (!DOC) return ref;
   // New relative refs.
   if (ref.startsWith('photos/') || ref.startsWith('queued/')) return `${DOC}${ref}`;

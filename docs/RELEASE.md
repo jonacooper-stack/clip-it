@@ -139,6 +139,12 @@ eas build -p android --profile preview    # direct APK install link, no review
 ```
 Send friends the link; they tap and install. Same OTA updates apply.
 
+Before the first release on Google Play, fill in Play's **Data safety** form
+from [APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md) (photos, approximate
+location, the journal). Play draws the line between approximate and precise
+location differently from Apple, so check its wording against "two decimals,
+about a kilometre".
+
 ## 7. App Store launch checklist
 
 The app-side requirements are built in: in-app account deletion, Sign in with
@@ -313,14 +319,188 @@ be done in any order, and nothing breaks in between.
 
 Day to day:
 - `npm run check` runs the type checks and unit tests; `npm run test:db` tests
-  the database rules against a local Postgres. CI runs both, plus the web
-  build, on every pull request.
+  the database rules against a local Postgres, and then runs the server's
+  journal code against those same tables. CI runs both, plus the web build,
+  on every pull request.
 - Vercel → Logs: `claude_usage` (tokens per call), `identify_failure`,
   `crew_`.
 - The open product decisions from the audit are in
   [DECISIONS.md](DECISIONS.md).
 
-### h. Before submitting
+### h. The cloud journal (November 2026): what it is and how to turn it on
+Journals now belong to accounts and can be saved to them; the server works
+out every score; photos that aren't a player's own don't score; and the
+database checks comments, captions and names for blocked language. All of it
+is JavaScript, SQL and server code: **no new build is needed.**
+
+Two rules run through all of it. Nothing from a journal is saved to an
+account until that account has answered the age question (13 and up) and
+said yes to having its journal saved. And where a sighting was taken is
+saved only if the player chooses, and then only to about a kilometre: the
+exact spot never leaves the phone.
+
+Do these in one sitting, in this order. Each step is safe on its own (nothing
+breaks if you stop in between), but players only get the whole thing once all
+are done.
+
+1. **Supabase → SQL editor: run `0010_hardening.sql` (if you haven't) and then
+   `0011_cloud_journal.sql`.** 0011 creates the journal tables, the private
+   photo bucket and the rules, and takes a one-time snapshot: every account
+   that exists at that moment gets a *baseline* (its leaderboard score, at
+   most 10,000) and an *allowance* for sightings scored on the phone: the
+   smallest of 500 points per day the account has existed, 20,000, and its
+   leaderboard score plus 1,500. (The 1,500 is room for what players earned
+   since their leaderboard row was last written; the old app only wrote it
+   from the Community tab. To choose another number, change it in the file
+   before running it.) Phone-scored sightings beyond the allowance are kept
+   at 0 points and the updated app has the server identify them, so honest
+   players lose nothing while their photos are on their phone. Safe to run
+   more than once; the snapshot is only taken the first time. Run 0010
+   before 0011: 0011 also brings old leaderboard rows inside 0010's limits.
+2. **Vercel → Settings → Environment Variables: add `RECEIPT_SECRET`** (any
+   long random string). Optional but recommended: without it the server signs
+   its receipts with a key derived from the Supabase key, and receipts
+   waiting on phones stop working if that key is ever changed. Check that
+   `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` are set (they are needed
+   already for Scout).
+3. **Merge the pull request for this work** into the repository's default
+   branch. Vercel deploys the server and the web app.
+4. **App Store Connect → App Privacy: tick Gameplay Content and Product
+   Interaction**, and update the reasons for Photos and Coarse Location
+   ([APP_STORE_PRIVACY.md](APP_STORE_PRIVACY.md) has the exact entries).
+   Precise Location stays unticked: only a rounded place is ever sent. The
+   label must match before the update goes out. This is a listing change; it
+   needs no build and no review.
+5. **Run the "EAS Update (OTA)" workflow** (channel `production`). Phones
+   download it on their next launch and use it from the launch after.
+6. **Vercel → Cron Jobs → `/api/crew-daily` → Run** (or wait for tonight's
+   run). The first run starts the 30-day clock (below) and fingerprints the
+   photos already on the wall, about a hundred per run: press Run again until
+   the result shows `"wallPrints": 0`. Until the wall photos are
+   fingerprinted, a photo copied from the wall could be scored by someone
+   else.
+
+**Optional settings** (Vercel → Environment Variables, then Redeploy):
+`DAILY_SPECIES_LIMIT` (default 5) and `DAILY_REPEAT_LIMIT` (default 20), the
+daily brakes on repeat sightings described in DECISIONS.md, "The photo
+check".
+
+**What players see.**
+- *The age question, for some.* An account that never answered it (one made
+  through Google or Apple sign-in) answers it before going further, as before.
+  New: an account filed as 13–17 by the earlier version of the question, which
+  asked the year only, answers once more with the month. (The year alone could
+  let in a 12-year-old who turns 13 later in the year.) An under-13 answer
+  signs the account out and deletes anything saved to its journal; the log
+  shows `journal_erased` with `why: under13`. The account itself still exists:
+  see DECISIONS.md.
+- *"Save your journal to your account?"* Every account from before this update
+  is asked once, on whichever device it next signs in, before anything is
+  uploaded. Yes: their sightings go up (photos follow on Wi-Fi) and their score
+  is kept by the server from then on. Not now: nothing is saved to their
+  account, and Profile → Journal backup lets them turn it on later. Once the
+  30 days (below) are up, sightings that aren't saved stop counting on the
+  leaderboard. The answer is kept on the account, so their other devices
+  follow it without asking again. An account created in the updated app isn't
+  asked: it signed up under the new privacy policy.
+- *Two controls in Profile.* "Save places with my journal": on, the place of
+  each sighting is saved to about a kilometre; off, places stay on the phone
+  and the ones already saved are removed. It starts off for ages 13–17. For an
+  adult it is on once they have let the app use their location (and comes on
+  by itself when they do, unless they have set the switch themselves). "Turn off journal backup"
+  stops saving, and offers to delete what was saved.
+
+**The 30-day clock.** App versions from before this change score sightings
+on the phone and report their own totals. That stays accepted for 30 days
+from the first nightly run after the deploy, and so does the upload of each
+player's existing journal (up to the allowance from step 1). During those
+days an app that hasn't updated may still write its own total to the
+leaderboard, but no higher than the account's baseline plus the same
+allowance (for an account created after the migration: 500 points per day
+of its life, at most 1,500). After that only
+sightings the server identified itself count, and an account that never
+updated goes back to its baseline. A sighting that arrives too late is not
+lost: while its photo is on the phone, the updated app sends it through the
+identifier again and it counts from then on.
+
+Nobody's score drops at the switch, and nothing is counted twice. An account
+that switches keeps what the leaderboard showed for it when you ran 0011 (its
+baseline, with the species count it had then). As its old sightings arrive,
+or are identified again by the server, they take the place of that
+carried-over part instead of adding to it; once they add up to the baseline,
+the score is simply what the journal is worth. To change the date:
+
+```sql
+insert into public.app_settings (key, value)
+values ('legacy_import_until', to_jsonb(now() + interval '30 days'))
+on conflict (key) do update set value = excluded.value, updated_at = now();
+```
+
+**New installs.** A fresh install runs the code it shipped with for its first
+session, and gets the update from its second launch. Those first sightings
+are picked up by the same re-check. The next time you make a store build for
+any reason, the new code ships inside it and this stops mattering.
+
+**Storage.** Each sighting that counts keeps a copy of its photo (about
+150–400 KB) in the private `journal-photos` bucket. Supabase's free plan
+includes 1 GB across all buckets, which is roughly 3,000–6,000 photos
+together with wall photos and avatars. Watch Storage in the Supabase
+dashboard as the game grows.
+
+**If something goes wrong.** Each of these is reversible:
+- Stop recording and syncing: set `JOURNAL_SYNC=off` in Vercel, then
+  **Deployments → Redeploy** (a changed variable only reaches a new
+  deployment). The app carries on scoring on the phone and syncs again when
+  it is switched back on.
+- Stop refusing camera-roll uploads without camera details: `IMPORT_CHECK=off`,
+  then Redeploy.
+- A database rule misbehaving: switch that one trigger off (and on again with
+  `enable trigger`):
+
+```sql
+alter table public.profiles      disable trigger profiles_protect_score;
+alter table public.profiles      disable trigger profiles_clean_display_name;
+alter table public.feed_posts    disable trigger feed_posts_from_journal;
+alter table public.feed_posts    disable trigger feed_posts_language;
+alter table public.post_comments disable trigger post_comments_language;
+```
+
+**Where to look.**
+- Vercel → Logs: `identify_failure` with reason `not_own_photo` (a photo was
+  turned down, and `why`), `picture_doubt`, `journal_record_failed`,
+  `journal_sync_failure`, `journal_erased` (a player had their saved journal
+  deleted, or answered under 13), `legacy_window_set`, `crew_daily_run` (its
+  `journal` part: photos of deleted accounts and sightings removed, wall
+  photos fingerprinted).
+- Supabase → Table editor: `journal_refusals` lists every photo turned down as
+  a copy in the last 90 days, with what it matched. If a player says a refusal
+  was wrong, this is where to check.
+- A player says their journal isn't saving: `journal_state` has their two
+  choices (`backup` is yes, no, or empty for "never answered"; `save_places`),
+  and `erased_at` if they had the saved journal deleted. The server stores
+  nothing unless `backup` is yes.
+- A player's score looks wrong: `journal_state` has their baseline, allowance
+  and what is still carried over; `journal_sightings` has every row with its
+  points and whether the server identified it (`verified`). A sighting handed
+  in more than a week after its photo was taken counts, for the weekly
+  quests, in the week it was handed in (`recorded_at`); the Quests screen
+  shows it the same way.
+- A player deleted their saved journal: their score on the leaderboard is 0
+  from then on (the dialog says so), and `journal_state.erased_at` shows when.
+  If storage didn't confirm at once that the photo copies were gone, the log
+  shows `journal_erased` with `photos: pending`; the app asks again, and the
+  nightly job empties the folder if it never does. An under-13 answer leaves
+  the account as "never answered" (`backup` empty), so a player who comes
+  back at 13 is asked again and keeps their old score.
+- A refusal note with reason `had_it_first` means a player's photo matched
+  another account's sighting, but the player had it on the wall first: the
+  other account's sighting is the one to look at.
+- After the 30 days, the nightly job sets accounts that never switched back
+  to their baseline. If that ever fails the log shows `legacy_settle_error`
+  with the reason; one account that can't be settled no longer holds up the
+  rest (it is skipped with a warning in the Supabase Postgres logs).
+
+### i. Before submitting
 - Set `CONTACT_EMAIL` and `LEGAL_ENTITY` in `src/lib/legal.ts` to your real
   support address and company name, and make sure that inbox exists.
 - Deploy to Vercel so `/legal/privacy` and `/legal/terms` are live.

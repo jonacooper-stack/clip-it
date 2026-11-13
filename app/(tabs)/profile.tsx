@@ -9,8 +9,13 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
-import { useJournalStore, distinctSpecies } from '@/state/useJournalStore';
+import { useJournalStore, useJournalSave, distinctSpecies, purgeJournal, setCloudChoice } from '@/state/useJournalStore';
+import { askAboutBackup } from '@/lib/backupChoice';
+import { askYesNo } from '@/lib/dialogs';
 import { playerPoints } from '@/lib/quests';
+import { fetchCloudOnlyPhotos, pendingCount, scheduleJournalSync, syncJournal, turnOffBackup, useSyncStatus } from '@/lib/journalSync';
+import { prefsToSend } from '@/lib/journalMerge';
+import { isCloudRef } from '@/lib/cloudPhotos';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -41,17 +46,94 @@ export default function Profile() {
   const homeRegion = useAppStore((s) => s.homeRegion);
   const resetApp = useAppStore((s) => s.reset);
   const sightings = useJournalStore((s) => s.sightings);
-  const resetJournal = useJournalStore((s) => s.reset);
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const email = session?.user?.email;
+  const uid = session?.user?.id;
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const canEditAvatar = isSupabaseConfigured && !!session;
 
   const resetCrew = useCrewStore((s) => s.reset);
-  const points = useMemo(() => playerPoints(sightings), [sightings]);
-  const speciesCount = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  // The score is the server's once it keeps this account's journal (it is the
+  // number on the leaderboard); until then, what this device adds up to.
+  const cloud = useJournalStore((s) => s.cloud);
+  const pendingDeletes = useJournalStore((s) => s.pendingDeletes);
+  const localPoints = useMemo(() => playerPoints(sightings), [sightings]);
+  const points = cloud?.ready && cloud.totals ? cloud.totals.points : localPoints;
+  const localSpecies = useMemo(() => distinctSpecies(sightings).length, [sightings]);
+  const speciesCount = cloud?.ready && cloud.totals ? cloud.totals.speciesCount : localSpecies;
+  // The account's answer is known and the journal isn't being saved: the
+  // numbers above are this phone's own, or the score as it stood when the
+  // backup was turned off. Say so, where the numbers are.
+  const backupOffNote = isSupabaseConfigured && Boolean(session) && cloud?.saved !== undefined && cloud.backup !== true;
+  const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
+  // Sightings saved to the account whose photo copy hasn't gone up yet (photos go on Wi-Fi only).
+  const photosWaiting = useMemo(
+    () => (Platform.OS === 'web' ? 0 : sightings.filter((s) => s.cloudAt && s.cloudPhoto === false && s.photoUri && !isCloudRef(s.photoUri)).length),
+    [sightings],
+  );
+  const syncState = useSyncStatus((s) => s.state);
+  const saveFailed = useJournalSave((s) => s.failed);
+  const [preparing, setPreparing] = useState(false);
+  // Turned off here (and perhaps "delete what is saved") but not yet heard by the account.
+  const offNotSent = cloud?.backup === false && (cloud.erase === true || prefsToSend(cloud) !== null);
+  const backupLabel =
+    saveFailed ? 'Journal: couldn’t save on this phone. Free up some storage'
+    : preparing ? 'Journal backup: copying your photos to this phone…'
+    : offNotSent ? (cloud?.erase ? 'Journal backup: off. Deleting what is saved: not sent yet' : 'Journal backup: off, not sent to your account yet')
+    : cloud?.backup !== true ? 'Journal backup: off. Tap to turn on'
+    : syncState === 'syncing' ? 'Journal backup: saving…'
+    : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
+    : photosWaiting > 0 ? `Journal backup: ${photosWaiting} ${photosWaiting === 1 ? 'photo' : 'photos'} waiting for Wi-Fi`
+    : cloud?.ready ? 'Journal backup: up to date'
+    : 'Journal backup: not started yet';
+  const onBackupRow = () => {
+    if (cloud?.backup === true || offNotSent) void syncJournal({ force: true });
+    else if (uid) askAboutBackup(uid, { again: true, then: () => void syncJournal({ force: true }) });
+  };
+  // "Delete it": photos that exist only in the account are copied to this
+  // phone first, so that "the sightings on this phone stay" holds. Any that
+  // can't be (no signal; on the web, where photos aren't kept) are counted,
+  // and the player is asked again, with the number.
+  const deleteSaved = async () => {
+    setPreparing(true);
+    let left = 0;
+    try {
+      left = await fetchCloudOnlyPhotos();
+    } finally {
+      setPreparing(false);
+    }
+    if (left === 0) return void turnOffBackup({ erase: true });
+    askYesNo(
+      left === 1 ? '1 photo is only in your account' : `${left} photos are only in your account`,
+      (Platform.OS === 'web' ? 'Photos aren’t kept in the browser, so ' : 'They couldn’t be copied to this phone just now, so ') +
+        'deleting what is saved to your account deletes them for good. Their sightings stay here, without a photo.',
+      'Delete anyway',
+      'Keep it',
+      () => void turnOffBackup({ erase: true }),
+      () => void turnOffBackup({ erase: false }),
+    );
+  };
+  // Stop saving the journal to the account, and offer to delete what is there.
+  const onTurnOffBackup = () => {
+    askYesNo(
+      'Turn off journal backup?',
+      'New sightings will stay on this phone only, and your score will stop counting on the leaderboard. You can turn the backup on again at any time.',
+      'Turn off',
+      'Cancel',
+      () =>
+        askYesNo(
+          'Delete what is saved to your account?',
+          'This deletes the copy of your journal that is saved to your account, including the copies of its photos, and resets your score on the leaderboard. The sightings on this phone stay.',
+          'Delete it',
+          'Keep it',
+          () => void deleteSaved(),
+          () => void turnOffBackup({ erase: false }),
+        ),
+      () => {},
+    );
+  };
   const streak = useMemo(() => currentStreak(sightings), [sightings]);
   // Sightings in the journal: photos that turned out not to be wildlife (or
   // found no animal) aren't kept there, so they aren't counted here either.
@@ -79,17 +161,26 @@ export default function Profile() {
   };
 
   const onSignOut = () =>
-    confirmAction('Sign out?', 'You can sign back in anytime.', 'Sign out', async () => {
-      await signOut();
-      resetCrew();
-    });
+    confirmAction(
+      'Sign out?',
+      offNotSent
+        ? 'Turning off your journal backup hasn’t reached your account yet. ClipIt will try once more now; if it can’t, it finishes the next time you sign in on this device.'
+        : 'You can sign back in anytime.',
+      'Sign out',
+      async () => {
+        // One more try at telling the account (a few seconds at most).
+        if (offNotSent) await Promise.race([syncJournal({ force: true }), new Promise((r) => setTimeout(r, 8000))]);
+        await signOut();
+        resetCrew();
+      },
+    );
 
   // App Store Guideline 5.1.1(v): full account deletion from inside the app.
   // Two confirmations, then: delete server data → sign out → wipe local data.
   const onDeleteAccount = () =>
     confirmAction(
       'Delete your account?',
-      'This permanently deletes your account, profile, shared posts, photos, comments, likes, follows and friends. It can’t be undone.',
+      'This permanently deletes your account, profile, journal, shared posts, photos, comments, likes, follows and friends. It can’t be undone.',
       'Continue',
       () =>
         confirmAction(
@@ -105,8 +196,10 @@ export default function Profile() {
               notify('Couldn’t delete your account', `Please try again, or email ${CONTACT_EMAIL} and we’ll delete it for you.`);
               return;
             }
+            // Erase the journal and its photos from this phone before signing
+            // out (after sign-out the journal is no longer loaded).
+            await purgeJournal(uid ?? null);
             await signOut();
-            resetJournal();
             resetCrew();
             resetApp();
             setDeleting(false);
@@ -118,8 +211,8 @@ export default function Profile() {
 
   const onReset = () =>
     confirmAction('Reset app data?', 'This clears your journal and onboarding (for testing).', 'Reset', async () => {
+      await purgeJournal(uid ?? null);
       await signOut();
-      resetJournal();
       resetCrew();
       resetApp();
       router.replace('/onboarding/welcome');
@@ -153,6 +246,11 @@ export default function Profile() {
           <Stat value={sightingCount} label="sightings" />
           <Stat value={streak} label="day streak" />
         </View>
+        {backupOffNote && (
+          <Text style={styles.backupNote}>
+            Journal backup is off. Turn it on in Settings below to keep your score on the leaderboard.
+          </Text>
+        )}
 
         <Card style={styles.ethos}>
           <View style={styles.ethosHead}>
@@ -186,6 +284,27 @@ export default function Profile() {
                 onPress={() => router.push('/region')}
               />
               <Divider />
+              {/* The journal is kept in the cloud, private to this account. Tap to save now. */}
+              <Row icon="cloud-done-outline" label={backupLabel} onPress={onBackupRow} />
+              <Divider />
+              {cloud?.backup === true && (
+                <>
+                  {/* On: roughly where each photo was taken (to about a kilometre) is saved with the journal.
+                      Off: places stay on this phone, and the ones already saved are removed. */}
+                  <ToggleRow
+                    icon="location-outline"
+                    label="Save places with my journal"
+                    value={cloud.places === true}
+                    onValueChange={(v) => {
+                      setCloudChoice({ places: v });
+                      scheduleJournalSync(300);
+                    }}
+                  />
+                  <Divider />
+                  <Row icon="cloud-offline-outline" label="Turn off journal backup" onPress={onTurnOffBackup} />
+                  <Divider />
+                </>
+              )}
               <ToggleRow
                 icon="sparkles"
                 label="Show Scout in my feed"
@@ -324,6 +443,8 @@ const styles = StyleSheet.create({
   email: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   bracket: { fontSize: font.small, color: colors.faint, marginTop: 2 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  // Sits with the numbers it is about (closer to them than to the card below).
+  backupNote: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 18, marginTop: -spacing.sm, marginBottom: spacing.lg },
   statCard: { width: '47.5%', alignItems: 'center', paddingVertical: spacing.md, flexGrow: 1 },
   statValue: { fontSize: font.title, fontFamily: fonts.display, color: colors.primary },
   statLabel: { fontSize: font.tiny, color: colors.muted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },

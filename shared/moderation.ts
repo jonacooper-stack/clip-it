@@ -7,13 +7,13 @@
 // the list as needed; matching is whole-word, case-insensitive, and tolerant
 // of simple obfuscation (f.u.c.k, sh1t, repeated letters).
 
-const BLOCKED_TERMS = [
+export const BLOCKED_TERMS = [
   'fuck', 'fucker', 'fucking', 'motherfucker', 'shit', 'bullshit', 'bitch', 'bastard',
   'asshole', 'dick', 'dickhead', 'cock', 'cunt', 'pussy', 'whore', 'slut', 'twat', 'wanker',
   'porn', 'nude', 'nudes', 'rape', 'rapist', 'kys', 'killyourself',
 ];
 
-const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
+export const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
 
 function normalize(word: string): string {
   return word
@@ -56,4 +56,24 @@ export function cleanName(value: unknown, maxLength = 60): string | null {
   if (s.length < 2 || s.length > maxLength || !NAME.test(s)) return null;
   if (s.split(' ').length > 7 || hasBlockedLanguage(s)) return null;
   return s;
+}
+
+// A name from an old journal, made presentable rather than refused: older
+// app versions stored the identifier's names as they came ("Buteo
+// jamaicensis?", "Passer domesticus, female"). Anything outside the allowed
+// characters is dropped. Returns null only when nothing usable is left or
+// what is left is blocked language.
+export function tidyName(value: unknown, maxLength = 80): string | null {
+  if (typeof value !== 'string') return null;
+  const s = value
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{M}'’.×\- ]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 7)
+    .join(' ')
+    .slice(0, maxLength)
+    .trim();
+  return s.length >= 2 && /^\p{L}/u.test(s) && !hasBlockedLanguage(s) ? s : null;
 }

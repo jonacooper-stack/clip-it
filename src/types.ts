@@ -1,6 +1,7 @@
 // Shared client types for Clip-It.
 
 import type { Retry } from '@/lib/retry';
+import type { PhotoEvidence } from '../shared/photoEvidence';
 
 export type IdStatus =
   | 'identifying'
@@ -12,22 +13,8 @@ export type IdStatus =
   | 'ineligible'
   | 'rejected';
 
-export interface ScoreBreakdown {
-  basePoints: number;
-  behaviorMultiplier: number;
-  /** <1 when this species was already photographed (diminishing returns); 0 for an
-   * exact-duplicate photo. Absent on scores from before this rule (treat as 1). */
-  repeatMultiplier?: number;
-  bonuses: {
-    firstOfSpecies: number;
-    quest: number;
-    streak: number;
-    /** Bonus for answering optional science questions about the sighting. */
-    fieldNotes: number;
-  };
-  totalPoints: number;
-  ruleVersion: string;
-}
+export type { ScoreBreakdown } from '../shared/scoring';
+import type { ScoreBreakdown } from '../shared/scoring';
 
 export interface SpeciesGuess {
   scientificName: string;
@@ -73,6 +60,32 @@ export interface Sighting {
   /** For a queued capture: how many times identifying it has failed, and when
    * to try again (see lib/analysis). */
   retry?: Retry;
+
+  // ----- the cloud journal (see lib/journalSync) -----
+  /** How the photo got here: taken with the in-app camera, or uploaded from the camera roll. */
+  capture?: 'camera' | 'library';
+  /** For an upload: whether the photo carried a camera's details (sent to the server's photo check). */
+  evidence?: PhotoEvidence;
+  /** When the server last confirmed it holds this sighting. Unset: not in the cloud yet. */
+  cloudAt?: number;
+  /** When the server recorded it. (A sighting handed in more than a week after it was taken counts, for quests, in the week it was handed in.) */
+  recordedAt?: number;
+  /** Counts the player's changes to what the cloud keeps (field notes, a suggested species, the wall post). */
+  rev?: number;
+  /** The `rev` the server has. A higher `rev` means a change still waiting to be sent. */
+  sentRev?: number;
+  /** The server's signed note for a result it couldn't record at the time; sent on the next sync. */
+  receipt?: string;
+  /** The server identified and scored this sighting itself. */
+  verified?: boolean;
+  /** The cloud holds a copy of the photo. */
+  cloudPhoto?: boolean;
+  /** The server won't take this sighting (so don't keep sending it). */
+  cloudSkip?: boolean;
+  /** What the server counts this sighting for (it can be less than `points` for one scored on the phone). */
+  cloudPoints?: number;
+  /** The server identified this phone-scored sighting again and couldn't score it: it keeps what it shows, and isn't sent again. */
+  rechecked?: boolean;
 }
 
 export interface CrewOtherPost {
@@ -103,14 +116,6 @@ export interface CrewNotes {
   fetchedAt: number;
 }
 
-export interface Quest {
-  id: string;
-  title: string;
-  description: string;
-  goal: number;
-  rewardPoints: number;
-  /** Optional broad taxon filter for matching sightings (dev heuristic). */
-  group?: 'bird' | 'mammal' | 'any';
-}
+export type { Quest } from '../shared/quests';
 
 export type AgeBracket = 'under_13' | '13_17' | 'adult';

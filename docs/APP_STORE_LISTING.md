@@ -116,7 +116,7 @@ account**, so the reviewer sees content to report/block.
 ClipIt is a wildlife photography game. Sign in with the demo account below (or Sign in with Apple).
 
 How to try it:
-1. Tap the green camera button and photograph any animal. In the office, it's easiest to point the camera at a photo of a wild animal on another screen, or use the gallery icon to upload one from Photos. The AI identifies it and awards points in a few seconds.
+1. The demo account already has scored sightings in its Journal. To try a capture, tap the green camera button and photograph a real animal (a pet works for seeing the flow; only wild animals score). A photo of a screen, a print or a saved picture is identified but scores nothing: that is our check that players took the photo themselves. The AI answers in a few seconds.
 2. Feed tab: the community wall. On any other user's post or comment, tap "•••" to Report (reasons + details) or Block. Blocked users can be managed in Profile → Blocked accounts. Reports are reviewed by our team within 24 hours, and offensive language is filtered before posting.
 3. Account deletion: Profile → Delete account (permanently deletes the account and all its data).
 4. Privacy Policy, Terms of Use and Help & Support are in Profile.
@@ -124,7 +124,8 @@ How to try it:
 Notes:
 - ClipIt is 13+; the sign-up age gate turns away anyone younger.
 - Camera, location and photo access are requested only when used. The app works if location is denied.
-- Location is stored only on the device and is never shared with other users.
+- Location: the exact spot of a sighting stays on the device. If the player chooses to save places with their journal, a rounded place (about a kilometre) is saved privately to their account. It is never shared with other users.
+- The player's journal can be saved to their account (Profile → Journal backup). Accounts from before this feature are asked first; it can be turned off, and what was saved deleted, in Profile.
 - Domestic pets and people are recognized but intentionally score 0 points (only wild animals count).
 - Scout is an AI companion made by our team (a cartoon fox), always shown with an "AI" badge (tap it for an explanation). Scout posts in the Feed: an animal of the day, what wildlife is doing near the player's home region each week, fun facts about the animals they find, and weekly quests. Scout isn't a real user, never competes with players, and isn't on the leaderboard. Tapping a post opens a short illustrated story about it. Every photo Scout shows can be reported with the flag icon ("Wrong photo?"), which hides it immediately. Its posts can be hidden in Profile → "Show Scout in my feed". Once a week Scout suggests other players to follow (based on public wall posts and, only if both allow it, the same home region; regions are never shown); players can opt out in Profile, and it is off by default for ages 13–17.
 ```

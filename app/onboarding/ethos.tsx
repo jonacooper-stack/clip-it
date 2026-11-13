@@ -59,7 +59,7 @@ export default function Ethos() {
         <Text style={styles.permsText}>
           When you take your first photo, ClipIt will ask to use your <Text style={styles.bold}>camera</Text>{' '}
           and, if you like, your <Text style={styles.bold}>location</Text> to tag where you saw the animal.
-          Your location stays private to you.
+          The exact spot stays on your phone, and other players never see where you were.
         </Text>
       </View>
 

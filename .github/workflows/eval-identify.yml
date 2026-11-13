@@ -1,0 +1,76 @@
+name: Compare identifier models
+
+# Measures how well each Claude model names the species in photos we already
+# know the answer for, how reliably it refuses pictures that aren't a player's
+# own photo (eval/cheat-samples), and what each costs (see docs/AI_COSTS.md).
+# It runs the same prompt and answer handling as the live identifier.
+#
+# Run it from GitHub: Actions → "Compare identifier models" → Run workflow.
+# Leave "confirm" empty to see the plan and the estimated cost (nothing is
+# sent, nothing is spent). Type "run" there to really run it: that spends
+# Anthropic API credit (about $5.50 for all four models on the 99 library photos
+# and the 12 sample cheat pictures).
+#
+# Needs a repository secret named ANTHROPIC_API_KEY (Settings → Secrets and
+# variables → Actions). Use the same key the Vercel project uses, or a
+# separate one with its own spend limit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Models to compare (comma-separated)
+        type: string
+        default: claude-opus-4-8,claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5
+      limit:
+        description: Use only the first N photos (empty = all)
+        type: string
+        default: ""
+      confirm:
+        description: Type "run" to spend API credit. Empty = show the plan and cost only.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Inputs go through the environment rather than being pasted into the
+      # command, so nothing typed into the form can run as shell.
+      - name: Compare
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MODELS: ${{ inputs.models }}
+          EVAL_LIMIT: ${{ inputs.limit }}
+          EVAL_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -o pipefail
+          args=(--models "$EVAL_MODELS" --cheats eval/cheat-samples)
+          if [ -n "$EVAL_LIMIT" ]; then args+=(--limit "$EVAL_LIMIT"); fi
+          if [ "$EVAL_CONFIRM" = "run" ]; then
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::error::Add a repository secret named ANTHROPIC_API_KEY first (Settings → Secrets and variables → Actions)."
+              exit 1
+            fi
+            args+=(--yes)
+          fi
+          npx tsx scripts/eval-identify.ts "${args[@]}" | tee report.txt
+          {
+            echo '## Identifier model comparison'
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

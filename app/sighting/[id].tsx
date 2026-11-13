@@ -14,7 +14,7 @@ import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
 import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
 import { SCIENCE_QUESTIONS, answerValues, answerLabelsText } from '@/lib/scienceQuestions';
-import { resolvePhoto } from '@/lib/photoStore';
+import { usePhoto } from '@/lib/usePhoto';
 import { MAX_AUTO_RETRIES, retryCaptureNow } from '@/lib/analysis';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
@@ -39,6 +39,8 @@ export default function SightingDetail() {
   const [confirming, setConfirming] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // The photo's file on this device, or a link to the copy in the cloud journal.
+  const { uri: photoSrc, onError: onPhotoError } = usePhoto(sighting?.photoUri);
 
   const retryNow = async () => {
     setRetrying(true);
@@ -69,7 +71,6 @@ export default function SightingDetail() {
   }
 
   const status = STATUS[sighting.idStatus];
-  const photoSrc = resolvePhoto(sighting.photoUri);
   const observed = new Date(sighting.observedAt);
   const hasLoc = sighting.lat != null && sighting.lng != null;
 
@@ -108,7 +109,11 @@ export default function SightingDetail() {
             source={{ uri: photoSrc }}
             style={styles.photo}
             contentFit="cover"
-            onError={() => setPhotoFailed(true)}
+            onError={() => {
+              // A cloud link may just have expired: ask for a fresh one once before giving up.
+              if (sighting.photoUri?.startsWith('cloud:') && !photoFailed) onPhotoError();
+              else setPhotoFailed(true);
+            }}
           />
         ) : (
           <View style={styles.photoFallback}>
@@ -140,7 +145,9 @@ export default function SightingDetail() {
             <Text style={styles.queuedText}>
               {(sighting.retry?.attempts ?? 0) >= MAX_AUTO_RETRIES
                 ? 'We tried several times and couldn’t identify this photo. You can try again, or remove it from your journal.'
-                : 'Your photo is saved. ClipIt will identify it and add your points as soon as it can reach the identifier.'}
+                : sighting.retry?.why === 'limit' && Date.now() < sighting.retry.nextAt
+                  ? 'Today’s limit for scored sightings has been reached. Your photo is saved, and ClipIt will identify it and add your points once the limit resets.'
+                  : 'Your photo is saved. ClipIt will identify it and add your points as soon as it can reach the identifier.'}
             </Text>
             {Platform.OS !== 'web' && (
               <Button label="Try now" icon="refresh" variant="secondary" size="md" loading={retrying} onPress={retryNow} style={styles.retryBtn} />
@@ -195,7 +202,7 @@ export default function SightingDetail() {
               hasLoc ? `~${sighting.lat!.toFixed(2)}, ${sighting.lng!.toFixed(2)}` : 'Not recorded'
             }
           />
-          {hasLoc && <Text style={styles.privacyNote}>Approximate — your precise location stays private to you.</Text>}
+          {hasLoc && <Text style={styles.privacyNote}>Approximate. The exact spot stays on this phone, and other players never see where you were.</Text>}
         </Card>
 
         {sighting.science && Object.keys(sighting.science).length > 0 && (

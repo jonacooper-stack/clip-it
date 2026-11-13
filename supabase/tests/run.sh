@@ -6,6 +6,9 @@
 #
 #   npm run test:db
 #
+# Then the server's journal code is run against the same schema
+# (server/journal.flows.ts): the real functions, the real tables.
+#
 # Needs a Postgres server you can create databases on. Point it at one with the
 # usual PGHOST / PGPORT / PGUSER / PGPASSWORD variables (CI uses a postgres:16
 # service container). It only ever touches the database named below.
@@ -28,16 +31,37 @@ for f in $(ls "$MIGRATIONS"/*.sql | sort); do
   [ "$name" = "0001_init.sql" ] && continue
   # Rows written before the newest migration must survive it: seed them just before it runs.
   if [ "$name" = "0010_hardening.sql" ]; then run legacy.sql; fi
+  if [ "$name" = "0011_cloud_journal.sql" ]; then run legacy_0011.sql; fi
   run "$f" || { echo "FAILED applying $name"; exit 1; }
   last="$f"
 done
 # Migrations are run by hand in the SQL editor, sometimes twice: the newest must be safe to repeat.
 run "$last" || { echo "FAILED re-applying $(basename "$last")"; exit 1; }
-echo "applied $(ls "$MIGRATIONS"/*.sql | wc -l | tr -d ' ') migrations (newest one twice)"
+echo "applied $(($(ls "$MIGRATIONS"/*.sql | wc -l) - 1)) migrations (newest one twice)"
 
-out="$(psql -q -d "$DB" -f rules.test.sql 2>&1 | grep -E 'PASS|FAIL|ERROR' | sed 's/^.*NOTICE:  //' || true)"
+out="$( (psql -q -d "$DB" -f rules.test.sql 2>&1; psql -q -d "$DB" -f moderation.test.sql 2>&1) | grep -E 'PASS|FAIL|ERROR' | sed 's/^.*NOTICE:  //' || true)"
 echo "$out"
 dropdb "$DB"
+
+# The server's own journal code against the same schema (server/journal.flows.ts),
+# in a database of its own so the rule tests above don't get in its way.
+SERVER_DB="${DB}_server"
+dropdb --if-exists "$SERVER_DB"
+createdb "$SERVER_DB"
+runs() { psql -q -v ON_ERROR_STOP=1 -d "$SERVER_DB" -f "$1" > /dev/null 2>&1; }
+runs stubs.sql
+for f in $(ls "$MIGRATIONS"/*.sql | sort); do
+  name="$(basename "$f")"
+  [ "$name" = "0001_init.sql" ] && continue
+  if [ "$name" = "0010_hardening.sql" ]; then runs legacy.sql; fi
+  if [ "$name" = "0011_cloud_journal.sql" ]; then runs legacy_0011.sql; fi
+  runs "$f"
+done
+server_out="$(CLIPIT_SERVER_TEST_DB="$SERVER_DB" npx tsx server/journal.flows.ts 2>&1 | grep -E '^(PASS|FAIL)' || true)"
+echo "$server_out"
+dropdb "$SERVER_DB"
+out="$out
+$server_out"
 pass=$(grep -c '^PASS' <<< "$out" || true)
 fail=$(grep -c -E '^FAIL|ERROR' <<< "$out" || true)
 echo "$pass passed, $fail failed"

@@ -9,6 +9,8 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { checkText, reservedName } from '@/lib/moderation';
+import { noteSignupStarted } from '@/lib/backupChoice';
+import { ageIsSettled } from '../../shared/age';
 
 // react-native-web renders TextInput as an <input> with a default border + focus
 // outline; strip both on web only (no-ops on native).
@@ -29,6 +31,7 @@ export default function Account() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string }>();
   const ageBracket = useAppStore((s) => s.ageBracket);
+  const ageCheck = useAppStore((s) => s.ageCheck);
   const setOnboarded = useAppStore((s) => s.setOnboarded);
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
@@ -52,7 +55,9 @@ export default function Account() {
   const isSignup = mode === 'signup';
   // Creating an account needs the age check first. (This screen can also be
   // reached through "Sign in", which skips it.)
-  const needsAgeCheck = !ageBracket || ageBracket === 'under_13';
+  // (An answer an older version of the app left on the phone, which asked
+  // the year only, isn't enough for a new account.)
+  const needsAgeCheck = !ageBracket || ageBracket === 'under_13' || !ageIsSettled(ageBracket, ageCheck);
   useEffect(() => {
     if (isSignup && needsAgeCheck) router.replace('/onboarding/age-gate');
   }, [isSignup, needsAgeCheck, router]);
@@ -75,6 +80,7 @@ export default function Account() {
     }
     setBusy(true);
     setError(null);
+    if (isSignup) noteSignupStarted(); // an account made here, now, signs up under today's privacy policy
     const res = isSignup
       ? await signUp({ email, password, displayName: name, ageBracket, isChild: false })
       : await signIn(email, password);
@@ -102,6 +108,7 @@ export default function Account() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    noteSignupStarted(); // (if this creates an account)
     const res = await signInWithGoogle();
     if (res.error) {
       setError(res.error);
@@ -120,6 +127,7 @@ export default function Account() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    noteSignupStarted(); // (if this creates an account)
     const res = await signInWithApple();
     setBusy(false);
     if (res.cancelled) return;
@@ -163,8 +171,8 @@ export default function Account() {
       <Text style={styles.title}>{isSignup ? 'Create your account' : 'Welcome back'}</Text>
       <Text style={styles.subtitle}>
         {isSignup
-          ? 'Your account lets you share sightings, follow other explorers and join the leaderboard.'
-          : 'Sign in to get back to the wall, your friends and the leaderboard.'}
+          ? 'Your account keeps your journal safe and lets you share sightings, follow other explorers and join the leaderboard.'
+          : 'Sign in to get back to your journal, the wall, your friends and the leaderboard.'}
       </Text>
 
 

@@ -6,8 +6,8 @@ import { Card } from '@/components/Card';
 import { ProgressBar } from '@/components/ProgressBar';
 import { PointsBadge } from '@/components/PointsBadge';
 import { colors, spacing, font, fonts } from '@/theme';
-import { useJournalStore } from '@/state/useJournalStore';
 import { SEED_QUESTS, questProgress } from '@/lib/quests';
+import { useQuestSightings } from '@/lib/useQuestSightings';
 import { CrewAvatar } from '@/components/crew/CrewAvatar';
 import { useScoutFeed } from '@/lib/crew/useScoutFeed';
 import { SWEEP_BONUS } from '@/lib/crew/challenges';
@@ -15,7 +15,7 @@ import { addWeeks, DAY_MS, startOfWeek } from '@/lib/crew/time';
 
 export default function Quests() {
   const router = useRouter();
-  const sightings = useJournalStore((s) => s.sightings);
+  const sightings = useQuestSightings(); // what counts toward the score
   const { quests: weekly } = useScoutFeed();
   const weeklyDone = weekly.filter((c) => c.done).length;
   const daysLeft = Math.max(0, Math.ceil((addWeeks(startOfWeek(Date.now()), 1) - Date.now()) / DAY_MS) - 1);

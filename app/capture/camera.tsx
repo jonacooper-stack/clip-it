@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/Button';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useJournalStore } from '@/state/useJournalStore';
+import type { PhotoEvidence } from '../../shared/photoEvidence';
 import { useAppStore } from '@/state/useAppStore';
 import { setPendingPhoto } from '@/state/pendingCaptures';
 import { pickImageWithMetadata } from '@/lib/importPhoto';
@@ -166,7 +167,7 @@ export default function CameraScreen() {
 
   // Add the new sighting to the journal and hand it to the identifying screen
   // (the photo bytes for the AI travel in memory, never in saved storage).
-  const startIdentify = (shot: { photoUri?: string; base64?: string; observedAt?: number; where?: Partial<Where> }) => {
+  const startIdentify = (shot: { photoUri?: string; base64?: string; observedAt?: number; where?: Partial<Where>; capture?: 'camera' | 'library'; evidence?: PhotoEvidence }) => {
     const id = newId();
     const now = Date.now();
     if (shot.base64) setPendingPhoto(id, shot.base64);
@@ -180,6 +181,10 @@ export default function CameraScreen() {
       accuracyM: shot.where?.accuracyM,
       sceneTags: [],
       idStatus: 'identifying',
+      // How the photo got here. An upload also says whether it carries a
+      // camera's details: the server only scores uploads that do.
+      capture: shot.capture,
+      evidence: shot.evidence,
     });
     router.replace(`/capture/identifying?id=${id}`);
   };
@@ -195,7 +200,10 @@ export default function CameraScreen() {
     try {
       const picked = await pickImageWithMetadata();
       if (!picked) return;
-      startIdentify({ photoUri: picked.uri, base64: picked.base64, observedAt: picked.observedAt, where: { lat: picked.lat, lng: picked.lng } });
+      startIdentify({
+        photoUri: picked.uri, base64: picked.base64, observedAt: picked.observedAt, where: { lat: picked.lat, lng: picked.lng },
+        capture: 'library', evidence: picked.evidence,
+      });
     } finally {
       setBusy(false);
     }
@@ -274,7 +282,7 @@ export default function CameraScreen() {
         locate(),
         uri ? savePhoto(uri) : undefined,
       ]);
-      startIdentify({ photoUri: photoRef, base64: small ?? photo?.base64, where });
+      startIdentify({ photoUri: photoRef, base64: small ?? photo?.base64, where, capture: 'camera' });
     } finally {
       setBusy(false);
     }
@@ -296,7 +304,7 @@ export default function CameraScreen() {
         locate(),
         savePhoto(a.uri),
       ]);
-      startIdentify({ photoUri: photoRef, base64: small, where });
+      startIdentify({ photoUri: photoRef, base64: small, where, capture: 'camera' });
     } finally {
       setBusy(false);
     }
@@ -332,6 +340,7 @@ export default function CameraScreen() {
         lng: where?.lng,
         accuracyM: where?.accuracyM,
         sceneTags: [],
+        capture: 'camera',
         idStatus: 'queued',
       });
       // Copy to the camera roll only if already permitted — never prompt mid-burst.

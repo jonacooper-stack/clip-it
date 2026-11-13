@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dueForRetry, MAX_AUTO_RETRIES, nextRetry, RETRY_WAITS_MS, retryWaitMs } from '../src/lib/retry';
+import { dueForRetry, holdUntilReset, MAX_AUTO_RETRIES, msToDailyReset, nextRetry, RETRY_WAITS_MS, retryWaitMs } from '../src/lib/retry';
 
 test('waits grow with each failed try, then hold at the longest', () => {
   const waits = [1, 2, 3, 4, 5, 6, 20].map((n) => nextRetry(n, 0).nextAt);
@@ -33,4 +33,16 @@ test('"too many requests" holds the queue for as long as the server asks', () =>
   assert.equal(retryWaitMs(3 * 3600), 3 * 3600_000); // today's allowance is used up: until it resets
   assert.equal(retryWaitMs(10 * 86_400), 86_400_000); // never more than a day
   assert.equal(retryWaitMs(NaN), 60_000);
+});
+
+test('when today\'s allowance is used up a capture waits until it resets (midnight UTC), without counting as a failed try', () => {
+  const t = Date.UTC(2026, 10, 12, 21, 30); // 21:30 UTC
+  assert.equal(msToDailyReset(t), 2.5 * 3600_000 + 60_000);
+  assert.equal(msToDailyReset(Date.UTC(2026, 10, 13, 0, 0)), 86_400_000 + 60_000); // exactly midnight: the next one
+  const held = holdUntilReset({ attempts: 3, nextAt: 0 }, t);
+  assert.deepEqual(held, { attempts: 3, nextAt: Date.UTC(2026, 10, 13, 0, 1), why: 'limit' });
+  assert.deepEqual(holdUntilReset(undefined, t), { attempts: 0, nextAt: Date.UTC(2026, 10, 13, 0, 1), why: 'limit' });
+  assert.equal(dueForRetry(held, t + 3600_000), false);
+  assert.equal(dueForRetry(held, Date.UTC(2026, 10, 13, 0, 1)), true);
+  assert.equal(nextRetry(4, t).why, undefined); // an ordinary failed try afterwards is an ordinary wait again
 });
