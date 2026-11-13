@@ -313,8 +313,9 @@ export function asTheServerCounts(sightings: Sighting[]): Sighting[] {
 // after the cut-off for phone-scored sightings, or the account has no
 // allowance for them). If its photo is still on this device, the app can
 // have the server identify it now, which makes it count: see lib/journalSync.
+// (Once: a sighting the server looked at again and couldn't score is not sent again.)
 export function worthReidentifying(s: Sighting): boolean {
-  return Boolean(s.cloudAt) && s.verified === false && s.cloudPoints === 0 && (s.points ?? 0) > 0 && !s.cloudSkip;
+  return Boolean(s.cloudAt) && s.verified === false && s.cloudPoints === 0 && (s.points ?? 0) > 0 && !s.cloudSkip && !s.rechecked;
 }
 
 // The server's answer for one pushed sighting.
@@ -325,6 +326,11 @@ export function applyPushAnswer(local: Sighting, answer: PushAnswer, now: number
     // The server's photo check says this one can't score.
     return { ...local, idStatus: 'ineligible', ineligibleReason: answer.refused, points: undefined, score: undefined, receipt: undefined, cloudSkip: true };
   }
+  // A receipt the server can no longer check (its signing key was changed,
+  // or it is months old): the sighting isn't lost. It goes up the way one the
+  // server hasn't identified does, and is identified again while its photo
+  // is on the phone.
+  if ('error' in answer && local.receipt && answer.error === 'nothing to record') return { ...local, receipt: undefined };
   if ('error' in answer) return { ...local, cloudSkip: true }; // it will never be accepted: stop sending it
   if (answer.deleted_at) return null; // deleted elsewhere
   return applyCloudRow(local, answer, now);
@@ -396,21 +402,30 @@ export function prefsToSend(cloud: CloudState | null | undefined): { backup?: 'y
   return Object.keys(out).length ? out : null;
 }
 
-// Take in what the server says the account's choices are. The account's
-// answer is followed, with three exceptions where this device's own choice
+// Take in what the server says the account's choices are. Each choice on its
+// own: the account's answer is followed, except where this device's choice
 // stands (and is sent to the server, which then records it):
 //   - the account has no answer yet;
-//   - this device holds a choice the account hadn't recorded when it was last
-//     heard from (the player has just answered, or changed their mind, here);
-//   - the player changed the choice here while the request was in the air
-//     (`sent` is what this device had when it asked).
+//   - this device holds that very choice unsent: the account hadn't recorded
+//     it when last heard from (the player has just answered, or changed
+//     their mind, here);
+//   - the player changed it here while the request was in the air (`sent` is
+//     what this device had when it asked).
+// One more rule, for two devices that answered without hearing from each
+// other: switching something on never stands against an "off" this device
+// hadn't heard of. (Otherwise a phone that was offline when the player turned
+// the backup off and deleted what was saved, on another phone, would turn it
+// back on and upload everything again.)
 export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPrefs, sent?: { backup?: boolean; places?: boolean }): CloudState {
-  const unsent = prefsToSend(cloud) !== null;
+  const unsent = prefsToSend(cloud) ?? {};
+  const heard = cloud?.saved; // the account's choices when this device last heard from it
   const places = prefs.placesSet === false ? null : prefs.places;
   const next = mergeCloud(cloud, { saved: { backup: prefs.backup, places } });
-  const changedMeanwhile = sent !== undefined && (next.backup !== sent.backup || next.places !== sent.places);
-  if (prefs.backup === null || unsent || changedMeanwhile) return next;
-  return { ...next, backup: prefs.backup === 'yes', places: places ?? undefined };
+  if (prefs.backup === null) return next;
+  const mine = (k: 'backup' | 'places') => unsent[k] !== undefined || (sent !== undefined && next[k] !== sent[k]);
+  const keepBackup = mine('backup') && !(next.backup === true && prefs.backup === 'no' && heard?.backup !== 'no');
+  const keepPlaces = mine('places') && !(next.places === true && places === false && heard?.places !== false);
+  return { ...next, backup: keepBackup ? next.backup : prefs.backup === 'yes', places: keepPlaces ? next.places : places ?? undefined };
 }
 
 // The saved journal was erased (here or on another device) since this device
@@ -420,7 +435,7 @@ export function takePrefs(cloud: CloudState | null | undefined, prefs: AccountPr
 export function forgetCloudCopies(sightings: Sighting[]): Sighting[] {
   return sightings.map((s) => {
     if (!s.cloudAt && !s.cloudSkip && !s.cloudPhoto) return s;
-    const { cloudAt: _a, cloudPhoto: _p, cloudPoints: _c, cloudSkip: _s, sentRev: _r, recordedAt: _w, ...rest } = s;
+    const { cloudAt: _a, cloudPhoto: _p, cloudPoints: _c, cloudSkip: _s, sentRev: _r, recordedAt: _w, rechecked: _k, ...rest } = s;
     return { ...rest, photoUri: typeof s.photoUri === 'string' && s.photoUri.startsWith('cloud:') ? undefined : s.photoUri };
   });
 }

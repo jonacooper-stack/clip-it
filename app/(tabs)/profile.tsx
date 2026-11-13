@@ -13,7 +13,9 @@ import { useJournalStore, useJournalSave, distinctSpecies, purgeJournal, setClou
 import { askAboutBackup } from '@/lib/backupChoice';
 import { askYesNo } from '@/lib/dialogs';
 import { playerPoints } from '@/lib/quests';
-import { pendingCount, scheduleJournalSync, syncJournal, turnOffBackup, useSyncStatus } from '@/lib/journalSync';
+import { fetchCloudOnlyPhotos, pendingCount, scheduleJournalSync, syncJournal, turnOffBackup, useSyncStatus } from '@/lib/journalSync';
+import { prefsToSend } from '@/lib/journalMerge';
+import { isCloudRef } from '@/lib/cloudPhotos';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -66,19 +68,52 @@ export default function Profile() {
   // backup was turned off. Say so, where the numbers are.
   const backupOffNote = isSupabaseConfigured && Boolean(session) && cloud?.saved !== undefined && cloud.backup !== true;
   const waiting = useMemo(() => pendingCount(sightings, pendingDeletes), [sightings, pendingDeletes]);
+  // Sightings saved to the account whose photo copy hasn't gone up yet (photos go on Wi-Fi only).
+  const photosWaiting = useMemo(
+    () => (Platform.OS === 'web' ? 0 : sightings.filter((s) => s.cloudAt && s.cloudPhoto === false && s.photoUri && !isCloudRef(s.photoUri)).length),
+    [sightings],
+  );
   const syncState = useSyncStatus((s) => s.state);
   const saveFailed = useJournalSave((s) => s.failed);
+  const [preparing, setPreparing] = useState(false);
+  // Turned off here (and perhaps "delete what is saved") but not yet heard by the account.
+  const offNotSent = cloud?.backup === false && (cloud.erase === true || prefsToSend(cloud) !== null);
   const backupLabel =
     saveFailed ? 'Journal: couldn’t save on this phone. Free up some storage'
-    :
-    cloud?.backup !== true ? 'Journal backup: off. Tap to turn on'
+    : preparing ? 'Journal backup: copying your photos to this phone…'
+    : offNotSent ? (cloud?.erase ? 'Journal backup: off. Deleting what is saved: not sent yet' : 'Journal backup: off, not sent to your account yet')
+    : cloud?.backup !== true ? 'Journal backup: off. Tap to turn on'
     : syncState === 'syncing' ? 'Journal backup: saving…'
     : waiting > 0 ? `Journal backup: ${waiting} waiting to save`
+    : photosWaiting > 0 ? `Journal backup: ${photosWaiting} ${photosWaiting === 1 ? 'photo' : 'photos'} waiting for Wi-Fi`
     : cloud?.ready ? 'Journal backup: up to date'
     : 'Journal backup: not started yet';
   const onBackupRow = () => {
-    if (cloud?.backup === true) void syncJournal({ force: true });
+    if (cloud?.backup === true || offNotSent) void syncJournal({ force: true });
     else if (uid) askAboutBackup(uid, { again: true, then: () => void syncJournal({ force: true }) });
+  };
+  // "Delete it": photos that exist only in the account are copied to this
+  // phone first, so that "the sightings on this phone stay" holds. Any that
+  // can't be (no signal; on the web, where photos aren't kept) are counted,
+  // and the player is asked again, with the number.
+  const deleteSaved = async () => {
+    setPreparing(true);
+    let left = 0;
+    try {
+      left = await fetchCloudOnlyPhotos();
+    } finally {
+      setPreparing(false);
+    }
+    if (left === 0) return void turnOffBackup({ erase: true });
+    askYesNo(
+      left === 1 ? '1 photo is only in your account' : `${left} photos are only in your account`,
+      (Platform.OS === 'web' ? 'Photos aren’t kept in the browser, so ' : 'They couldn’t be copied to this phone just now, so ') +
+        'deleting what is saved to your account deletes them for good. Their sightings stay here, without a photo.',
+      'Delete anyway',
+      'Keep it',
+      () => void turnOffBackup({ erase: true }),
+      () => void turnOffBackup({ erase: false }),
+    );
   };
   // Stop saving the journal to the account, and offer to delete what is there.
   const onTurnOffBackup = () => {
@@ -93,7 +128,7 @@ export default function Profile() {
           'This deletes the copy of your journal that is saved to your account, including the copies of its photos, and resets your score on the leaderboard. The sightings on this phone stay.',
           'Delete it',
           'Keep it',
-          () => void turnOffBackup({ erase: true }),
+          () => void deleteSaved(),
           () => void turnOffBackup({ erase: false }),
         ),
       () => {},
@@ -126,10 +161,19 @@ export default function Profile() {
   };
 
   const onSignOut = () =>
-    confirmAction('Sign out?', 'You can sign back in anytime.', 'Sign out', async () => {
-      await signOut();
-      resetCrew();
-    });
+    confirmAction(
+      'Sign out?',
+      offNotSent
+        ? 'Turning off your journal backup hasn’t reached your account yet. ClipIt will try once more now; if it can’t, it finishes the next time you sign in on this device.'
+        : 'You can sign back in anytime.',
+      'Sign out',
+      async () => {
+        // One more try at telling the account (a few seconds at most).
+        if (offNotSent) await Promise.race([syncJournal({ force: true }), new Promise((r) => setTimeout(r, 8000))]);
+        await signOut();
+        resetCrew();
+      },
+    );
 
   // App Store Guideline 5.1.1(v): full account deletion from inside the app.
   // Two confirmations, then: delete server data → sign out → wipe local data.

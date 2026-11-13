@@ -352,3 +352,44 @@ test('when the server recorded a sighting is kept with it, and forgotten with th
   assert.equal(applyCloudRow(updated, cloud('a'), NOW).recordedAt, NOW - 1000); // an answer without it doesn't wipe it
   assert.equal(forgetCloudCopies([updated])[0].recordedAt, undefined);
 });
+
+// ---------- the final review ----------
+test('each choice on its own: a pending places change does not keep a backup the account has turned off', () => {
+  // Phone A switched places off and hasn't sent it; meanwhile the backup was turned off (and what was saved deleted) on phone B.
+  const a = mergeCloud(null, { backup: true, places: false, saved: { backup: 'yes', places: true } });
+  const after = takePrefs(a, { backup: 'no', places: false, placesSet: true, epoch: null });
+  assert.equal(after.backup, false);
+  assert.equal(prefsToSend(after), null); // nothing to send: A follows the account, it doesn't switch it back on
+});
+
+test('switching on never stands against an "off" this phone had not heard of; once it has heard, the player can switch on again', () => {
+  // "yes" given here while offline, "not now" given later on another phone
+  const offline = mergeCloud(null, { backup: true, saved: { backup: null, places: null } });
+  assert.equal(takePrefs(offline, { backup: 'no', places: false, placesSet: false, epoch: null }).backup, false);
+  // this phone knew the account said no, and the player turned the backup on here
+  const knew = mergeCloud(null, { backup: true, saved: { backup: 'no', places: null } });
+  const on = takePrefs(knew, { backup: 'no', places: false, placesSet: false, epoch: null });
+  assert.equal(on.backup, true);
+  assert.deepEqual(prefsToSend(on), { backup: 'yes' });
+  // switching off always stands
+  const off = mergeCloud(null, { backup: false, saved: { backup: 'yes', places: true } });
+  assert.equal(takePrefs(off, { backup: 'yes', places: true, placesSet: true, epoch: null }).backup, false);
+});
+
+test('a receipt the server can no longer check: the sighting goes up the ordinary way instead of never', () => {
+  const withReceipt = local('r', { receipt: 'old.sig' });
+  const after = applyPushAnswer(withReceipt, { error: 'nothing to record' }, NOW)!;
+  assert.equal(after.receipt, undefined);
+  assert.equal(after.cloudSkip, undefined);
+  assert.equal(needsPush(after), true);
+  assert.ok('legacy' in pushItem(after, groupOf));
+  // an item with no receipt that the server won't take is still not sent again
+  assert.equal(applyPushAnswer(local('n'), { error: 'not a sighting that counts' }, NOW)!.cloudSkip, true);
+});
+
+test('a phone-scored sighting the server could not score on a second look keeps what it shows, and is not sent again', () => {
+  const s = local('p', { cloudAt: NOW, verified: false, cloudPoints: 0, points: 9 });
+  assert.equal(worthReidentifying(s), true);
+  assert.equal(worthReidentifying({ ...s, rechecked: true }), false);
+  assert.equal(belongsInCloud({ ...s, rechecked: true }), true); // its field notes still go up
+});

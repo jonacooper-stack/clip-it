@@ -18,6 +18,7 @@ import type { StoryRef } from './api';
 import { regionByKey, withArticle, type RegionKey } from '../../../shared/crew';
 import { challengeStatus, SWEEP_BONUS, type ChallengeStatus, type GroupOf } from './challenges';
 import { addDays, addWeeks, DAY_MS, hash, localDateStart, startOfDay, startOfWeek } from './time';
+import { speciesKey } from '../../../shared/species';
 
 export type Tone = 'green' | 'orange' | 'blue' | 'gold' | 'clay';
 
@@ -319,7 +320,7 @@ export function buildMoments(opts: {
   // ---------- a new species ----------
   const seen = new Set<string>();
   counted.forEach((s) => {
-    const key = s.species?.scientificName || s.species?.commonName;
+    const key = speciesKey(s.species?.scientificName) || s.species?.commonName;
     if (!key || seen.has(key)) return;
     seen.add(key);
     const n = seen.size;
@@ -403,7 +404,7 @@ export function buildMoments(opts: {
   const sightingMilestones = new Set([10, 25, 50, 100, 250]);
   const seen2 = new Set<string>();
   counted.forEach((s, i) => {
-    const key = s.species?.scientificName || s.species?.commonName;
+    const key = speciesKey(s.species?.scientificName) || s.species?.commonName;
     if (key && !seen2.has(key)) {
       seen2.add(key);
       if (speciesMilestones.has(seen2.size) && recent(s.observedAt + 2000)) {

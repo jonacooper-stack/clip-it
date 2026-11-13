@@ -55,8 +55,14 @@ interface AuthState {
 }
 
 let subscribed = false;
-// Age answers we've already tried to save on the account (once each per launch).
+// Age answers we've already tried to save on the account (once each per
+// launch, unless the attempt fails).
 const ageSaved = new Set<string>();
+// The account the age question was last answered for while signed in to it.
+// Only such an answer may replace one the account already has: an answer
+// typed before signing in may be someone else's (a parent answering on a
+// shared phone, then signing in to their child's account).
+let answeredFor: string | null = null;
 
 // The session to sync once the local store has loaded from disk.
 let awaitingHydration: Session | null = null;
@@ -98,7 +104,8 @@ function syncMetadata(session: Session | null) {
   // from: see shared/age.ts) lives on the account and is mirrored here.
   const accountCheck = typeof meta.ageCheck === 'number' ? meta.ageCheck : 0;
   const localCheck = app.ageCheck ?? 0;
-  const answeredHere = Boolean(app.ageBracket) && app.ageBracket !== 'under_13' && (!meta.ageBracket || localCheck > accountCheck);
+  const answeredHere =
+    Boolean(app.ageBracket) && app.ageBracket !== 'under_13' && (!meta.ageBracket || (localCheck > accountCheck && answeredFor === session.user.id));
   if (answeredHere) {
     // Answered on this device and not on the account yet (a Google or Apple
     // sign-in never saved it, or the question was just answered again with
@@ -107,7 +114,14 @@ function syncMetadata(session: Session | null) {
     const key = `${session.user.id}:${localCheck}`;
     if (supabase && !ageSaved.has(key)) {
       ageSaved.add(key);
-      supabase.auth.updateUser({ data: { ageBracket: app.ageBracket, isChild: false, ageCheck: localCheck || undefined } }).catch(() => ageSaved.delete(key));
+      // (updateUser reports a failure in its answer rather than by throwing:
+      // either way it is tried again next time.)
+      supabase.auth.updateUser({ data: { ageBracket: app.ageBracket, isChild: false, ageCheck: localCheck || undefined } }).then(
+        ({ error }) => {
+          if (error) ageSaved.delete(key);
+        },
+        () => ageSaved.delete(key),
+      );
     }
   } else if (meta.ageBracket && (meta.ageBracket !== app.ageBracket || accountCheck !== localCheck)) {
     app.setAge(meta.ageBracket, Boolean(meta.isChild), accountCheck || null);
@@ -118,6 +132,7 @@ function syncMetadata(session: Session | null) {
 
 function forgetAccount() {
   awaitingHydration = null;
+  answeredFor = null;
   useAppStore.getState().clearAccount();
 }
 
@@ -152,8 +167,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      // (Creating an account always follows the age question in its current form.)
-      options: { data: { displayName: displayName.trim(), ageBracket, isChild, ageCheck: AGE_CHECK_VERSION } },
+      // (The version of the age question that was answered: an answer left
+      // on the phone by an older version, which asked the year only, isn't
+      // passed off as the current one.)
+      options: { data: { displayName: displayName.trim(), ageBracket, isChild, ageCheck: useAppStore.getState().ageCheck ?? undefined } },
     });
     if (error) return { error: error.message };
     // No session means the project requires email confirmation before sign-in.
@@ -279,6 +296,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 // Re-check the signed-in account against the local profile right now: used
 // after the age check is answered while already signed in, so the age range
 // is saved on the account straight away (see syncMetadata).
+// The age question has just been answered (or the server says the account
+// still lacks the answer): save it on the signed-in account now.
 export function syncAccountNow(): void {
-  syncMetadata(useAuthStore.getState().session);
+  const session = useAuthStore.getState().session;
+  answeredFor = session?.user.id ?? null;
+  syncMetadata(session);
 }

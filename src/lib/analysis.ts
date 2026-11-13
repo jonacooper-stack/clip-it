@@ -17,6 +17,7 @@ import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from './supabase';
 import { cloudFieldsFor, scheduleJournalSync } from './journalSync';
 import { dueForRetry, holdUntilReset, msToDailyReset, nextRetry, retryWaitMs } from './retry';
+import { sameSpecies } from '../../shared/species';
 
 export { MAX_AUTO_RETRIES } from './retry';
 
@@ -90,7 +91,7 @@ export function applyIdentifyOutcome(id: string, outcome: IdentifyOutcome, photo
           s.idStatus !== 'rejected' &&
           s.idStatus !== 'ineligible',
       );
-    const priorSameSpecies = priors.filter((s) => s.species?.scientificName === sci).length;
+    const priorSameSpecies = priors.filter((s) => sameSpecies(s.species?.scientificName, sci)).length;
     const duplicatePhoto = photoHash != null && priors.some((s) => s.photoHash === photoHash);
     score = scoreSighting({
       rarityScore: outcome.rarityScore,

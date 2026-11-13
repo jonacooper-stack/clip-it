@@ -26,7 +26,7 @@ import * as Network from 'expo-network';
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { API_BASE, authHeaders, deviceTimeZone, hasServer } from './apiBase';
-import { useAuthStore } from '@/state/useAuthStore';
+import { syncAccountNow, useAuthStore } from '@/state/useAuthStore';
 import { useAppStore } from '@/state/useAppStore';
 import { useJournalStore, mergeCloud, patchCloud, setJournalChangeListener } from '@/state/useJournalStore';
 import {
@@ -37,7 +37,7 @@ import { identifySighting, OfflineError, type IdentifyInput, type IdentifyOutcom
 import type { Sighting } from '@/types';
 import { groupOf } from './quests';
 import { resizedBase64 } from './prepareImage';
-import { downloadPhoto, resolvePhoto } from './photoStore';
+import { deletePhoto, downloadPhoto, resolvePhoto } from './photoStore';
 import { cloudPhotoUrl, cloudRefId, isCloudRef } from './cloudPhotos';
 import { accountCreatedHere, applyPlacesDefault, askAboutBackup, chooseBackup } from './backupChoice';
 import { msToDailyReset } from './retry';
@@ -72,6 +72,7 @@ let scoreUnknown = false; // the saved journal was deleted elsewhere: the score 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let notBefore = 0;
 let failures = 0;
+let lastRunFor: string | null = null; // the waits above belong to this account
 const photosTried = new Set<string>(); // photo uploads the server didn't take this session
 
 const cloudOn = () => isSupabaseConfigured && Boolean(supabase) && hasServer;
@@ -147,6 +148,13 @@ export function syncJournal(opts: { force?: boolean } = {}): Promise<void> {
 async function run({ force }: { force?: boolean }): Promise<void> {
   const uid = signedIn();
   if (!journalAllowed() || !uid || !stillFor(uid)) return;
+  // Someone else signed in on this phone: what the server told the previous
+  // account to wait for doesn't hold up this one.
+  if (uid !== lastRunFor) {
+    lastRunFor = uid;
+    notBefore = 0;
+    failures = 0;
+  }
   if (!force && Date.now() < notBefore) return;
   try {
     // 1. What has the account answered? (Read every time: the answer may
@@ -167,14 +175,15 @@ async function run({ force }: { force?: boolean }): Promise<void> {
       scoreUnknown = false;
       await readTotals(uid);
     }
-    // 4. The journal itself, if it is being saved.
-    if (cloudState()?.backup === true) {
-      await push(uid);
-      await pull(uid);
-      await downloadPhotos(uid);
-      await uploadPhotos(uid);
-      await reidentify(uid);
-    }
+    // 4. The journal itself, if it is being saved. (Checked again before
+    // each step: the player may turn the backup off while this runs, and
+    // nothing more leaves the phone after that.)
+    const saving = () => cloudState()?.backup === true && stillFor(uid);
+    if (saving()) await push(uid);
+    if (saving()) await pull(uid);
+    if (saving()) await downloadPhotos(uid);
+    if (saving()) await uploadPhotos(uid);
+    if (saving()) await reidentify(uid);
     failures = 0;
     notBefore = 0;
     useSyncStatus.setState({ state: 'idle', lastSyncedAt: Date.now() });
@@ -196,9 +205,12 @@ function takeChoice(uid: string, prefs: AccountPrefs, sent?: { backup?: boolean;
     // The saved journal was erased since this device last synced (here or
     // elsewhere): the account no longer holds these sightings.
     // (Deletions that were waiting to be passed on have nothing left to delete.)
+    // (Deletions still waiting here are kept: if the backup is turned on
+    // again from another phone, that phone may upload the very sightings
+    // this one deleted. The server acknowledges ids it doesn't hold.)
     if (prefs.epoch && prefs.epoch !== (st.cloud?.epoch ?? null)) {
       scoreUnknown = true; // the score went with it: read it again (see run)
-      return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings), pendingDeletes: [] };
+      return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings) };
     }
     return { cloud: st.cloud?.epoch === undefined ? { ...cloud, epoch: prefs.epoch } : cloud };
   });
@@ -250,7 +262,10 @@ async function post(uid: string, body: Record<string, unknown>): Promise<SyncAns
   if (res.status === 503 && retryAfter > 0) throw new SyncStop(Math.min(Math.max(retryAfter, 3), 900) * 1000); // busy: the server says when
   if (res.status === 404 || res.status === 503) throw new SyncStop(15 * 60_000);
   if (res.status === 429) throw new SyncStop(Math.min(Math.max(retryAfter || 60, 60), 86_400) * 1000);
-  // 403: the account doesn't carry the age answer yet (it is saved a moment after the question is answered).
+  // 403: the account doesn't carry the age answer yet (it is saved a moment
+  // after the question is answered). Try saving it again now: if the first
+  // attempt failed, nothing else would until the app is restarted.
+  if (res.status === 403) syncAccountNow();
   if (res.status === 401 || res.status === 409 || res.status === 403) throw new SyncStop(2 * 60_000);
   throw new Error(`sync ${res.status}`);
 }
@@ -258,11 +273,28 @@ async function post(uid: string, body: Record<string, unknown>): Promise<SyncAns
 function takeAnswer(uid: string, answer: SyncAnswer, sentRevs: ReadonlyMap<string, number>): void {
   if (!stillFor(uid)) throw new SyncStop(0);
   const now = Date.now();
-  useJournalStore.getState().applySync((st) => ({
-    sightings: applyPushAnswers(st.sightings, answer.rows ?? {}, sentRevs, now),
-    pendingDeletes: answer.deleted?.length ? st.pendingDeletes.filter((id) => !answer.deleted!.includes(id)) : st.pendingDeletes,
-    cloud: mergeCloud(st.cloud, { ready: answer.ready === true, totals: answer.totals ?? st.cloud?.totals ?? null }),
-  }));
+  let gone: Sighting[] = [];
+  useJournalStore.getState().applySync((st) => {
+    const sightings = applyPushAnswers(st.sightings, answer.rows ?? {}, sentRevs, now);
+    gone = removedFrom(st.sightings, sightings);
+    return {
+      sightings,
+      pendingDeletes: answer.deleted?.length ? st.pendingDeletes.filter((id) => !answer.deleted!.includes(id)) : st.pendingDeletes,
+      cloud: mergeCloud(st.cloud, { ready: answer.ready === true, totals: answer.totals ?? st.cloud?.totals ?? null }),
+    };
+  });
+  dropPhotoFiles(gone);
+}
+
+// Sightings that one step of the sync took off this device (deleted on
+// another device), and their photo files: nothing else would ever remove them.
+function removedFrom(before: Sighting[], after: Sighting[]): Sighting[] {
+  if (before.length === after.length && before.every((s, i) => after[i]?.id === s.id)) return [];
+  const kept = new Set(after.map((s) => s.id));
+  return before.filter((s) => !kept.has(s.id));
+}
+function dropPhotoFiles(gone: Sighting[]): void {
+  for (const s of gone) if (s.photoUri && !isCloudRef(s.photoUri)) void deletePhoto(s.photoUri).catch(() => {});
 }
 
 // Things the server must hear whether or not the journal is being saved: a
@@ -271,6 +303,10 @@ function takeAnswer(uid: string, answer: SyncAnswer, sentRevs: ReadonlyMap<strin
 async function tell(uid: string): Promise<void> {
   const st = useJournalStore.getState();
   const erase = st.cloud?.erase === true;
+  // Photos that exist only in the account are brought to this phone before
+  // what is saved there is deleted (Profile does this before asking, too;
+  // this covers a deletion asked for without signal).
+  if (erase) await downloadPhotos(uid, Infinity);
   const deletes = st.cloud?.backup !== true && st.cloud?.ready ? st.pendingDeletes.slice(0, 100) : [];
   if (!erase && !prefsToSend(st.cloud) && !deletes.length) return;
   const answer = await post(uid, { ...(erase ? { erase: true } : {}), ...(deletes.length ? { deletes } : {}) });
@@ -351,11 +387,14 @@ async function pull(uid: string): Promise<void> {
     for (const r of rows) if (r.updated_at && (!newest || r.updated_at > newest)) newest = r.updated_at;
     if (rows.length) {
       const now = Date.now();
+      let gone: Sighting[] = [];
       // One step per page: the journal is saved once, not once per sighting.
       useJournalStore.getState().applySync((st) => {
         const merged = mergeRows(st.sightings, st.pendingDeletes, rows, now);
+        gone = removedFrom(st.sightings, merged.sightings);
         return { sightings: merged.sightings, pendingDeletes: merged.pendingDeletes };
       });
+      dropPhotoFiles(gone);
     }
     if (rows.length < PAGE) break;
     cursor = nextPullCursor(cursor, rows);
@@ -384,9 +423,9 @@ async function readTotals(uid: string): Promise<void> {
 // Photos the cloud has and this phone doesn't (a new phone, a reinstall):
 // bring a few down per sync. On the web they are shown straight from the
 // cloud instead (lib/usePhoto), so there is nothing to do.
-async function downloadPhotos(uid: string): Promise<void> {
+async function downloadPhotos(uid: string, limit = PHOTOS_PER_RUN): Promise<void> {
   if (Platform.OS === 'web') return;
-  const missing = useJournalStore.getState().sightings.filter((s) => isCloudRef(s.photoUri)).slice(0, PHOTOS_PER_RUN);
+  const missing = useJournalStore.getState().sightings.filter((s) => isCloudRef(s.photoUri)).slice(0, limit);
   for (const s of missing) {
     if (!stillFor(uid)) throw new SyncStop(0);
     const url = await cloudPhotoUrl(cloudRefId(s.photoUri!));
@@ -405,6 +444,23 @@ async function onWifi(): Promise<boolean> {
   }
 }
 
+// Before what is saved to the account is deleted: bring every photo that
+// exists only there to this phone (one pass, so a photo that can't be
+// fetched doesn't hold the rest up), and say how many are still only in the
+// account. On the web nothing can be kept: all of them.
+export async function fetchCloudOnlyPhotos(): Promise<number> {
+  const uid = signedIn();
+  const count = () => useJournalStore.getState().sightings.filter((s) => isCloudRef(s.photoUri)).length;
+  if (!uid || !stillFor(uid) || !journalAllowed()) return count();
+  if (running) await running.catch(() => {});
+  try {
+    await downloadPhotos(uid, Infinity);
+  } catch {
+    // whatever couldn't be fetched is counted below
+  }
+  return count();
+}
+
 // Photos this phone has and the cloud doesn't: sightings from before journals
 // moved to the cloud, and any whose copy didn't arrive when it was
 // identified. Sent after the sightings themselves (the journal and the score
@@ -417,6 +473,7 @@ async function uploadPhotos(uid: string): Promise<void> {
     .slice(0, PHOTOS_PER_RUN);
   if (!waiting.length || !(await onWifi())) return;
   for (let i = 0; i < waiting.length; i += PHOTO_BATCH) {
+    if (cloudState()?.backup !== true) return; // turned off meanwhile
     const items: { id: string; photoBase64: string }[] = [];
     for (const s of waiting.slice(i, i + PHOTO_BATCH)) {
       photosTried.add(s.id); // once per session: a photo the server won't take isn't offered again and again
@@ -474,6 +531,7 @@ async function reidentify(uid: string): Promise<void> {
     .slice(0, 3);
   for (const s of todo) {
     if (!stillFor(uid)) throw new SyncStop(0);
+    if (cloudState()?.backup !== true) return; // turned off meanwhile
     reidentified.add(s.id); // once per session
     const uri = resolvePhoto(s.photoUri);
     const photoBase64 = uri ? await resizedBase64(uri) : undefined;
@@ -515,8 +573,11 @@ async function reidentify(uid: string): Promise<void> {
             recordedAt: row.recorded_at ? Date.parse(row.recorded_at) || x.recordedAt : x.recordedAt,
           };
         }
-        // The server looked and says it can't score (not a wild animal, or not the player's own photo).
-        if (outcome.present && !outcome.eligible) return { ...x, idStatus: 'ineligible' as const, ineligibleReason: outcome.ineligibleReason, points: undefined, score: undefined, cloudSkip: true };
+        // The server looked again and can't score it (it reads the photo
+        // differently this time, or another account holds the same picture).
+        // The sighting stays in the journal as the player has always seen
+        // it; it just isn't sent to be identified again.
+        if (!outcome.eligible) return { ...x, rechecked: true };
         return x;
       }),
     }));

@@ -45,17 +45,25 @@ export async function defaultPlaces(): Promise<boolean | undefined> {
 // has since: places start being saved (the switch in Profile shows it, and
 // turns it off again).
 export async function applyPlacesDefault(uid: string): Promise<void> {
-  const cloud = useJournalStore.getState().cloud;
-  if (cloud?.backup !== true || cloud.places !== undefined || (cloud.saved && cloud.saved.places !== null)) return;
+  const { owner, cloud } = useJournalStore.getState();
+  if (owner !== uid || cloud?.backup !== true || cloud.places !== undefined) return;
+  // The account has a choice on record: that is the choice.
+  if (cloud.saved && cloud.saved.places !== null) return setCloudChoice({ places: cloud.saved.places });
   const places = await defaultPlaces();
   if (places === true && useJournalStore.getState().owner === uid && useJournalStore.getState().cloud?.places === undefined) setCloudChoice({ places: true });
 }
 
-// Record the answer for the account whose journal is loaded.
+// Record the answer for the account whose journal is loaded. A places
+// choice that already exists stands (made on this device, or on record for
+// the account): the default is only for when nobody has chosen. A device
+// that hasn't heard from the account yet can't know, and leaves places to the
+// sync (applyPlacesDefault, once the account's record has been read).
 export async function chooseBackup(uid: string, yes: boolean): Promise<void> {
-  const places = yes ? await defaultPlaces() : undefined;
-  if (useJournalStore.getState().owner !== uid) return;
-  setCloudChoice(yes ? { backup: true, places } : { backup: false });
+  const fallback = yes ? await defaultPlaces() : undefined;
+  const { owner, cloud } = useJournalStore.getState();
+  if (owner !== uid) return;
+  const chosen = typeof cloud?.places === 'boolean' ? cloud.places : cloud?.saved?.places ?? undefined;
+  setCloudChoice(yes ? { backup: true, places: chosen ?? (cloud?.saved ? fallback : undefined) } : { backup: false });
 }
 
 let askedThisSession: string | null = null;

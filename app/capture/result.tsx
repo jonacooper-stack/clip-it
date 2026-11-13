@@ -229,7 +229,8 @@ export default function Result() {
   const confidence = sighting.species?.confidence ?? 0;
   const lowConf = confidence < 0.6;
   const repeatMult = sighting.score?.repeatMultiplier;
-  const duplicate = repeatMult === 0; // exact photo already submitted
+  const capped = sighting.score?.dailyCap; // enough of these for today (a daily limit, not the photo)
+  const duplicate = repeatMult === 0 && !capped; // exact photo already submitted
   const repeated = repeatMult != null && repeatMult > 0 && repeatMult < 1; // same species again
 
   return (
@@ -306,6 +307,19 @@ export default function Result() {
             <Text style={styles.duplicateText}>
               You’ve submitted this exact photo before, so it doesn’t earn points again. Snap a fresh
               shot to score.
+            </Text>
+          </Card>
+        )}
+        {capped && (
+          <Card style={styles.duplicateCard}>
+            <View style={styles.duplicateHead}>
+              <Ionicons name="time-outline" size={18} color={colors.accentInk} />
+              <Text style={styles.duplicateTitle}>Enough for today</Text>
+            </View>
+            <Text style={styles.duplicateText}>
+              {capped === 'species'
+                ? 'You’ve logged plenty of this species today, so this one is in your journal without points. It counts again from tomorrow.'
+                : 'You’ve logged lots of repeat sightings today, so this one is in your journal without points. Repeats count again from tomorrow, and new species always count.'}
             </Text>
           </Card>
         )}

@@ -25,7 +25,9 @@ export function ShareToWall({ sighting }: { sighting: Sighting }) {
   // Once the server keeps this account's journal, only a sighting it has
   // recorded can be shared: the post takes its points and species from the
   // journal, and the photo is one the server has already checked.
-  const serverKeepsJournal = useJournalStore((s) => s.cloud?.ready === true);
+  // (Only while the journal is being saved: with the backup off, sharing
+  // works as it does for an account that never turned it on.)
+  const serverKeepsJournal = useJournalStore((s) => s.cloud?.ready === true && s.cloud?.backup === true);
   const eligible =
     !!sighting.species &&
     (sighting.idStatus === 'ai_confident' || sighting.idStatus === 'human_confirmed') &&

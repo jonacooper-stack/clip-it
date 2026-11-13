@@ -84,6 +84,8 @@ export interface Sighting {
   cloudSkip?: boolean;
   /** What the server counts this sighting for (it can be less than `points` for one scored on the phone). */
   cloudPoints?: number;
+  /** The server identified this phone-scored sighting again and couldn't score it: it keeps what it shows, and isn't sent again. */
+  rechecked?: boolean;
 }
 
 export interface CrewOtherPost {
