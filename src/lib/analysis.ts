@@ -188,8 +188,10 @@ export async function processAnalysisQueue(opts: { force?: boolean } = {}): Prom
           // each capture, so that restarting the app doesn't send them all
           // again to hear the same answer.
           pausedUntil = Date.now() + msToDailyReset();
-          const { sightings, updateSighting } = useJournalStore.getState();
-          for (const q of sightings) if (q.idStatus === 'queued') updateSighting(q.id, { retry: holdUntilReset(q.retry) });
+          // (One step: the journal is saved once, not once per capture.)
+          useJournalStore.getState().applySync((st) => ({
+            sightings: st.sightings.map((q) => (q.idStatus === 'queued' ? { ...q, retry: holdUntilReset(q.retry) } : q)),
+          }));
           break;
         }
         applyIdentifyOutcome(s.id, outcome, hashPhotoBase64(base64));

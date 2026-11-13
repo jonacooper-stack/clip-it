@@ -68,6 +68,7 @@ class SyncStop extends Error {
 
 let running: Promise<void> | null = null;
 let again = false;
+let scoreUnknown = false; // the saved journal was deleted elsewhere: the score this device holds is out of date
 let timer: ReturnType<typeof setTimeout> | null = null;
 let notBefore = 0;
 let failures = 0;
@@ -162,6 +163,10 @@ async function run({ force }: { force?: boolean }): Promise<void> {
     // 3. Tell the server anything it doesn't know about the choice.
     await applyPlacesDefault(uid);
     await tell(uid);
+    if (scoreUnknown) {
+      scoreUnknown = false;
+      await readTotals(uid);
+    }
     // 4. The journal itself, if it is being saved.
     if (cloudState()?.backup === true) {
       await push(uid);
@@ -192,6 +197,7 @@ function takeChoice(uid: string, prefs: AccountPrefs, sent?: { backup?: boolean;
     // elsewhere): the account no longer holds these sightings.
     // (Deletions that were waiting to be passed on have nothing left to delete.)
     if (prefs.epoch && prefs.epoch !== (st.cloud?.epoch ?? null)) {
+      scoreUnknown = true; // the score went with it: read it again (see run)
       return { cloud: { ...cloud, epoch: prefs.epoch, pulledAt: undefined }, sightings: forgetCloudCopies(st.sightings), pendingDeletes: [] };
     }
     return { cloud: st.cloud?.epoch === undefined ? { ...cloud, epoch: prefs.epoch } : cloud };
