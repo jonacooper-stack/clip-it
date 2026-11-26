@@ -18,6 +18,12 @@ export function ScreenContainer({ children, scroll = false, padded = true, style
         <ScrollView
           contentContainerStyle={[inner, styles.scrollContent, style]}
           showsVerticalScrollIndicator={false}
+          // The keyboard must never cover the field being typed in (sign-up,
+          // sign-in, and any other form on a scrolling screen): on iOS the
+          // screen makes room for it and scrolls the field into view.
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {children}
         </ScrollView>
