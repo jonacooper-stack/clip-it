@@ -15,6 +15,8 @@ import { useJournalStore } from '@/state/useJournalStore';
 import { sceneTagMeta } from '@/lib/sceneTags';
 import type { Sighting } from '@/types';
 import { speciesKey } from '../../shared/species';
+import { tierOf } from '@/lib/rarity';
+import { SkyGlow } from '@/components/Fade';
 
 const PAD = spacing.md;
 const GAP = 4;
@@ -162,8 +164,8 @@ export default function Journal() {
     return (
       <View style={styles.photoRow}>
         {row.items.map((s) => (
-          <Pressable key={s.id} onPress={() => router.push(`/sighting/${s.id}`)}>
-            <SightingThumb photoUri={s.photoUri} scientificName={s.species?.scientificName} size={tile} radius={radius.sm} />
+          <Pressable key={s.id} onPress={() => router.push(`/sighting/${s.id}`)} style={[styles.tile, { borderColor: tierOf(s)?.color ?? 'transparent' }]}>
+            <SightingThumb photoUri={s.photoUri} scientificName={s.species?.scientificName} size={tile - 4} radius={radius.sm - 2} />
           </Pressable>
         ))}
       </View>
@@ -172,6 +174,7 @@ export default function Journal() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SkyGlow />
       <View style={styles.header}>
         <Text style={styles.title}>Field Journal</Text>
         <Text style={styles.subtitle}>
@@ -202,7 +205,7 @@ export default function Journal() {
             const on = g.key === group;
             return (
               <Pressable key={g.key} onPress={() => setGroup(g.key)} style={[styles.chip, on && styles.chipOn]}>
-                <Ionicons name={g.icon} size={13} color={on ? colors.white : colors.muted} />
+                <Ionicons name={g.icon} size={13} color={on ? colors.ink : colors.muted} />
                 <Text style={[styles.chipText, on && styles.chipTextOn]}>{g.label}</Text>
               </Pressable>
             );
@@ -279,7 +282,9 @@ const styles = StyleSheet.create({
   },
   chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
-  chipTextOn: { color: colors.white },
+  chipTextOn: { color: colors.ink },
+  // (the edge's colour is the sighting's rarity tier)
+  tile: { borderWidth: 2, borderRadius: radius.sm, overflow: 'hidden' },
 
   content: { paddingBottom: spacing.xxl, paddingTop: spacing.xs },
   photoRow: { flexDirection: 'row', gap: GAP, paddingHorizontal: PAD, marginBottom: GAP },

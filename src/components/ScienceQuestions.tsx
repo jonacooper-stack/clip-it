@@ -81,5 +81,5 @@ const styles = StyleSheet.create({
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: font.small, fontFamily: fonts.bodyMedium, color: colors.text },
-  chipTextSelected: { color: colors.white },
+  chipTextSelected: { color: colors.ink },
 });

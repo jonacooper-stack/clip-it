@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
@@ -28,7 +28,8 @@ type FeedEntry = { key: string; at: number } & ({ type: 'post'; post: FeedPost }
 // the day, what's happening near you, your new species, quests done), newest
 // first, with this week's quests pinned on top. A virtualized list, so a long
 // wall only keeps the posts near the screen mounted.
-export function WallFeed() {
+// `top`: something to show above the wall that scrolls away with it (the rank bar on Home).
+export function WallFeed({ top }: { top?: ReactNode } = {}) {
   const [scope, setScope] = useState<FeedScope>('everyone');
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +93,7 @@ export function WallFeed() {
 
   const header = (
     <>
+      {top}
       {showScout && <QuestsCard quests={quests} />}
       {pinned && <ScoutPost moment={pinned} />}
       <View style={styles.feedToggle}>
@@ -296,7 +298,7 @@ const styles = StyleSheet.create({
   moreBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   followBtn: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.primary },
   followingBtn: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-  followText: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: colors.white },
+  followText: { fontSize: font.tiny, fontFamily: fonts.bodyBold, color: colors.ink },
   followingText: { color: colors.muted },
   igPhoto: { width: '100%', aspectRatio: 1, backgroundColor: colors.surfaceAlt },
   igPhotoFallback: { width: '100%', aspectRatio: 1, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },

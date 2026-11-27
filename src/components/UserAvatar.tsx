@@ -48,5 +48,5 @@ export function UserAvatar({
 
 const styles = StyleSheet.create({
   box: { alignItems: 'center', justifyContent: 'center' },
-  initial: { color: colors.white, fontFamily: fonts.display },
+  initial: { color: colors.ink, fontFamily: fonts.display },
 });

@@ -4,12 +4,7 @@ import { View, ActivityIndicator, StyleSheet, AppState, useWindowDimensions } fr
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import {
-  useFonts,
-  Oswald_500Medium,
-  Oswald_600SemiBold,
-  Oswald_700Bold,
-} from '@expo-google-fonts/oswald';
+import { useFonts, Archivo_600SemiBold, Archivo_700Bold, Archivo_800ExtraBold } from '@expo-google-fonts/archivo';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { colors } from '@/theme';
 import { applyGlobalFont } from '@/lib/fonts';
@@ -26,9 +21,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Oswald_500Medium,
-    Oswald_600SemiBold,
-    Oswald_700Bold,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    Archivo_800ExtraBold,
     DMSans_400Regular,
     DMSans_500Medium,
     DMSans_700Bold,

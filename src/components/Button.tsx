@@ -1,6 +1,7 @@
 import { Pressable, Text, StyleSheet, ViewStyle, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing, font, fonts, shadow } from '@/theme';
+import { colors, radius, spacing, font, fonts, shadow, type FadeName } from '@/theme';
+import { Fade } from './Fade';
 
 type Variant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 
@@ -43,6 +44,7 @@ export function Button({
         style,
       ]}
     >
+      {v.fade && <Fade name={v.fade} angle="diagonal" />}
       {loading ? (
         <ActivityIndicator color={v.fg} />
       ) : (
@@ -59,11 +61,12 @@ export function Button({
   );
 }
 
-const VARIANTS: Record<Variant, { bg: string; fg: string; filled?: boolean; outline?: boolean }> = {
-  primary: { bg: colors.primary, fg: colors.white, filled: true },
-  accent: { bg: colors.accent, fg: colors.white, filled: true },
+// (The main action wears the campfire fade; "primary" the green one.)
+const VARIANTS: Record<Variant, { bg: string; fg: string; filled?: boolean; outline?: boolean; fade?: FadeName }> = {
+  primary: { bg: colors.primary, fg: colors.ink, filled: true, fade: 'meadow' },
+  accent: { bg: colors.accent, fg: colors.ink, filled: true, fade: 'campfire' },
   secondary: { bg: colors.primarySoft, fg: colors.onPrimary },
-  ghost: { bg: colors.surface, fg: colors.primary, outline: true },
+  ghost: { bg: colors.surface, fg: colors.text, outline: true },
   danger: { bg: colors.danger, fg: colors.white, filled: true },
 };
 
@@ -76,6 +79,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.lg,
     minHeight: 54,
+    overflow: 'hidden',
   },
   md: { paddingVertical: 11, minHeight: 46, borderRadius: radius.md },
   outline: { borderWidth: 1.5, borderColor: colors.border },
@@ -84,8 +88,8 @@ const styles = StyleSheet.create({
   icon: { marginRight: spacing.sm },
   label: {
     fontSize: font.body + 1,
-    fontFamily: fonts.bodyBold,
-    letterSpacing: 0.2,
+    fontFamily: fonts.heading,
+    letterSpacing: 0.1,
   },
   labelMd: { fontSize: font.body },
 });

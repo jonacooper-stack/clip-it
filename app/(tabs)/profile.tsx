@@ -16,6 +16,8 @@ import { playerPoints } from '@/lib/quests';
 import { fetchCloudOnlyPhotos, pendingCount, scheduleJournalSync, syncJournal, turnOffBackup, useSyncStatus } from '@/lib/journalSync';
 import { prefsToSend } from '@/lib/journalMerge';
 import { isCloudRef } from '@/lib/cloudPhotos';
+import { RankBar } from '@/components/RankBar';
+import { SkyGlow } from '@/components/Fade';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { uploadAvatar, getMyAvatarUrl, deleteMyAccount } from '@/lib/social';
 import { CONTACT_EMAIL } from '@/lib/legal';
@@ -220,13 +222,14 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SkyGlow />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Pressable onPress={pickAvatar} disabled={!canEditAvatar || uploading} style={styles.avatarWrap}>
             <UserAvatar name={displayName} uri={avatarUrl} size={88} />
             {canEditAvatar && (
               <View style={styles.avatarBadge}>
-                <Ionicons name="camera" size={14} color={colors.white} />
+                <Ionicons name="camera" size={14} color={colors.ink} />
               </View>
             )}
             {uploading && (
@@ -240,6 +243,9 @@ export default function Profile() {
           {ageBracket && <Text style={styles.bracket}>{BRACKET_LABEL[ageBracket]}</Text>}
         </View>
 
+        <View style={styles.rank}>
+          <RankBar points={points} />
+        </View>
         <View style={styles.statGrid}>
           <Stat value={points} label="points" />
           <Stat value={speciesCount} label="species" />
@@ -442,6 +448,7 @@ const styles = StyleSheet.create({
   name: { fontSize: font.title, fontFamily: fonts.heading, color: colors.text, marginTop: spacing.sm },
   email: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   bracket: { fontSize: font.small, color: colors.faint, marginTop: 2 },
+  rank: { marginBottom: spacing.sm },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
   // Sits with the numbers it is about (closer to them than to the card below).
   backupNote: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 18, marginTop: -spacing.sm, marginBottom: spacing.lg },

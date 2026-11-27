@@ -7,6 +7,9 @@ import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useMemo } from 'react';
 import { useJournalStore } from '@/state/useJournalStore';
 import { currentStreak } from '@/lib/streak';
+import { playerPoints } from '@/lib/quests';
+import { SkyGlow } from '@/components/Fade';
+import { RankBar } from '@/components/RankBar';
 
 // The app's home is the community Feed — the wall front-and-center. Capturing a
 // new sighting is the raised camera button in the middle of the tab bar.
@@ -14,9 +17,14 @@ export default function Feed() {
   const router = useRouter();
   const sightings = useJournalStore((s) => s.sightings);
   const streak = useMemo(() => currentStreak(sightings), [sightings]);
+  // (The score as the server keeps it, once it does; this phone's own sum until then.)
+  const cloud = useJournalStore((s) => s.cloud);
+  const local = useMemo(() => playerPoints(sightings), [sightings]);
+  const points = cloud?.ready && cloud.totals ? cloud.totals.points : local;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SkyGlow />
       <View style={styles.header}>
         <Text style={styles.brand}>
           Clip<Text style={styles.brandAccent}>It</Text>
@@ -33,7 +41,13 @@ export default function Feed() {
           </Pressable>
         </View>
       </View>
-      <WallFeed />
+      <WallFeed
+        top={
+          <View style={styles.rank}>
+            <RankBar points={points} />
+          </View>
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -48,8 +62,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
-  brand: { fontSize: font.title, fontFamily: fonts.display, color: colors.text, letterSpacing: 0.3 },
-  brandAccent: { color: colors.primary },
+  brand: { fontSize: font.title, fontFamily: fonts.display, color: colors.text, letterSpacing: -0.6 },
+  brandAccent: { color: colors.accent },
+  rank: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   streak: {
     flexDirection: 'row',

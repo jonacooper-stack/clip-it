@@ -20,7 +20,7 @@ export default function Support() {
         onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=ClipIt%20support`)}
         style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
       >
-        <Ionicons name="mail" size={18} color={colors.white} />
+        <Ionicons name="mail" size={18} color={colors.ink} />
         <Text style={styles.ctaText}>Email {CONTACT_EMAIL}</Text>
       </Pressable>
 
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingHorizontal: spacing.md,
   },
-  ctaText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.white },
+  ctaText: { fontSize: font.body, fontFamily: fonts.bodyBold, color: colors.ink },
   faq: { gap: 2 },
   credit: { gap: 1 },
   links: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.lg },

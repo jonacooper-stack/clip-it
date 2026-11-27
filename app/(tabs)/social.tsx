@@ -9,6 +9,7 @@ import { SafetySheet, type SafetyTarget } from '@/components/social/SafetySheet'
 import { CrewBadge } from '@/components/social/CrewBadge';
 import { colors, spacing, font, fonts, radius } from '@/theme';
 import { useAppStore } from '@/state/useAppStore';
+import { SkyGlow } from '@/components/Fade';
 import {
   getLeaderboard, getFriends, searchUsers,
   sendFriendRequest, acceptFriendRequest, removeFriendship, type Scope, type LeaderboardEntry,
@@ -34,6 +35,7 @@ export default function Community() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SkyGlow />
       <View style={styles.header}>
         <Text style={styles.title}>Community</Text>
       </View>
@@ -283,5 +285,5 @@ const styles = StyleSheet.create({
   btnGhostText: { color: colors.muted },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   more: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  btnText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.white },
+  btnText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.ink },
 });

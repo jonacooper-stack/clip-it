@@ -12,6 +12,7 @@ import { CrewAvatar } from '@/components/crew/CrewAvatar';
 import { useScoutFeed } from '@/lib/crew/useScoutFeed';
 import { SWEEP_BONUS } from '@/lib/crew/challenges';
 import { addWeeks, DAY_MS, startOfWeek } from '@/lib/crew/time';
+import { SkyGlow } from '@/components/Fade';
 
 export default function Quests() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function Quests() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SkyGlow />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Pressable onPress={goBack} hitSlop={8} style={styles.back}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />

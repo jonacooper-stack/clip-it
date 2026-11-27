@@ -173,9 +173,9 @@ export default function PostDetail() {
               style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnOff]}
             >
               {sending ? (
-                <ActivityIndicator color={colors.white} size="small" />
+                <ActivityIndicator color={colors.ink} size="small" />
               ) : (
-                <Ionicons name="arrow-up" size={20} color={colors.white} />
+                <Ionicons name="arrow-up" size={20} color={colors.ink} />
               )}
             </Pressable>
           </View>

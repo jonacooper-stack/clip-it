@@ -8,7 +8,6 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Tag } from '@/components/Tag';
 import { DisputeBox } from '@/components/DisputeBox';
-import { TopoBackground } from '@/components/TopoBackground';
 import { ConfidenceBadge } from '@/components/ConfidenceBadge';
 import { DemoNotice } from '@/components/DemoNotice';
 import { CrewNotesCard } from '@/components/crew/CrewNotesCard';
@@ -20,6 +19,8 @@ import { questionsForSighting, coerceScience, SCIENCE_QUESTIONS } from '@/lib/sc
 import { resolvePhoto } from '@/lib/photoStore';
 import { groupOf } from '@/lib/quests';
 import { useQuestSightings } from '@/lib/useQuestSightings';
+import { tierOf } from '@/lib/rarity';
+import { Fade, SkyGlow } from '@/components/Fade';
 import { challengeStatus } from '@/lib/crew/challenges';
 import { crewSeed } from '@/lib/crew/seed';
 import { startOfWeek } from '@/lib/crew/time';
@@ -161,7 +162,7 @@ export default function Result() {
     const confidence = sighting.species?.confidence ?? 0;
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <TopoBackground color={colors.primary} opacity={0.05} />
+        <SkyGlow />
         <View style={styles.topBar}>
           <Pressable onPress={discard} style={styles.closeBtn} hitSlop={8}>
             <Ionicons name="close" size={26} color={colors.text} />
@@ -200,7 +201,7 @@ export default function Result() {
   if (sighting.idStatus === 'queued') {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <TopoBackground color={colors.primary} opacity={0.05} />
+        <SkyGlow />
         <View style={styles.topBar}>
           <Pressable onPress={done} style={styles.closeBtn} hitSlop={8}>
             <Ionicons name="close" size={26} color={colors.text} />
@@ -226,6 +227,7 @@ export default function Result() {
   }
 
   const pending = sighting.idStatus === 'needs_review';
+  const tier = tierOf(sighting);
   const confidence = sighting.species?.confidence ?? 0;
   const lowConf = confidence < 0.6;
   const repeatMult = sighting.score?.repeatMultiplier;
@@ -235,7 +237,7 @@ export default function Result() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <TopoBackground color={colors.primary} opacity={0.05} />
+      <SkyGlow />
       <View style={styles.topBar}>
         <Pressable onPress={() => setConfirming(true)} style={styles.closeBtn} hitSlop={8}>
           <Ionicons name="close" size={26} color={colors.text} />
@@ -267,7 +269,17 @@ export default function Result() {
         )}
 
         {photoSrc && (
-          <Image source={{ uri: photoSrc }} style={styles.photo} contentFit="cover" />
+          // The sighting as a card: the frame's colour is how rare the find is.
+          <View style={styles.frame}>
+            {tier && <Fade name={tier.fade} angle="diagonal" />}
+            <Image source={{ uri: photoSrc }} style={styles.framedPhoto} contentFit="cover" />
+            {tier && !pending && (
+              <View style={styles.ribbon} accessibilityLabel={`${tier.label} find`}>
+                <Fade name={tier.fade} angle="diagonal" />
+                <Text style={styles.ribbonText}>{tier.label.toUpperCase()}</Text>
+              </View>
+            )}
+          </View>
         )}
 
         <Animated.View style={[styles.pointsWrap, { transform: [{ scale }] }]}>
@@ -436,6 +448,10 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, alignItems: 'center' },
   missing: { textAlign: 'center', marginTop: spacing.xxl, color: colors.muted },
   photo: { width: '100%', height: 260, borderRadius: radius.lg, marginBottom: spacing.lg },
+  frame: { alignSelf: 'stretch', borderRadius: radius.xl, padding: 4, marginBottom: spacing.lg, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
+  framedPhoto: { width: '100%', height: 260, borderRadius: radius.xl - 4 },
+  ribbon: { position: 'absolute', top: 14, left: 14, borderRadius: radius.pill, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 5 },
+  ribbonText: { fontFamily: fonts.display, fontSize: font.tiny, letterSpacing: 1.6, color: colors.ink },
   pointsWrap: { alignItems: 'center', marginBottom: spacing.md },
   points: { fontSize: 80, fontFamily: fonts.display, color: colors.accent, lineHeight: 84 },
   pointsLabel: { fontSize: font.body, fontFamily: fonts.heading, color: colors.accentInk, letterSpacing: 3 },

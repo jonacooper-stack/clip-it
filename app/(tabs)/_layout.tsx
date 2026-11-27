@@ -3,6 +3,7 @@ import { View, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, shadow } from '@/theme';
+import { Fade } from '@/components/Fade';
 import { useAppStore } from '@/state/useAppStore';
 import { useAuthStore } from '@/state/useAuthStore';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -20,7 +21,10 @@ function CaptureButton() {
         style={({ pressed }) => [styles.captureBtn, pressed && styles.capturePressed]}
         accessibilityLabel="ClipIt — take a photo"
       >
-        <Ionicons name="camera" size={30} color={colors.white} />
+        <View style={styles.captureFill}>
+          <Fade name="campfire" angle="diagonal" />
+        </View>
+        <Ionicons name="camera" size={30} color={colors.ink} />
       </Pressable>
     </View>
   );
@@ -59,7 +63,7 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.faint,
         tabBarStyle: {
           backgroundColor: colors.surface,
@@ -122,6 +126,7 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   captureSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  captureFill: { ...StyleSheet.absoluteFillObject, borderRadius: 29, overflow: 'hidden' },
   captureBtn: {
     width: 58,
     height: 58,

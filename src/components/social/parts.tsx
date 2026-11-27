@@ -47,7 +47,7 @@ const styles = StyleSheet.create({
   segment: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: radius.sm },
   segmentActive: { backgroundColor: colors.primary },
   segmentText: { fontSize: font.small, fontFamily: fonts.bodyBold, color: colors.muted },
-  segmentTextActive: { color: colors.white },
+  segmentTextActive: { color: colors.ink },
   empty: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl, paddingHorizontal: spacing.lg },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
 });
